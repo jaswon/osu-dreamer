@@ -23,7 +23,7 @@ import librosa
 import pytorch_lightning as pl
 from torch.utils.data import IterableDataset, DataLoader, random_split
 
-from osu.beatmap import Beatmap
+from .osu.beatmap import Beatmap
 
 
 # audio processing constants
@@ -377,7 +377,7 @@ class BetaSchedule:
         return x
     
 class CosineBetaSchedule(BetaSchedule):
-    def __init__(self, timestamps, net):
+    def __init__(self, timesteps, net, s=0.008):
         """
         cosine schedule as proposed in https://arxiv.org/abs/2102.09672
         """
