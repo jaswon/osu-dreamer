@@ -1,0 +1,49 @@
+# pytorch_lightning==1.7.6
+seed_everything: true
+trainer:
+    
+    auto_lr_find: true
+    # auto_scale_batch_size: true
+    
+    callbacks:
+        - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+
+    accelerator: 'gpu'
+    devices: 1
+    precision: 16
+    
+    logger: true
+    enable_checkpointing: true
+    enable_progress_bar: true
+    log_every_n_steps: 10
+    enable_model_summary: true
+    
+    max_epochs: -1
+    
+    accumulate_grad_batches: 2
+    
+model:
+    learning_rate: .00007
+
+    h_dim: 32
+    h_dim_groups: 1
+    dim_mults: [1,2,4,8,16]
+    convnext_mult: 2
+    wave_stack_depth: 5
+    wave_num_stacks: 5
+    
+    timesteps: 1024
+    sample_steps: 80
+    
+    # 6ms * 2**(len(dim_mults) + ctx_depth)
+    ctx_depth: 6
+
+    loss_type: "huber"
+    
+    sample_density: .2
+    batch_size: 64
+    num_workers: 8
+    
+    val_size: 32
+    
+    # src_path: "./osu!/training_data"
