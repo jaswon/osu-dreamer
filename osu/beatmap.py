@@ -463,11 +463,11 @@ SliderTickRate: 1
                 elif t_type == 2:
                     # end hold, make spinner/slider
                     ctrl_pts, length = get_ctrl_pts(hold_start, t)
+                    dur = t - hold_start
                     
-                    if is_spinner(ctrl_pts):
+                    if is_spinner(ctrl_pts) and dur > 1000:
                         hos.append(f"256,192,{hold_start},{8 + new_combo},0,{t}")
                     else:
-                        dur = t - hold_start
                         # dur = length / (slider_mult * 100 * SV) * beat_length
                         SV = length * beat_length / dur / 100 / slider_mult
 
