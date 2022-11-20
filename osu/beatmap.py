@@ -386,7 +386,16 @@ class Beatmap:
                 x += step
             pts.append(get_pos(b))
             l += np.linalg.norm(pts[-1] - pts[-2]) 
-            return pts, l
+            return np.array(pts), l
+        
+        def is_spinner(ctrl_pts):
+            ul_corner = ctrl_pts.min(axis=0)
+            dr_corner = ctrl_pts.max(axis=0)
+            if ((dr_corner - ul_corner) < 20).all():
+                spinner_center = ctrl_pts.mean(axis=0)
+                if np.linalg.norm(spinner_center - np.array([[512, 384]])/2) < 20:
+                    return True
+            return False
             
         beat_length = 1000
         slider_mult = 1
@@ -452,18 +461,21 @@ SliderTickRate: 1
                     # hold_start when already holding, ignore
                     pass
                 elif t_type == 2:
-                    # end hold, make slider
-                    
+                    # end hold, make spinner/slider
                     ctrl_pts, length = get_ctrl_pts(hold_start, t)
                     
-                    dur = t - hold_start
-                    # dur = length / (slider_mult * 100 * SV) * beat_length
-                    SV = length * beat_length / dur / 100 / slider_mult
-                    
-                    x1,y1 = ctrl_pts[0]
-                    curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
-                    hos.append(f"{x1},{y1},{hold_start},{2 + new_combo},0,B|{curve_pts},1,{length}")
-                    tps.append(f"{hold_start-1},{-100/SV},4,0,0,50,0,0")
+                    if is_spinner(ctrl_pts):
+                        hos.append(f"256,192,{hold_start},{8 + new_combo},0,{t}")
+                    else:
+                        dur = t - hold_start
+                        # dur = length / (slider_mult * 100 * SV) * beat_length
+                        SV = length * beat_length / dur / 100 / slider_mult
+
+                        x1,y1 = ctrl_pts[0]
+                        curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
+                        hos.append(f"{x1},{y1},{hold_start},{2 + new_combo},0,B|{curve_pts},1,{length}")
+                        tps.append(f"{hold_start-1},{-100/SV},4,0,0,50,0,0")
+                        
                     hold_start = None
                     
                     
