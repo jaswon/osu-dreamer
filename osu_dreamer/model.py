@@ -17,8 +17,13 @@ from einops.layers.torch import Rearrange, Reduce
 from einops import rearrange
 
 import numpy as np
-import matplotlib.pyplot as plt
 import librosa
+
+try:
+    import matplotlib.pyplot as plt
+    USE_MATPLOTLIB = True
+except:
+    USE_MATPLOTLIB = False
 
 import pytorch_lightning as pl
 from torch.utils.data import IterableDataset, DataLoader, random_split
@@ -576,6 +581,8 @@ class Model(pl.LightningModule):
         return a,x
         
     def validation_epoch_end(self, val_outs: "List[(1,X,L),(1,A,L)]"):
+        if not USE_MATPLOTLIB:
+            return
         
         num_samples = 2
         
@@ -818,9 +825,3 @@ class SubsequenceDataset(StreamPerSample):
                 a[..., idx:idx+self.seq_len].clone(),
                 x[..., idx:idx+self.seq_len].clone(),
             )
-    
-    
-if __name__ == "__main__":
-    from pytorch_lightning.cli import LightningCLI
-
-    cli = LightningCLI(Model)
