@@ -40,3 +40,16 @@ python scripts/cli.py fit -c config.yml --model.src_path SONGS_DIR
 
 replace `SONGS_DIR` with the path to the osu! Songs directory (or a directory with the same structure).
 other model parameters are in `config.yml`
+
+run `tensorboard --logdir=lightning_logs/` to track training progress in Tensorboard
+
+### visual validation
+
+`pip install matplotlib` to enable rendering of validation plots as shown below:
+
+![image](https://user-images.githubusercontent.com/943003/203165744-68da33fa-967f-45a7-956e-f0fe0114f9cc.png)
+
+The training process will generate one plot at the end of every epoch, using a sample from the validation set
+- the first row is the spectrogram of the audio file
+- the second row is the actual map associated with the audio file in its signal representation
+- the third and fourth rows are signal representations of the maps produced by the model
