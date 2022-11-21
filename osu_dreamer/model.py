@@ -439,10 +439,10 @@ class Model(pl.LightningModule):
         batch_size: int,
         num_workers: int,
         
+        src_path: str,
+        data_path: str = "./data",
         val_split: float = None,
         val_size: int = None,
-        data_path: str = "./data",
-        src_path: str = Beatmap.SONGS_PATH,
         
         learning_rate: float = 0.,
     ):

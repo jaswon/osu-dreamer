@@ -1,14 +1,19 @@
 # pytorch_lightning==1.7.6
 seed_everything: true
 trainer:
+
+    # comment this line out if you're training without a gpu
+    accelerator: 'gpu'
     
-    auto_lr_find: true
-    # auto_scale_batch_size: true
+    # number of epochs to run for. `-1` means run forever (until you interrupt manually)
+    max_epochs: -1
+    
+    # number of training steps per model update. 
+    accumulate_grad_batches: 2
     
     callbacks:
         - class_path: pytorch_lightning.callbacks.LearningRateMonitor
-
-    accelerator: 'gpu'
+    
     devices: 1
     precision: 16
     
@@ -18,32 +23,37 @@ trainer:
     log_every_n_steps: 10
     enable_model_summary: true
     
-    max_epochs: -1
-    
-    accumulate_grad_batches: 2
-    
 model:
     learning_rate: .00007
 
+    # model hyperparameters
     h_dim: 32
     h_dim_groups: 1
     dim_mults: [1,2,4,8,16]
     convnext_mult: 2
     wave_stack_depth: 5
     wave_num_stacks: 5
-    
     timesteps: 1024
+    
+    # number of steps to use for sampling during validation
     sample_steps: 80
     
     # 6ms * 2**(len(dim_mults) + ctx_depth)
     ctx_depth: 6
 
+    # loss function - can be one of {huber, l1, l2}
     loss_type: "huber"
     
+    # affects how many samples are generated from a single beatmap (per epoch)
+    # higher number means more samples from the same beatmap
     sample_density: .2
+    
+    # size of training batch
     batch_size: 64
+    
+    # number of workers to use for data loading
     num_workers: 8
     
+    # number of samples to hold out for validation
+    # must be at least one in order to render validation plots
     val_size: 32
-    
-    # src_path: "./osu!/training_data"
