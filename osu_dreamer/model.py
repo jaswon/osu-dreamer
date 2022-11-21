@@ -581,7 +581,7 @@ class Model(pl.LightningModule):
         return a,x
         
     def validation_epoch_end(self, val_outs: "List[(1,X,L),(1,A,L)]"):
-        if not USE_MATPLOTLIB:
+        if not USE_MATPLOTLIB or len(val_outs) == 0:
             return
         
         num_samples = 2
