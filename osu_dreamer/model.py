@@ -818,9 +818,3 @@ class SubsequenceDataset(StreamPerSample):
                 a[..., idx:idx+self.seq_len].clone(),
                 x[..., idx:idx+self.seq_len].clone(),
             )
-    
-    
-if __name__ == "__main__":
-    from pytorch_lightning.cli import LightningCLI
-
-    cli = LightningCLI(Model)
