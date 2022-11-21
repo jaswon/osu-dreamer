@@ -1,0 +1,8 @@
+bezier
+librosa
+tqdm
+torch
+torchaudio
+matplotlib
+einops
+pytorch-lightning
