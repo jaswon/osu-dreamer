@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     name="osu-dreamer",
     version="1.0",
-    packages=["osu_dreamer"],
+    packages=["osu_dreamer", "osu_dreamer.osu"],
     install_requires=[
         "bezier",
         "librosa",
