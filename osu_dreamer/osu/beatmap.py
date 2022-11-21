@@ -141,8 +141,8 @@ class Beatmap:
         
         self.filename = Path(filename)
 
-        with open(filename) as f:
-            cfg = self.parse_osu_map(f)
+        with open(filename, encoding='utf-8') as f:
+            cfg = self.parse_map_file(f)
 
         self.audio_filename = self.filename.parent / cfg["General"]["AudioFilename"]
 
