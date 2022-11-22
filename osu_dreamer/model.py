@@ -37,7 +37,7 @@ HOP_LEN_S = 128. / 22050 # ~6 ms per frame
 N_MELS = 64
 
 # model constants
-X_DIM = 4
+X_DIM = Beatmap.MAP_SIGNAL_DIM
 A_DIM = 40
 
 VALID_PAD = 1024

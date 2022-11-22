@@ -21,6 +21,7 @@ def binom_coeffs(n):
 
 def from_control_points(
     t: int,
+    new_combo: bool,
     slides: int,
     length: float,
     ctrl_pts: List[NDIntArray],
@@ -29,21 +30,21 @@ def from_control_points(
         raise Exception(f"bad slider: {ctrl_pts}")
     if len(ctrl_pts) == 2:  # L type
         A, B = ctrl_pts
-        return Line(t, slides, length, A, B)
+        return Line(t, new_combo, slides, length, A, B)
     if len(ctrl_pts) == 3:  # check P type
         A, B, C = ctrl_pts
 
         if (B == C).all():
-            return Line(t, slides, length, A, C)
+            return Line(t, new_combo, slides, length, A, C)
 
         ABC = np.cross(B - A, C - B)
 
         if ABC == 0:  # collinear
             if np.dot(B - A, C - B) > 0:  # A -- B -- C
-                return Line(t, slides, length, A, C)
+                return Line(t, new_combo, slides, length, A, C)
             else:  # A -- C -- B
                 ctrl_pts.insert(1, ctrl_pts[1])  # [A,B,B,C]
-                return Bezier(t, slides, length, ctrl_pts)
+                return Bezier(t, new_combo, slides, length, ctrl_pts)
 
         a = np.linalg.norm(C - B)
         b = np.linalg.norm(C - A)
@@ -52,7 +53,7 @@ def from_control_points(
         R = a * b * c / 4.0 / np.sqrt(s * (s - a) * (s - b) * (s - c))
 
         if R > 320 and np.dot(C - B, B - A) < 0:  # circle too large
-            return Bezier(t, slides, length, ctrl_pts)
+            return Bezier(t, new_combo, slides, length, ctrl_pts)
 
         b1 = a * a * (b * b + c * c - a * a)
         b2 = b * b * (a * a + c * c - b * b)
@@ -70,16 +71,16 @@ def from_control_points(
             while start_angle > end_angle:
                 start_angle -= 2 * np.pi
 
-        return Perfect(t, slides, length, P, R, start_angle, end_angle)
+        return Perfect(t, new_combo, slides, length, P, R, start_angle, end_angle)
     else:  # B type
-        return Bezier(t, slides, length, ctrl_pts)
+        return Bezier(t, new_combo, slides, length, ctrl_pts)
 
 
 class Line(Slider):
     def __init__(
-        self, t: int, slides: int, length: float, start: NDIntArray, end: NDIntArray
+        self, t: int, new_combo: bool, slides: int, length: float, start: NDIntArray, end: NDIntArray
     ):
-        super().__init__(t, slides, length)
+        super().__init__(t, new_combo, slides, length)
 
         self.start = start
 
@@ -99,6 +100,7 @@ class Perfect(Slider):
     def __init__(
         self,
         t: int,
+        new_combo: bool,
         slides: int,
         length: float,
         center: NDIntArray,
@@ -106,7 +108,7 @@ class Perfect(Slider):
         start: NDIntArray,
         end: NDIntArray,
     ):
-        super().__init__(t, slides, length)
+        super().__init__(t, new_combo, slides, length)
         self.center = center
         self.radius = radius
         self.start = start
@@ -131,11 +133,12 @@ class Bezier(Slider):
     def __init__(
         self,
         t: int,
+        new_combo: bool,
         slides: int,
         length: float,
         ctrl_pts, # n x 2
     ):
-        super().__init__(t, slides, length)
+        super().__init__(t, new_combo, slides, length)
 
         self.ctrl_pts = ctrl_pts
 

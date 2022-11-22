@@ -44,12 +44,17 @@ class Inherited(TimingPoint):
         return f"{super().__repr__()} *{self.x}"
 
 class HitObject(Timed):
-    pass
+    def __init__(self, t: int, new_combo: bool):
+        super().__init__(t)
+        self.new_combo = new_combo
+
+    def __repr__(self):
+        return super().__repr__() + (" *" if self.new_combo else "")
 
 
 class Circle(HitObject):
-    def __init__(self, t: int, x: int, y: int):
-        super().__init__(t)
+    def __init__(self, t: int, new_combo: bool, x: int, y: int):
+        super().__init__(t, new_combo)
         self.x = x
         self.y = y
 
@@ -58,8 +63,8 @@ class Circle(HitObject):
 
 
 class Spinner(HitObject):
-    def __init__(self, t: int, u: int):
-        super().__init__(t)
+    def __init__(self, t: int, new_combo: bool, u: int):
+        super().__init__(t, new_combo)
         self.u = u
 
     def __repr__(self):
@@ -67,8 +72,8 @@ class Spinner(HitObject):
 
 
 class Slider(HitObject):
-    def __init__(self, t: int, slides: int, length: float):
-        super().__init__(t)
+    def __init__(self, t: int, new_combo: bool, slides: int, length: float):
+        super().__init__(t, new_combo)
         self.slides = slides
         self.length = length
 
