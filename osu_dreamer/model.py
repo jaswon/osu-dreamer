@@ -530,6 +530,12 @@ class Model(pl.LightningModule):
         else:
             val_size = int(len(full_set) * self.val_split)
             
+        if val_size < 0:
+            raise ValueError("`val_size` is negative")
+            
+        if val_size > len(full_set):
+            raise ValueError(f"`val_size` ({val_size}) is greater than the number of samples ({len(full_set)})")
+            
         train_size = len(full_set) - val_size
         print(f'train: {train_size} | val: {val_size}')
         train_split, val_split = random_split(full_set, [train_size, val_size])
