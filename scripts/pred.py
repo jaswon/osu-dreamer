@@ -6,13 +6,15 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from osu_dreamer.model import Model, load_audio, N_FFT
+from osu_dreamer.model import Model, load_audio, N_FFT, VALID_PAD
 from osu_dreamer.osu.beatmap import Beatmap
-
-VALID_PAD = 2048
 
 def generate_mapset(audio_file, model_path, sample_steps, num_samples):
     use_cuda = torch.cuda.is_available()
+    if use_cuda:
+        print('using GPU accelerated inference')
+    else:
+        print('WARNING: no GPU found - inference will be slow')
 
     model = Model.load_from_checkpoint(model_path,
         sample_steps=sample_steps,
@@ -25,15 +27,15 @@ def generate_mapset(audio_file, model_path, sample_steps, num_samples):
 
     a, hop_length, sr = load_audio(audio_file)
 
-    a = F.pad(torch.tensor(a), (VALID_PAD, VALID_PAD))
+    a = F.pad(torch.tensor(a), (VALID_PAD, VALID_PAD), mode='replicate')
 
     pad = (1 + a.size(-1) // 2 ** model.depth) * 2 ** model.depth - a.size(-1)
-    a = F.pad(a, (0, pad), mode='reflect')
+    a = F.pad(a, (0, pad), mode='replicate')
 
     if use_cuda:
         a = a.cuda()
 
-    pred = model(a.repeat(num_samples,1,1))[..., VALID_PAD:-VALID_PAD].cpu().numpy()
+    pred = model(a.repeat(num_samples,1,1)).cpu().numpy()[...,VALID_PAD:-(VALID_PAD + pad)]
 
     # generate random name
     while True:

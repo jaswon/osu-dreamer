@@ -40,6 +40,7 @@ N_MELS = 64
 X_DIM = 4
 A_DIM = 40
 
+VALID_PAD = 1024
 
 #
 #
@@ -566,10 +567,13 @@ class Model(pl.LightningModule):
     def validation_step(self, batch: ("1,A,L","1,X,L"), batch_idx, *args, **kwargs):
         torch.cuda.empty_cache()
         a,x = copy.deepcopy(batch)
+        
+        a = F.pad(a, (VALID_PAD, VALID_PAD), mode='replicate')
+        x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
 
         pad = (1 + a.size(-1) // 2 ** self.depth) * 2 ** self.depth - a.size(-1)
-        x = F.pad(x, (0, pad), mode='reflect').float()
-        a = F.pad(a, (0, pad), mode='reflect').float()
+        a = F.pad(a, (0, pad), mode='replicate')
+        x = F.pad(x, (0, pad), mode='replicate')
         
         loss = self.compute_loss(a,x)
         
@@ -577,6 +581,9 @@ class Model(pl.LightningModule):
             "val/loss", loss.detach(),
             logger=True, on_step=False, on_epoch=True,
         )
+        
+        a = a[...,VALID_PAD:-(VALID_PAD + pad)]
+        x = x[...,VALID_PAD:-(VALID_PAD + pad)]
         
         return a,x
         
@@ -589,12 +596,19 @@ class Model(pl.LightningModule):
         torch.cuda.empty_cache()
         a,x = copy.deepcopy(val_outs[0])
         
+        a = F.pad(a, (VALID_PAD, VALID_PAD), mode='replicate')
+        x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
+        
         pad = (1 + a.size(-1) // 2 ** self.depth) * 2 ** self.depth - a.size(-1)
-        x = F.pad(x, (0, pad))
-        a = F.pad(a, (0, pad), mode='reflect')
+        a = F.pad(a, (0, pad), mode='replicate')
+        x = F.pad(x, (0, pad), mode='replicate')
         
         print()
         samples: "N,X,L" = self(a.repeat(num_samples,1,1)).cpu().numpy()
+        
+        a = a[...,VALID_PAD:-(VALID_PAD + pad)]
+        x = x[...,VALID_PAD:-(VALID_PAD + pad)]
+        samples = samples[...,VALID_PAD:-(VALID_PAD + pad)]
         
         a: "A,L" = a.squeeze(0).cpu().numpy()
         x: "X,L" = x.squeeze(0).cpu().numpy()
