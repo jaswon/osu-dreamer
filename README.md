@@ -24,13 +24,30 @@ This will install `osu-dreamer` as well as all dependencies
 ### locally
 
 ```
-python scripts/pred.py -S SAMPLE_STEPS -N NUM_SAMPLES AUDIO_FILE MODEL_PATH
-```
+$ python scripts/pred.py -h
 
-- `SAMPLE_STEPS`: number of diffusion steps to sample
-- `NUM_SAMPLES`: number of maps to generate
-- `AUDIO_FILE`: path to audio file
-- `MODEL_PATH`: path to trained model
+usage: pred.py [-h] [--sample_steps SAMPLE_STEPS] [--num_samples NUM_SAMPLES] [--bpm BPM] [--title TITLE] [--artist ARTIST] MODEL_PATH AUDIO_FILE
+
+generate osu!std maps from raw audio
+
+positional arguments:
+  MODEL_PATH            trained model (.ckpt)
+  AUDIO_FILE            audio file to map
+
+optional arguments:
+  -h, --help            show this help message and exit
+
+model arguments:
+  --sample_steps SAMPLE_STEPS
+                        number of steps to sample
+  --num_samples NUM_SAMPLES
+                        number of maps to generate
+  --bpm BPM             BPM of audio (not required)
+
+metadata arguments:
+  --title TITLE         Song title - must be provided if it cannot be determined from the audio metadata
+  --artist ARTIST       Song artsit - must be provided if it cannot be determined from the audio metadata
+```
 
 ## Model training
 

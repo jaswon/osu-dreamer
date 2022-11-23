@@ -362,7 +362,7 @@ class Beatmap:
         return tuple(res)
     
     @classmethod
-    def signal_to_map(cls, audio_filename, sig, hop_length, n_fft, sr, name = None):
+    def signal_to_map(cls, metadata, sig, hop_length, n_fft, sr, bpm=None):
         hit_signal, cursor_signal = sig[:4], sig[4:]
         hit_signal = (hit_signal+1)/2
         
@@ -401,32 +401,32 @@ class Beatmap:
             l += np.linalg.norm(pts[-1] - pts[-2]) 
             return np.array(pts), l
             
-        beat_length = 1000
-        slider_mult = 1
+        beat_length = 1000 if bpm is None else 60 * 1000 / bpm
+        base_slider_vel = 100 / beat_length
             
         
         template = \
 f"""osu file format v14
 
 [General]
-AudioFilename:{audio_filename.name}
+AudioFilename: {metadata['audio_filename']}
 AudioLeadIn: 0
 Mode: 0
 
 [Metadata]
-Title:{audio_filename.parent.name}
-TitleUnicode:{audio_filename.parent.name}
-Creator:signal_map
-Version:{name or "signal_map"}
-BeatmapID:0
-BeatmapSetID:-1
+Title: {metadata['title']}
+TitleUnicode: {metadata['title']}
+Artist: {metadata['artist']}
+ArtistUnicode: {metadata['artist']}
+Creator: osu!dreamer
+Version: {metadata['version']}
 
 [Difficulty]
 HPDrainRate: 0
 CircleSize: 3
 OverallDifficulty: 0
 ApproachRate: 9.5
-SliderMultiplier: {slider_mult}
+SliderMultiplier: 1
 SliderTickRate: 1
 
 [TimingPoints]"""
@@ -437,8 +437,8 @@ SliderTickRate: 1
         tap_times, slider_start_times, slider_end_times, spinner_start_times, spinner_end_times, new_combo_times = hits
         
         sorted_hits.extend([ (t, None, 0, False) for t in tap_times ])
-        sorted_hits.extend([ (s, e, 1, False) for s,e in zip(slider_start_times, slider_end_times) ])
-        sorted_hits.extend([ (s, e, 2, False) for s,e in zip(spinner_start_times, spinner_end_times) ])
+        sorted_hits.extend([ (s, e, 1, False) for s,e in zip(sorted(slider_start_times), sorted(slider_end_times)) ])
+        sorted_hits.extend([ (s, e, 2, False) for s,e in zip(sorted(spinner_start_times), sorted(spinner_end_times)) ])
             
         sorted_hits = sorted(sorted_hits)
         
@@ -473,9 +473,8 @@ SliderTickRate: 1
             elif t_type == 1:
                 # slider
                 ctrl_pts, length = get_ctrl_pts(t, u)
-                
-                # dur = length / (slider_mult * 100 * SV) * beat_length
-                SV = length * beat_length / (u-t) / 100 / slider_mult
+
+                SV = length / (u-t) / base_slider_vel
 
                 x1,y1 = ctrl_pts[0]
                 curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
