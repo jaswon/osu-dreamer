@@ -14,6 +14,7 @@ setup(
         "einops",
         "pytorch-lightning",
         "jsonargparse[signatures]",
+        "mutagen",
     ],
     extras_require={
         "dev": ["matplotlib"],
