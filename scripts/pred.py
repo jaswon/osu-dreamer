@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from osu_dreamer.model import Model, load_audio, N_FFT, VALID_PAD
+from osu_dreamer.model import Model, load_audio, N_FFT
 from osu_dreamer.osu.beatmap import Beatmap
 
 def generate_mapset(audio_file, model_path, sample_steps, num_samples):
@@ -16,6 +16,8 @@ def generate_mapset(audio_file, model_path, sample_steps, num_samples):
     else:
         print('WARNING: no GPU found - inference will be slow')
 
+    # load model
+    # ======
     model = Model.load_from_checkpoint(model_path,
         sample_steps=sample_steps,
     )
@@ -23,21 +25,21 @@ def generate_mapset(audio_file, model_path, sample_steps, num_samples):
     if use_cuda:
           model = model.cuda()
     model.eval()
-    model.freeze()
-
+    
+    # load audio
+    # ======
     a, hop_length, sr = load_audio(audio_file)
-
-    a = F.pad(torch.tensor(a), (VALID_PAD, VALID_PAD), mode='replicate')
-
-    pad = (1 + a.size(-1) // 2 ** model.depth) * 2 ** model.depth - a.size(-1)
-    a = F.pad(a, (0, pad), mode='replicate')
+    a = torch.tensor(a)
 
     if use_cuda:
         a = a.cuda()
+        
+    # generate maps
+    # ======
+    pred = model(a.repeat(num_samples,1,1)).cpu().numpy()
 
-    pred = model(a.repeat(num_samples,1,1)).cpu().numpy()[...,VALID_PAD:-(VALID_PAD + pad)]
-
-    # generate random name
+    # package mapset
+    # ======
     while True:
         mapset_dir = Path(f"{int(1e17*random.random()):x}")
         try:

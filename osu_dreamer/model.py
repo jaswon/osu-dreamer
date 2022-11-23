@@ -363,10 +363,8 @@ class BetaSchedule:
         b,_,l = a.size()
         
         if x is None:
-            # g = .2
             # start from pure noise (for each example in the batch)
             x = torch.randn((b,X_DIM,l), device=a.device)
-            # x = torch.randn((b,X_DIM,1), device=x.device) * g + x * (1-g)
 
         for i in tqdm(list(reversed(range(self.timesteps))), desc='sampling loop time step'):
             t = torch.full((b,), i, device=a.device, dtype=torch.long)
@@ -486,8 +484,15 @@ class Model(pl.LightningModule):
         self.data_path = data_path
         self.src_path = src_path
         
-    def forward(self, a: "N,A,L", x: "N,X,L" = None, **kwargs):
-        return self.sampling_schedule.sample(a, x, **kwargs)
+    def inference_pad(self, x):
+        x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
+        pad = (1 + x.size(-1) // 2 ** self.depth) * 2 ** self.depth - x.size(-1)
+        x = F.pad(x, (0, pad), mode='replicate')
+        return x, (..., slice(VALID_PAD,-(VALID_PAD+pad)))
+        
+    def forward(self, a: "N,A,L", **kwargs):
+        a, sl = self.inference_pad(a)
+        return self.sampling_schedule.sample(a, **kwargs)[sl]
     
 #
 #
@@ -497,8 +502,12 @@ class Model(pl.LightningModule):
 #
 #
 
-    def compute_loss(self, a, x):
+    def compute_loss(self, a, x, pad=False):
         t = torch.randint(0, self.schedule.timesteps, (x.size(0),), device=x.device).long()
+        
+        if pad:
+            a, _ = self.inference_pad(a)
+            x, _ = self.inference_pad(x)
         
         true_eps: "N,X,L" = torch.randn_like(x)
 
@@ -574,22 +583,12 @@ class Model(pl.LightningModule):
         torch.cuda.empty_cache()
         a,x = copy.deepcopy(batch)
         
-        a = F.pad(a, (VALID_PAD, VALID_PAD), mode='replicate')
-        x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
-
-        pad = (1 + a.size(-1) // 2 ** self.depth) * 2 ** self.depth - a.size(-1)
-        a = F.pad(a, (0, pad), mode='replicate')
-        x = F.pad(x, (0, pad), mode='replicate')
-        
-        loss = self.compute_loss(a,x)
+        loss = self.compute_loss(a,x, pad=True)
         
         self.log(
             "val/loss", loss.detach(),
             logger=True, on_step=False, on_epoch=True,
         )
-        
-        a = a[...,VALID_PAD:-(VALID_PAD + pad)]
-        x = x[...,VALID_PAD:-(VALID_PAD + pad)]
         
         return a,x
         
@@ -602,19 +601,7 @@ class Model(pl.LightningModule):
         torch.cuda.empty_cache()
         a,x = copy.deepcopy(val_outs[0])
         
-        a = F.pad(a, (VALID_PAD, VALID_PAD), mode='replicate')
-        x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
-        
-        pad = (1 + a.size(-1) // 2 ** self.depth) * 2 ** self.depth - a.size(-1)
-        a = F.pad(a, (0, pad), mode='replicate')
-        x = F.pad(x, (0, pad), mode='replicate')
-        
-        print()
         samples: "N,X,L" = self(a.repeat(num_samples,1,1)).cpu().numpy()
-        
-        a = a[...,VALID_PAD:-(VALID_PAD + pad)]
-        x = x[...,VALID_PAD:-(VALID_PAD + pad)]
-        samples = samples[...,VALID_PAD:-(VALID_PAD + pad)]
         
         a: "A,L" = a.squeeze(0).cpu().numpy()
         x: "X,L" = x.squeeze(0).cpu().numpy()
