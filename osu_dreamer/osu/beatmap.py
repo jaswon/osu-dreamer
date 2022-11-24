@@ -267,6 +267,10 @@ class Beatmap:
 
         return slider.length / (smult * 100) * blen * slider.slides
 
+    
+    def timing_signal(self, frame_times: "L,") -> ",L":
+        pass
+
 
     def hit_signal(self, frame_times: "L,") -> "4,L":
         """
@@ -424,7 +428,7 @@ SliderTickRate: 1
             new_combo_idxs,
         ) = hit_frame_idxs
         
-        sorted_hits.extend([ (t, None, 0, False) for t in tap_idxs ])
+        sorted_hits.extend([ (t, t, 0, False) for t in tap_idxs ])
         sorted_hits.extend([ (s, e, 1, False) for s,e in zip(sorted(slider_start_idxs), sorted(slider_end_idxs)) ])
         sorted_hits.extend([ (s, e, 2, False) for s,e in zip(sorted(spinner_start_idxs), sorted(spinner_end_idxs)) ])
             
