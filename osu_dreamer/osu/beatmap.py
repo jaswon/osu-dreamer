@@ -39,7 +39,6 @@ def smooth_hit(x: np.ndarray, mu: "Union[float, Tuple[float, float]]", sigma: fl
         
     return np.exp(-.5 * z**2)
 
-
 class Beatmap:
     SONGS_PATH = "./osu!/Songs" # replace with path to `osu!/Songs` directory
 
@@ -269,19 +268,16 @@ class Beatmap:
         return slider.length / (smult * 100) * blen * slider.slides
 
 
-    def hit_signal(self, frames: "...,L", hop_length, n_fft, sr) -> "4,L":
+    def hit_signal(self, frame_times: "L,") -> "4,L":
         """
         returns an array encoding the hits occurring at the times represented by `frames`
         - [0] represents hits
         - [1] represents slider holds
         - [2] represents spinner holds
         - [3] represents new combos
-
-        `hop_length`, `n_fft`, `sr`: frame attributes
+        
+        - `frame_times`: array of times at each frame in ms
         """
-
-        # frame_times[i] = time at frames[..., i] (in ms)
-        frame_times: "L," = (np.arange(frames.shape[-1]) * hop_length + n_fft // 2) / sr * 1000.
 
         sig = np.zeros((4, len(frame_times)))
         for ho in self.hit_objects:
@@ -298,41 +294,39 @@ class Beatmap:
         return sig
     
     
-    def cursor_signal(self, frames: "...,L", hop_length, n_fft, sr) -> "2,L":
+    def cursor_signal(self, frame_times: "L,") -> "2,L":
         """
-        return [2,L] where [{0,1},i] is the {x,y} position at the time of `frames[i]`
+        return [2,L] where [{0,1},i] is the {x,y} position at `frames[i]` ms
         
-        - `hop_length`, `n_fft`, `sr`: frame attributes
+        - `frame_times`: array of times at each frame in ms
         """
-        
-        frame_times: "L," = (np.arange(frames.shape[-1]) * hop_length + n_fft // 2) / sr * 1000.
-        
         return np.array([ self.cursor(t)[0] for t in frame_times ]).T
     
     
     MAP_SIGNAL_DIM = 6
     
-    def map_signal(self, frames: "...,L", hop_length, n_fft, sr) -> "6,L": 
+    def map_signal(self, frame_times: "L,") -> "6,L": 
         """
         returns a [6,L] scaled to [-1,1]
+        
+        - `frame_times`: array of times at each frame in ms
         """
         
-        hits: "4,L" = self.hit_signal(frames, hop_length, n_fft, sr)
-        cursor: "2,L" = self.cursor_signal(frames, hop_length, n_fft, sr) / np.array([[512],[384]])
+        hits: "4,L" = self.hit_signal(frame_times)
+        cursor: "2,L" = self.cursor_signal(frame_times) / np.array([[512],[384]])
         
         return np.concatenate([hits, cursor], axis=0) * 2 - 1
     
     @classmethod
-    def signal_to_hits(cls, sig, hop_length, n_fft, sr):
+    def signal_to_hits(cls, sig):
         """
-        returns an 6-tuple of lists where each list contains the times (in ms) when
+        returns an 6-tuple of lists where each list contains the frame indices when
         a hit of type {tap, slider start, slider end, spinner start, spinner end, new_combo} occurs
         
-        `sig`: [4,L] array 
-        `hop_length`, `n_fft`, `sr`: frame attributes
+        `sig`: [4,L] array
         """
-        f_b = max(2, HIT_SD*6//hop_length)
-        feat = smooth_hit(np.arange(-f_b, f_b+1) * hop_length, 0)
+        f_b = max(2, HIT_SD*6)
+        feat = smooth_hit(np.arange(-f_b, f_b+1), 0)
         
         tap_sig, slider_sig, spinner_sig, new_combo_sig = sig
         
@@ -344,25 +338,21 @@ class Beatmap:
         spinner_start_sig = np.maximum(0, spinner_sig_grad)
         spinner_end_sig = -np.minimum(0, spinner_sig_grad)
         
-        off = hop_length / sr * 1000
-        
         res = []
         for hit_sig, hit_offset, peak_h in zip(
             [tap_sig, slider_start_sig, slider_end_sig, spinner_start_sig, spinner_end_sig, new_combo_sig],
-            [0,off,-off,off,-off,0],
+            [0,1,-1,1,-1,0],
             [.5, .25, .25, .25, .25, .5],
         ):
             corr = scipy.signal.correlate(hit_sig, feat, mode='same')
-            hit_peaks = scipy.signal.find_peaks(corr, height=peak_h)[0]
+            hit_peaks = scipy.signal.find_peaks(corr, height=peak_h)[0] + hit_offset
             
-            res.append(np.rint(
-                ( hit_peaks * hop_length + n_fft // 2 ) / sr * 1000. + hit_offset
-            ).astype(int).tolist())
+            res.append(hit_peaks.astype(int).tolist())
             
         return tuple(res)
     
     @classmethod
-    def signal_to_map(cls, metadata, sig, hop_length, n_fft, sr, bpm=None):
+    def signal_to_map(cls, metadata, sig, frame_times, bpm=None):
         hit_signal, cursor_signal = sig[:4], sig[4:]
         hit_signal = (hit_signal+1)/2
         
@@ -374,21 +364,12 @@ class Beatmap:
         cursor_signal *= np.array([[512],[384]]) * (1 - 2*padding)
         cursor_signal += np.array([[512],[384]]) * padding
         
-        frame_times: "L," = (np.arange(sig.shape[-1]) * hop_length + n_fft // 2) / sr * 1000.
-        hits = cls.signal_to_hits(hit_signal, hop_length, n_fft, sr)
-    
-        def get_pos(t):
-            i = (t / 1000. * sr - n_fft // 2) / hop_length
-            ia = int(max(0, np.floor(i)))
-            ib = int(min(len(frame_times)-1, np.ceil(i)))
-            f = i - ia
-            
-            a = cursor_signal[:, ia]
-            b = cursor_signal[:, ib]
-            
-            return (1-f) * a + f * b
+        hit_frame_idxs = cls.signal_to_hits(hit_signal)
         
-        def get_ctrl_pts(a,b, step=5):
+        def get_pos(i):
+            return cursor_signal[:, i]
+        
+        def get_ctrl_pts(a,b, step=1):
             pts = [get_pos(a)]
             l = 0
             x = a + step
@@ -434,21 +415,28 @@ SliderTickRate: 1
         
         # sort hits
         sorted_hits = []
-        tap_times, slider_start_times, slider_end_times, spinner_start_times, spinner_end_times, new_combo_times = hits
+        (
+            tap_idxs,
+            slider_start_idxs,
+            slider_end_idxs,
+            spinner_start_idxs,
+            spinner_end_idxs,
+            new_combo_idxs,
+        ) = hit_frame_idxs
         
-        sorted_hits.extend([ (t, None, 0, False) for t in tap_times ])
-        sorted_hits.extend([ (s, e, 1, False) for s,e in zip(sorted(slider_start_times), sorted(slider_end_times)) ])
-        sorted_hits.extend([ (s, e, 2, False) for s,e in zip(sorted(spinner_start_times), sorted(spinner_end_times)) ])
+        sorted_hits.extend([ (t, None, 0, False) for t in tap_idxs ])
+        sorted_hits.extend([ (s, e, 1, False) for s,e in zip(sorted(slider_start_idxs), sorted(slider_end_idxs)) ])
+        sorted_hits.extend([ (s, e, 2, False) for s,e in zip(sorted(spinner_start_idxs), sorted(spinner_end_idxs)) ])
             
         sorted_hits = sorted(sorted_hits)
         
         
         # associate hits with new combos
-        for new_combo_time in new_combo_times:
-            idx = bisect.bisect_left(sorted_hits, (new_combo_time,))
+        for new_combo_idx in new_combo_idxs:
+            idx = bisect.bisect_left(sorted_hits, (new_combo_idx,))
             if idx == len(sorted_hits):
                 idx = idx-1
-            elif idx+1 < len(sorted_hits) and abs(new_combo_time - sorted_hits[idx][0]) > abs(sorted_hits[idx+1][0] - new_combo_time):
+            elif idx+1 < len(sorted_hits) and abs(new_combo_idx - sorted_hits[idx][0]) > abs(sorted_hits[idx+1][0] - new_combo_idx):
                 idx = idx+1
             sorted_hits[idx] = ( sorted_hits[idx][0], sorted_hits[idx][1], sorted_hits[idx][2], True )
 
@@ -457,22 +445,24 @@ SliderTickRate: 1
         tps = [f"0,{beat_length},4,0,0,50,1,0"] # timing points
         
         last_up = None
-        for t, u, t_type, new_combo in sorted_hits:
+        for i, j, t_type, new_combo in sorted_hits:
+            
+            t,u = frame_times[i], frame_times[j]
             
             # ignore objects that start before the previous one ends
-            if last_up is not None and t < last_up:
+            if last_up is not None and i < last_up:
                 continue
 
             new_combo = 4 if new_combo else 0
                 
             if u is None:
                 # hit circle
-                x,y = get_pos(t)
+                x,y = get_pos(i)
                 hos.append(f"{x},{y},{t},{1 + new_combo},0")
-                last_up = t
+                last_up = i
             elif t_type == 1:
                 # slider
-                ctrl_pts, length = get_ctrl_pts(t, u)
+                ctrl_pts, length = get_ctrl_pts(i, j)
 
                 SV = length / (u-t) / base_slider_vel
 
@@ -480,11 +470,11 @@ SliderTickRate: 1
                 curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
                 hos.append(f"{x1},{y1},{t},{2 + new_combo},0,B|{curve_pts},1,{length}")
                 tps.append(f"{t-1},{-100/SV},4,0,0,50,0,0")
-                last_up = u
+                last_up = j
             elif t_type == 2:
                 # spinner
                 hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
-                last_up = u
+                last_up = j
                     
         return "\n".join([template, *tps, """
 

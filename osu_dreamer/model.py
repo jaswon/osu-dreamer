@@ -667,20 +667,18 @@ def load_audio(audio_file):
     if wave.dim() > 1:
         wave = wave.mean((0,))
 
-    hop_length = int(HOP_LEN_S * sr)
-
     # compute spectrogram
     spec: "A,L" = torchaudio.transforms.MFCC(
         sample_rate=sr, 
         melkwargs=dict(
             normalized=True,
             n_fft=N_FFT,
-            hop_length=hop_length,
+            hop_length=int(HOP_LEN_S * sr),
             n_mels=N_MELS,
         ),
     )(wave).numpy()
     
-    return spec, hop_length, sr
+    return spec, sr
 
 def prepare_map(data_dir, depth, map_file):
     try:
@@ -705,14 +703,13 @@ def prepare_map(data_dir, depth, map_file):
     if spec_path.exists():
         # determine audio sample rate
         sr = torchaudio.info(bm.audio_filename).sample_rate
-        hop_length = int(HOP_LEN_S * sr)
 
         with open(spec_path, "rb") as f:
             spec = np.load(f)
     else:
         # load audio file
         try:
-            spec, hop_length, sr = load_audio(bm.audio_filename)
+            spec, sr = load_audio(bm.audio_filename)
         except Exception as e:
             print(f"{bm.audio_filename}: {e}")
             return
@@ -723,7 +720,10 @@ def prepare_map(data_dir, depth, map_file):
             np.save(f, spec)
 
     # compute hit signal
-    x: "X,L" = bm.map_signal(spec, hop_length, N_FFT, sr)
+    x: "X,L" = bm.map_signal(librosa.frames_to_time(
+        np.arange(frames.shape[-1]),
+        sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
+    ) * 1000)
 
     # save hits
     with open(map_path, "wb") as f:

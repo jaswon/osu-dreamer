@@ -6,7 +6,10 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from osu_dreamer.model import Model, load_audio, N_FFT
+import librosa
+import numpy as np
+
+from osu_dreamer.model import Model, load_audio, N_FFT, HOP_LEN_S
 from osu_dreamer.osu.beatmap import Beatmap
 
 def random_hex_string(num):
@@ -43,11 +46,16 @@ def generate_mapset(
     
     # load audio
     # ======
-    a, hop_length, sr = load_audio(audio_file)
+    a, sr = load_audio(audio_file)
     a = torch.tensor(a)
 
     if use_cuda:
         a = a.cuda()
+        
+    frame_times = librosa.frames_to_time(
+        np.arange(a.shape[-1]),
+        sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
+    ) * 1000
         
     # generate maps
     # ======
@@ -73,7 +81,7 @@ def generate_mapset(
                 artist=artist,
                 version=f"version {i}",
             ),
-            p, hop_length, N_FFT, sr, bpm=bpm,
+            p, frame_times, bpm=bpm,
         )
 
         out_file = mapset_dir / f"{artist} - {title} (osu!dreamer) [version {i}].osu"
