@@ -10,7 +10,7 @@ import librosa
 import numpy as np
 
 from osu_dreamer.model import Model, load_audio, N_FFT, HOP_LEN_S
-from osu_dreamer.osu.beatmap import signal_to_map
+from osu_dreamer.signal import to_map as signal_to_map
 
 def random_hex_string(num):
     import random

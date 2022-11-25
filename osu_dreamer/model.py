@@ -29,6 +29,10 @@ import pytorch_lightning as pl
 from torch.utils.data import IterableDataset, DataLoader, random_split
 
 from .osu.beatmap import Beatmap
+from .signal import (
+    MAP_SIGNAL_DIM as X_DIM,
+    from_beatmap as signal_from_beatmap,
+)
 
 
 # audio processing constants
@@ -37,7 +41,6 @@ HOP_LEN_S = 128. / 22050 # ~6 ms per frame
 N_MELS = 64
 
 # model constants
-X_DIM = Beatmap.MAP_SIGNAL_DIM
 A_DIM = 40
 
 VALID_PAD = 1024
@@ -721,9 +724,9 @@ def prepare_map(data_dir, depth, map_file):
         with open(spec_path, "wb") as f:
             np.save(f, spec)
 
-    # compute hit signal
-    x: "X,L" = bm.map_signal(librosa.frames_to_time(
-        np.arange(frames.shape[-1]),
+    # compute map signal
+    x: "X,L" = signal_from_beatmap(bm, librosa.frames_to_time(
+        np.arange(spec.shape[-1]),
         sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
     ) * 1000)
 
