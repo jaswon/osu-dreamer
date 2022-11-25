@@ -12,6 +12,9 @@ class Timed:
 
     def __repr__(self):
         return f"{self.t:08}:"
+    
+    def __lt__(self, other):
+        return self.t < other.t
 
 
 class TimingPoint(Timed):
