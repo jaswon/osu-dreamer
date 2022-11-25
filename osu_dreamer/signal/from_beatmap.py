@@ -5,8 +5,6 @@ from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner
 
 from .util import smooth_hit
 
-__all__ = ['from_beatmap', 'MAP_SIGNAL_DIM', 'timing_signal']
-
 MAP_SIGNAL_DIM = 6
     
 def timing_signal(beatmap, frame_times: "L,") -> ",L":
@@ -29,15 +27,14 @@ def hit_signal(beatmap, frame_times: "L,") -> "4,L":
         if isinstance(ho, Circle):
             sig[0] += smooth_hit(frame_times, ho.t)
         elif isinstance(ho, Slider):
-            sig[1] += smooth_hit(frame_times, (ho.t, ho.t+int(beatmap.slider_duration(ho))))
+            sig[1] += smooth_hit(frame_times, (ho.t, ho.end_time()))
         else: # Spinner
-            sig[2] += smooth_hit(frame_times, (ho.t, ho.u))
+            sig[2] += smooth_hit(frame_times, (ho.t, ho.end_time()))
 
         if ho.new_combo:
             sig[3] += smooth_hit(frame_times, ho.t)
 
     return sig
-
 
 def cursor_signal(beatmap, frame_times: "L,") -> "2,L":
     """
@@ -45,8 +42,45 @@ def cursor_signal(beatmap, frame_times: "L,") -> "2,L":
 
     - `frame_times`: array of times at each frame in ms
     """
-    return np.array([ beatmap.cursor(t)[0] for t in frame_times ]).T
+    
+    def hit_object_pair_gen():
+        """generator that yields the latest pair of adjacent hit objects that surround `t`"""
+        cur_t = yield
+        for a,b in zip([None] + beatmap.hit_objects, beatmap.hit_objects + [None]):
+            while b is None or b.t > cur_t:
+                cur_t = yield a,b
+    hit_object_pair_gen = hit_object_pair_gen()
+    next(hit_object_pair_gen)
+    
+    pos = []
+    for t in frame_times:
+        a, b = hit_object_pair_gen.send(t)
+        if a is None:
+            # before first hit object
+            pos.append(b.start_pos())
+        elif t < a.end_time():
+            # hitting current hit object
+            if isinstance(a, (Circle, Spinner)):
+                pos.append(a.start_pos())
+            elif isinstance(a, Slider):
+                single_slide = a.slide_duration / a.slides
 
+                ts = (t - a.t) % (single_slide * 2)
+                if ts < single_slide:  # start -> end
+                    pos.append(a.lerp(ts / single_slide))
+                else:  # end -> start
+                    pos.append(a.lerp(2 - ts / single_slide))
+        elif b is None:
+            # after last hit object
+            pos.append(a.end_pos())
+        else:
+            # moving to next hit object
+            f = (t - a.end_time()) / (b.t - a.end_time())
+            pos.append((1 - f) * a.end_pos() + f * b.start_pos())
+            
+    return np.array(pos).T
+        
+            
 
 def from_beatmap(beatmap, frame_times: "L,") -> "6,L":
     """

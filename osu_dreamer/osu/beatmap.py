@@ -151,11 +151,11 @@ class Beatmap:
             self.parse_map_data()
 
     def parse_map_data(self):
-        self.parse_hit_objects(self.unparsed_hitobjects)
-        del self.unparsed_hitobjects
-
         self.parse_timing_points(self.unparsed_timingpoints)
         del self.unparsed_timingpoints
+
+        self.parse_hit_objects(self.unparsed_hitobjects)
+        del self.unparsed_hitobjects
 
         self.parse_events(self.unparsed_events)
         del self.unparsed_events
@@ -174,18 +174,36 @@ class Beatmap:
             x, y, t, k = [int(x) for x in spl[:4]]
             new_combo = (k&(1<<2)) > 0 
             if k & (1 << 0):  # hit circle
-                self.hit_objects.append(Circle(t, new_combo, x, y))
+                ho = Circle(t, new_combo, x, y)
             elif k & (1 << 1):  # slider
                 curve, slides, length = spl[5:8]
                 _, *control_points = curve.split("|")
                 control_points = [np.array([x,y])] + [
                     np.array(list(map(int, p.split(":")))) for p in control_points
                 ]
-                self.hit_objects.append(
-                    from_control_points(t, new_combo, int(slides), float(length), control_points)
+                
+                utp = self.get_active_timing_point(t, inh=False)
+                beat_length = self.uninherited_timing_points[0].x if utp is None else utp.x
+
+                itp = self.get_active_timing_point(t, inh=True)
+                slider_mult = self.slider_mult * (1 if itp is None else itp.x)
+                
+                ho = from_control_points(
+                    t, 
+                    beat_length, 
+                    slider_mult,
+                    new_combo,
+                    int(slides),
+                    float(length),
+                    control_points,
                 )
             elif k & (1 << 3):  # spinner
-                self.hit_objects.append(Spinner(t, new_combo, int(spl[5])))
+                ho = Spinner(t, new_combo, int(spl[5]))
+                
+            if len(self.hit_objects) and ho.t < self.hit_objects[-1].end_time():
+                raise ValueError("hit object starts before previous hit object ends:", t)
+                
+            self.hit_objects.append(ho)
             
         if len(self.hit_objects) == 0:
             raise ValueError("no hit objects")
@@ -232,19 +250,6 @@ class Beatmap:
                 # just return the first uninherited timing point
                 idx = 0
         return tps[idx]
-
-    def slider_duration(self, slider):
-        """
-        return slider speed in osu!pixels per ms
-        """
-        
-        utp = self.get_active_timing_point(slider.t, inh=False)
-        blen = self.uninherited_timing_points[0].x if utp is None else utp.x
-        
-        itp = self.get_active_timing_point(slider.t, inh=True)
-        smult = self.slider_mult * (1 if itp is None else itp.x)
-
-        return slider.length / (smult * 100) * blen * slider.slides    
     
     def cursor(self, t):
         """

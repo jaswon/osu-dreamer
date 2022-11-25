@@ -53,6 +53,15 @@ class HitObject(Timed):
 
     def __repr__(self):
         return super().__repr__() + (" *" if self.new_combo else "")
+    
+    def end_time(self) -> int:
+        raise NotImplementedError
+    
+    def start_pos(self) -> NDIntArray:
+        raise NotImplementedError
+        
+    def end_pos(self) -> NDIntArray:
+        raise NotImplementedError
 
 
 class Circle(HitObject):
@@ -63,7 +72,15 @@ class Circle(HitObject):
 
     def __repr__(self):
         return f"{super().__repr__()} Circle({self.x},{self.y})"
-
+    
+    def end_time(self) -> int:
+        return self.t
+    
+    def start_pos(self) -> NDIntArray:
+        return np.array([ self.x, self.y ])
+    
+    def end_pos(self) -> NDIntArray:
+        return self.start_pos()
 
 class Spinner(HitObject):
     def __init__(self, t: int, new_combo: bool, u: int):
@@ -72,16 +89,46 @@ class Spinner(HitObject):
 
     def __repr__(self):
         return f"{super().__repr__()} Spinner({self.u})"
+    
+    def end_time(self) -> int:
+        return self.u
+    
+    def start_pos(self) -> NDIntArray:
+        return np.array([ 256, 192 ])
+    
+    def end_pos(self) -> NDIntArray:
+        return self.start_pos()
 
 
 class Slider(HitObject):
-    def __init__(self, t: int, new_combo: bool, slides: int, length: float):
+    def __init__(
+        self,
+        t: int,
+        beat_length: float,
+        slider_mult: float,
+        new_combo: bool,
+        slides: int,
+        length: float,
+    ):
         super().__init__(t, new_combo)
         self.slides = slides
         self.length = length
+        self.beat_length = beat_length
+        self.slider_mult = slider_mult
+        
+        self.slide_duration = length / (slider_mult * 100) * beat_length * slides
+        
+    def end_time(self) -> int:
+        return self.t + self.slide_duration
 
     def lerp(self, _: float) -> NDIntArray:
         """
         return cursor pos given fraction of one slide (t=1 means end of slider)
         """
         raise NotImplementedError
+    
+    def start_pos(self) -> NDIntArray:
+        return self.lerp(0)
+    
+    def end_pos(self) -> NDIntArray:
+        return self.lerp(self.slides % 2)
