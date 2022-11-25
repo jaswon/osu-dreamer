@@ -435,6 +435,7 @@ class Model(pl.LightningModule):
         loss_type: str,
         
         sample_density: float,
+        subseq_density: float,
         batch_size: int,
         num_workers: int,
         
@@ -473,6 +474,7 @@ class Model(pl.LightningModule):
         self.depth = len(dim_mults)
         self.seq_len = 2 ** (self.depth + ctx_depth)
         self.sample_density = sample_density
+        self.subseq_density = subseq_density
         self.batch_size = batch_size
         self.num_workers = num_workers
         
@@ -549,7 +551,7 @@ class Model(pl.LightningModule):
         print(f'train: {train_size} | val: {val_size}')
         train_split, val_split = random_split(full_set, [train_size, val_size])
         
-        self.train_set = SubsequenceDataset(dataset=train_split, seq_len=self.seq_len, sample_density=self.sample_density)
+        self.train_set = SubsequenceDataset(dataset=train_split, seq_len=self.seq_len, sample_density=self.sample_density, subseq_density=self.subseq_density)
         self.val_set = FullSequenceDataset(dataset=val_split)
             
     def train_dataloader(self):

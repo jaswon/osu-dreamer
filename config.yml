@@ -46,6 +46,9 @@ model:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
+    subseq_density: 4.
+    
+    # what fraction of the full dataset to use per epoch (must be between 0 and 1)
     sample_density: .2
     
     # size of training batch
