@@ -434,7 +434,6 @@ SliderTickRate: 1
             
         sorted_hits = sorted(sorted_hits)
         
-        
         # associate hits with new combos
         for new_combo_idx in new_combo_idxs:
             idx = bisect.bisect_left(sorted_hits, (new_combo_idx,))
@@ -459,7 +458,7 @@ SliderTickRate: 1
 
             new_combo = 4 if new_combo else 0
                 
-            if u is None:
+            if i == j:
                 # hit circle
                 x,y = get_pos(i)
                 hos.append(f"{x},{y},{t},{1 + new_combo},0")
