@@ -10,7 +10,7 @@ import librosa
 import numpy as np
 
 from osu_dreamer.model import Model, load_audio, N_FFT, HOP_LEN_S
-from osu_dreamer.osu.beatmap import Beatmap
+from osu_dreamer.osu.beatmap import signal_to_map
 
 def random_hex_string(num):
     import random
@@ -74,7 +74,7 @@ def generate_mapset(
     shutil.copy(audio_file, mapset_dir / audio_file.name)
 
     for i, p in enumerate(pred):
-        pred_map = Beatmap.signal_to_map(
+        pred_map = signal_to_map(
             dict(
                 audio_filename=audio_file.name,
                 title=title,
