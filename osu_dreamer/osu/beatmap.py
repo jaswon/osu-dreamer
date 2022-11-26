@@ -169,6 +169,7 @@ class Beatmap:
 
     def parse_timing_points(self, lines):
         self.timing_points = []
+        self.uninherited_timing_points = []
         
         cur_beat_length = None
         cur_slider_mult = 1.
@@ -195,9 +196,12 @@ class Beatmap:
                 cur_meter = meter
                 
             tp = TimingPoint(int(t), cur_beat_length, cur_slider_mult, cur_meter)
-            if len(self.timing_points) > 0 and tp == self.timing_points[-1]:
-                continue
-            self.timing_points.append(tp)
+            if len(self.timing_points) == 0 or tp != self.timing_points[-1]:
+                self.timing_points.append(tp)
+            
+            utp = TimingPoint(int(t), cur_beat_length, None, cur_meter)
+            if len(self.uninherited_timing_points) == 0 or utp != self.uninherited_timing_points[-1]:
+                self.uninherited_timing_points.append(utp)
             
         if len(self.timing_points) == 0:
             raise ValueError("no uninherited timing points")
@@ -239,7 +243,7 @@ class Beatmap:
                 ho = Spinner(t, new_combo, int(spl[5]))
                 
             if len(self.hit_objects) and ho.t < self.hit_objects[-1].end_time():
-                raise ValueError("hit object starts before previous hit object ends:", t)
+                raise ValueError(f"hit object starts before previous hit object ends: {t}")
                 
             self.hit_objects.append(ho)
             

@@ -22,7 +22,7 @@ class TimingPoint(Timed):
         super().__init__(t)
         self.beat_length = beat_length
         self.slider_mult = slider_mult
-        self.meter = meter
+        self.meter = int(meter)
         
     def __repr__(self):
         return " ".join([

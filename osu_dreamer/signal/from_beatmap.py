@@ -1,14 +1,40 @@
-
 import numpy as np
 
-from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner
+from osu_dreamer.osu.beatmap import Beatmap
+from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner, TimingPoint
 
 from .util import smooth_hit
 
 MAP_SIGNAL_DIM = 6
+
+TIMING_DIM = 1
     
-def timing_signal(beatmap, frame_times: "L,") -> ",L":
-    pass
+def timing_signal(beatmap_or_timing_points, frame_times: "L,") -> "1,L":
+    if isinstance(beatmap_or_timing_points, Beatmap):
+        utps = beatmap_or_timing_points.uninherited_timing_points
+    elif (
+        isinstance(beatmap_or_timing_points, list) and
+        len(beatmap_or_timing_points) > 0 and
+        isinstance(beatmap_or_timing_points[0], TimingPoint)
+    ):
+        utps = beatmap_or_timing_points
+    else:
+        raise ValueError("first argument must be a Beatmap or a list of TimingPoint")
+        
+    # timing point boundaries
+    tpt = np.array([-np.inf] + [ utp.t for utp in utps[1:] ] + [np.inf])[:, None]
+    
+    # active_tp[0, i] = index into `utps` of the timing point active at frame `i`
+    active_tp = (frame_times >= tpt[:-1]) & (frame_times < tpt[1:])
+    active_tp: "[0,TP),L" = np.argwhere(active_tp.T)[None, :, 1]
+    
+    choices: "TP,L" = np.array([ 
+        (frame_times - utp.t) / utp.beat_length * 2 * np.pi * 2
+        for utp in utps
+    ])
+
+    x: "1,L" = np.take_along_axis(choices, active_tp, axis=0)
+    return np.maximum(0, np.cos(x))
 
 
 def hit_signal(beatmap, frame_times: "L,") -> "4,L":
