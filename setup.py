@@ -2,9 +2,13 @@ from setuptools import setup
 
 setup(
     name="osu-dreamer",
-    version="1.0",
+    version="2.3",
     python_requires='>=3.7.15',
-    packages=["osu_dreamer", "osu_dreamer.osu"],
+    packages=[
+        "osu_dreamer",
+        "osu_dreamer.osu",
+        "osu_dreamer.signal",
+    ],
     install_requires=[
         "bezier",
         "librosa",
