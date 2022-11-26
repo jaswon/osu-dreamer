@@ -194,10 +194,13 @@ class Beatmap:
                 cur_slider_mult = 1.
                 cur_meter = meter
                 
-            if cur_beat_length is None:
-                raise ValueError("no uninherited timing points")
-                
-            self.timing_points.append(TimingPoint(int(t), cur_beat_length, cur_slider_mult, cur_meter))
+            tp = TimingPoint(int(t), cur_beat_length, cur_slider_mult, cur_meter)
+            if len(self.timing_points) > 0 and tp == self.timing_points[-1]:
+                continue
+            self.timing_points.append(tp)
+            
+        if len(self.timing_points) == 0:
+            raise ValueError("no uninherited timing points")
             
     def get_active_timing_point(self, t):
         idx = bisect.bisect(self.timing_points, Timed(t)) - 1

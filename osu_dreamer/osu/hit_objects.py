@@ -31,6 +31,13 @@ class TimingPoint(Timed):
             f"slider_mult={self.slider_mult}",
             f"meter={self.meter}",
         ])
+    
+    def __eq__(self, other):
+        return all([
+            self.beat_length == other.beat_length,
+            self.slider_mult == other.slider_mult,
+            self.meter == other.meter,
+        ])
 
 class HitObject(Timed):
     def __init__(self, t: int, new_combo: bool):
