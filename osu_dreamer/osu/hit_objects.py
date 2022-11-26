@@ -18,33 +18,19 @@ class Timed:
 
 
 class TimingPoint(Timed):
-    def __init__(self, t: int, x: float):
+    def __init__(self, t: int, beat_length: float, slider_mult: float, meter: int):
         super().__init__(t)
-        self.x = x
-
-
-class Uninherited(TimingPoint):
-    def __init__(self, t: int, x: float, meter: int):
-        """
-        x: duration of a beat in ms
-        meter: beats in a measure
-        """
-        super().__init__(t, x)
+        self.beat_length = beat_length
+        self.slider_mult = slider_mult
         self.meter = meter
-
+        
     def __repr__(self):
-        return f"{super().__repr__()} {self.x} (x{self.meter})"
-
-
-class Inherited(TimingPoint):
-    def __init__(self, t: int, x: float):
-        """
-        x: slider speed multiplier (eg 2 = twice as fast)
-        """
-        super().__init__(t, x)
-
-    def __repr__(self):
-        return f"{super().__repr__()} *{self.x}"
+        return " ".join([
+            super().__repr__(),
+            f"beat_len={self.beat_length}",
+            f"slider_mult={self.slider_mult}",
+            f"meter={self.meter}",
+        ])
 
 class HitObject(Timed):
     def __init__(self, t: int, new_combo: bool):

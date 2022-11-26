@@ -163,7 +163,7 @@ def to_map(metadata, sig, frame_times, bpm=None):
             x1,y1 = ctrl_pts[0]
             curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
             hos.append(f"{x1},{y1},{t},{2 + new_combo},0,B|{curve_pts},1,{length}")
-            tps.append(f"{t-1},{-100/SV},4,0,0,50,0,0")
+            tps.append(f"{t},{-100/SV},4,0,0,50,0,0")
             last_up = j
         elif t_type == 2:
             # spinner

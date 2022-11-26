@@ -7,7 +7,7 @@ from pathlib import Path
 import bisect
 import numpy as np
 
-from .hit_objects import Timed, Inherited, Uninherited, Circle, Spinner, Slider
+from .hit_objects import Timed, TimingPoint, Circle, Spinner, Slider
 from .sliders import from_control_points
 
 
@@ -167,6 +167,45 @@ class Beatmap:
             if ev[0] == 2:
                 self.events.append(ev)
 
+    def parse_timing_points(self, lines):
+        self.timing_points = []
+        
+        cur_beat_length = None
+        cur_slider_mult = 1.
+        cur_meter = None
+        
+        for l in lines:
+            vals = [ float(x) for x in l.strip().split(",") ]
+            t, x, meter = vals[:3]
+            
+            if vals[6] == 0:
+                # inherited timing point - controls slider multiplier
+                if len(self.timing_points) == 0:
+                    continue
+                    
+                if self.timing_points[-1].t == t:
+                    self.timing_points.pop()
+                    
+                # .1 <= slider_mult <= 10.
+                cur_slider_mult = min(10., max(.1, round(-100 / float(x), 3)))
+            else:
+                # uninherited timing point - controls beat length and meter, resets slider multiplier
+                cur_beat_length = x
+                cur_slider_mult = 1.
+                cur_meter = meter
+                
+            if cur_beat_length is None:
+                raise ValueError("no uninherited timing points")
+                
+            self.timing_points.append(TimingPoint(int(t), cur_beat_length, cur_slider_mult, cur_meter))
+            
+    def get_active_timing_point(self, t):
+        idx = bisect.bisect(self.timing_points, Timed(t)) - 1
+        if idx < 0:
+            # `t` comes before every timing point
+            idx = 0
+        return self.timing_points[idx]
+
     def parse_hit_objects(self, lines):
         self.hit_objects = []
         for l in lines:
@@ -182,16 +221,12 @@ class Beatmap:
                     np.array(list(map(int, p.split(":")))) for p in control_points
                 ]
                 
-                utp = self.get_active_timing_point(t, inh=False)
-                beat_length = self.uninherited_timing_points[0].x if utp is None else utp.x
-
-                itp = self.get_active_timing_point(t, inh=True)
-                slider_mult = self.slider_mult * (1 if itp is None else itp.x)
+                tp = self.get_active_timing_point(t)
                 
                 ho = from_control_points(
                     t, 
-                    beat_length, 
-                    slider_mult,
+                    tp.beat_length, 
+                    self.slider_mult * tp.slider_mult,
                     new_combo,
                     int(slides),
                     float(length),
@@ -207,49 +242,6 @@ class Beatmap:
             
         if len(self.hit_objects) == 0:
             raise ValueError("no hit objects")
-
-    def parse_timing_points(self, lines):
-        self.inherited_timing_points = []
-        self.uninherited_timing_points = []
-        
-        for l in lines:
-            vals = [ float(x) for x in l.strip().split(",") ]
-            t = vals[0]
-            beat_length = vals[1]
-            meter = vals[2]
-            uninherited = vals[6]
-            inh = uninherited == 0
-
-            # > For uninherited timing points, the duration of a beat, in milliseconds.
-            # > For inherited timing points, a negative inverse slider velocity multiplier, as a percentage.
-            # > For example, -50 would make all sliders in this timing section twice as fast as SliderMultiplier.
-            x = beat_length if uninherited else round(-100 / float(beat_length), 3)
-            
-            # skip timing points that have the same `x` field
-            tps = self.inherited_timing_points if inh else self.uninherited_timing_points
-            if len(tps) > 0 and tps[-1].x == x:
-                continue
-            
-            tps.append(Inherited(int(t), x) if inh else Uninherited(int(t), x, int(meter)))
-            
-        if len(self.uninherited_timing_points) == 0:
-            raise ValueError("no uninherited timing points")
-            
-#         if self.uninherited_timing_points[0].t > self.hit_objects[0].t:
-#             raise ValueError("first hit object comes before first uninherited timing point")
-            
-    def get_active_timing_point(self, t, inh):
-        tps = self.inherited_timing_points if inh else self.uninherited_timing_points
-        idx = bisect.bisect_left(tps, Timed(t)) - 1
-        if idx < 0:
-            # `t` comes before every timing point
-            if inh:
-                return None
-            else:
-                # when `t` is before the first uninherited timing point,
-                # just return the first uninherited timing point
-                idx = 0
-        return tps[idx]
     
     def cursor(self, t):
         """
