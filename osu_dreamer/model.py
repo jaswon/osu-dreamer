@@ -369,6 +369,7 @@ class BetaSchedule:
             # start from pure noise (for each example in the batch)
             x = torch.randn((b,X_DIM,l), device=a.device)
 
+        print()
         for i in tqdm(list(reversed(range(self.timesteps))), desc='sampling loop time step'):
             t = torch.full((b,), i, device=a.device, dtype=torch.long)
             
@@ -377,9 +378,7 @@ class BetaSchedule:
             if i == 0 or ddim:
                 x = model_mean
             else:
-                x = model_mean + torch.sqrt(model_var) * torch.randn_like(x) 
-            
-        print()
+                x = model_mean + torch.sqrt(model_var) * torch.randn_like(x)
             
         return x
     

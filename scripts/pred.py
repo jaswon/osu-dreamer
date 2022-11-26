@@ -38,6 +38,7 @@ def generate_mapset(
     # ======
     model = Model.load_from_checkpoint(model_path,
         sample_steps=sample_steps,
+        subseq_density=1.,
     )
     
     if use_cuda:

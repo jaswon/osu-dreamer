@@ -1,3 +1,5 @@
+import bisect
+
 import numpy as np
 import scipy
 
@@ -50,7 +52,7 @@ def to_sorted_hits(hit_signal):
     f_b = max(2, HIT_SD*6)
     feat = smooth_hit(np.arange(-f_b, f_b+1), 0)
 
-    tap_sig, slider_sig, spinner_sig, new_combo_sig = sig
+    tap_sig, slider_sig, spinner_sig, new_combo_sig = hit_signal
 
     slider_sig_grad = np.gradient(slider_sig)
     slider_start_sig = np.maximum(0, slider_sig_grad)
