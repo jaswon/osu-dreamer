@@ -23,6 +23,29 @@ trainer:
     log_every_n_steps: 10
     enable_model_summary: true
     
+data:
+    # length of each training subsequence as an exponent with base 2
+    # eg. length = 2**seq_depth
+    seq_depth: 11
+    
+    # what fraction of the full dataset to use per epoch (must be between 0 and 1)
+    sample_density: .2
+    
+    # affects how many samples are generated from a single beatmap (per epoch)
+    # higher number means more samples from the same beatmap
+    subseq_density: 4.
+    
+    # size of training batch
+    batch_size: 64
+    
+    # number of workers to use for data loading
+    num_workers: 4
+    
+    # number of samples to hold out for validation
+    # must be at least one in order to render validation plots
+    val_size: 32
+    # val_split: .1
+    
 model:
     learning_rate: .00007
 
@@ -37,26 +60,6 @@ model:
     
     # number of steps to use for sampling during validation
     sample_steps: 80
-    
-    # 6ms * 2**(len(dim_mults) + ctx_depth)
-    ctx_depth: 6
 
     # loss function - can be one of {huber, l1, l2}
     loss_type: "huber"
-    
-    # affects how many samples are generated from a single beatmap (per epoch)
-    # higher number means more samples from the same beatmap
-    subseq_density: 4.
-    
-    # what fraction of the full dataset to use per epoch (must be between 0 and 1)
-    sample_density: .2
-    
-    # size of training batch
-    batch_size: 64
-    
-    # number of workers to use for data loading
-    num_workers: 8
-    
-    # number of samples to hold out for validation
-    # must be at least one in order to render validation plots
-    val_size: 32

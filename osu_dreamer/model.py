@@ -431,21 +431,8 @@ class Model(pl.LightningModule):
         
         timesteps: int,
         sample_steps: int,
-        
-        ctx_depth: int,
-        
+    
         loss_type: str,
-        
-        sample_density: float,
-        subseq_density: float,
-        batch_size: int,
-        num_workers: int,
-        
-        src_path: str,
-        data_path: str = "./data",
-        val_split: float = None,
-        val_size: int = None,
-        
         learning_rate: float = 0.,
     ):
         super().__init__()
@@ -474,19 +461,6 @@ class Model(pl.LightningModule):
 
         self.learning_rate = learning_rate
         self.depth = len(dim_mults)
-        self.seq_len = 2 ** (self.depth + ctx_depth)
-        self.sample_density = sample_density
-        self.subseq_density = subseq_density
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        
-        if (val_split is None) == (val_size is None):
-            raise Exception('exactly one of `val_split` or `val_size` must be specified')
-        self.val_split = val_split
-        self.val_size = val_size
-                
-        self.data_path = data_path
-        self.src_path = src_path
         
     def inference_pad(self, x):
         x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
@@ -531,37 +505,6 @@ class Model(pl.LightningModule):
                 monitor="val/loss",
             ),
         )
-        
-    def prepare_data(self):
-        prepare_data(self.src_path, self.data_path, self.depth)
-            
-    def setup(self, stage: str):
-        full_set = list(Path(self.data_path).rglob("*.map.pt"))
-        
-        if self.val_size is not None:
-            val_size = self.val_size
-        else:
-            val_size = int(len(full_set) * self.val_split)
-            
-        if val_size < 0:
-            raise ValueError("`val_size` is negative")
-            
-        if val_size > len(full_set):
-            raise ValueError(f"`val_size` ({val_size}) is greater than the number of samples ({len(full_set)})")
-            
-        train_size = len(full_set) - val_size
-        print(f'train: {train_size} | val: {val_size}')
-        train_split, val_split = random_split(full_set, [train_size, val_size])
-        
-        self.train_set = SubsequenceDataset(dataset=train_split, seq_len=self.seq_len, sample_density=self.sample_density, subseq_density=self.subseq_density)
-        self.val_set = FullSequenceDataset(dataset=val_split)
-            
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_set,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-        )
     
     def training_step(self, batch: ("N,X,L", "N,A,L"), batch_idx):
         torch.cuda.empty_cache()
@@ -575,13 +518,6 @@ class Model(pl.LightningModule):
         )
         
         return loss
-    
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_set,
-            batch_size=1,
-            num_workers=self.num_workers,
-        )
 
     def validation_step(self, batch: ("1,A,L","1,X,L"), batch_idx, *args, **kwargs):
         torch.cuda.empty_cache()
@@ -652,6 +588,7 @@ class Model(pl.LightningModule):
 #
 
 import os
+
 # check if using WSL
 if os.system("uname -r | grep microsoft > /dev/null") == 0:
     def reclaim_memory():
@@ -684,7 +621,7 @@ def load_audio(audio_file):
     
     return spec, sr
 
-def prepare_map(data_dir, depth, map_file):
+def prepare_map(data_dir, map_file):
     try:
         bm = Beatmap(map_file, meta_only=True)
     except Exception as e:
@@ -732,29 +669,105 @@ def prepare_map(data_dir, depth, map_file):
     # save hits
     with open(map_path, "wb") as f:
         np.save(f, x)
+    
 
-    
-def prepare_data(src_path: str, data_path: str, depth, resume=False):
-    data_dir = Path(data_path)
-    
-    if not resume:
+class Data(pl.LightningDataModule):
+    def __init__(
+        self,
+        
+        seq_depth: int,
+        sample_density: float,
+        subseq_density: float,
+        batch_size: int,
+        num_workers: int,
+        
+        data_path: str = "./data",
+        src_path: str = None,
+        val_split: float = None,
+        val_size: int = None,
+    ):
+        super().__init__()
+        
+        self.seq_len = 2 ** seq_depth
+        
+        self.sample_density = sample_density
+        self.subseq_density = subseq_density
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        
+        if (val_split is None) == (val_size is None):
+            raise ValueError('exactly one of `val_split` or `val_size` must be specified')
+        self.val_split = val_split
+        self.val_size = val_size
+        
+        self.data_dir = Path(data_path)
         try:
-            data_dir.mkdir()
+            self.data_dir.mkdir()
         except FileExistsError:
             # data dir exists, check for samples
             try:
-                next(data_dir.rglob("*.map.pt"))
-                print("data dir already has samples, skipping prepare")
+                next(self.data_dir.rglob("*.map.pt"))
+                # data dir already has samples
+                self.src_dir = None
                 return
             except StopIteration:
-                # data dir exists with no samples, continue prepare
+                # data dir is empty, must prepare data
                 pass
-
-    src_dir = Path(src_path)
-    src_maps = list(src_dir.rglob("*.osu"))
-    with Pool(processes=4) as p:
-        for _ in tqdm(p.imap_unordered(partial(prepare_map, data_dir, depth), src_maps), total=len(src_maps)):
-            reclaim_memory()
+            
+        if src_path is None:
+            raise ValueError("`src_path` must be specified when `data_dir` does not exist or is empty")
+        self.src_dir = Path(src_path)
+        
+        
+    def prepare_data(self):
+        if self.src_dir is None:
+            return
+        
+        src_maps = list(self.src_dir.rglob("*.osu"))
+        print(f"{len(src_maps)} osu! beatmaps found, processing...")
+        with Pool(processes=self.num_workers) as p:
+            for _ in tqdm(p.imap_unordered(partial(prepare_map, self.data_dir), src_maps), total=len(src_maps)):
+                reclaim_memory()
+            
+    def setup(self, stage: str):
+        full_set = list(self.data_dir.rglob("*.map.pt"))
+        
+        if self.val_size is not None:
+            val_size = self.val_size
+        else:
+            val_size = int(len(full_set) * self.val_split)
+            
+        if val_size < 0:
+            raise ValueError("`val_size` is negative")
+            
+        if val_size > len(full_set):
+            raise ValueError(f"`val_size` ({val_size}) is greater than the number of samples ({len(full_set)})")
+            
+        train_size = len(full_set) - val_size
+        print(f'train: {train_size} | val: {val_size}')
+        train_split, val_split = random_split(full_set, [train_size, val_size])
+        
+        self.train_set = SubsequenceDataset(
+            dataset=train_split,
+            seq_len=self.seq_len,
+            sample_density=self.sample_density,
+            subseq_density=self.subseq_density,
+        )
+        self.val_set = FullSequenceDataset(dataset=val_split)
+            
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_set,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+        )
+    
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_set,
+            batch_size=1,
+            num_workers=self.num_workers,
+        )
     
     
 class StreamPerSample(IterableDataset):

@@ -1,5 +1,5 @@
 from pytorch_lightning.cli import LightningCLI
 
-from osu_dreamer.model import Model
+from osu_dreamer.model import Model, Data
 
-cli = LightningCLI(Model)
+cli = LightningCLI(Model, Data)
