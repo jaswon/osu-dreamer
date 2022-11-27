@@ -9,92 +9,30 @@ import torch.nn.functional as F
 import librosa
 import numpy as np
 
+from osu_dreamer.osu.hit_objects import TimingPoint
+from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.model import Model, load_audio, N_FFT, HOP_LEN_S
 from osu_dreamer.signal import to_map as signal_to_map
 
-def random_hex_string(num):
-    import random
-    return hex(random.randrange(16**num))[2:]
-
-def generate_mapset(
-    audio_file,
-    model_path,
-    sample_steps,
-    num_samples,
-    title,
-    artist,
-    bpm = None,
-):
+def list_of_timing_points(s):
+    if not s:
+        return None
     
-    # check for GPU
-    # ======
-    use_cuda = torch.cuda.is_available()
-    if use_cuda:
-        print('using GPU accelerated inference')
-    else:
-        print('WARNING: no GPU found - inference will be slow')
-
-    # load model
-    # ======
-    model = Model.load_from_checkpoint(model_path,
-        sample_steps=sample_steps,
-    )
+    l = []
+    for i, u in enumerate(s.split("|")):
+        us = u.split(":")
+        if len(us) != 3:
+            raise ValueError(f"{i}: timing points must be formatted like `OFFSET:BEAT_LENGTH:METER`, got `{u}`")
+            
+        for j, f in enumerate(['OFFSET', 'BEAT_LENGTH', 'METER']):
+            try:
+                us[j] = float(us[j])
+            except:
+                raise ValueError(f"{i}: `{f}` must be a number, got {us[j]}")
+            
+        l.append(TimingPoint(int(us[0]), us[1], None, int(us[2])))
     
-    if use_cuda:
-          model = model.cuda()
-    model.eval()
-    
-    # load audio
-    # ======
-    a, sr = load_audio(audio_file)
-    a = torch.tensor(a)
-
-    if use_cuda:
-        a = a.cuda()
-        
-    frame_times = librosa.frames_to_time(
-        np.arange(a.shape[-1]),
-        sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
-    ) * 1000
-        
-    # generate maps
-    # ======
-    pred = model(a.repeat(num_samples,1,1)).cpu().numpy()
-
-    # package mapset
-    # ======
-    while True:
-        mapset_dir = Path(f"_{random_hex_string(7)} {artist} - {title}")
-        try:
-            mapset_dir.mkdir()
-            break
-        except:
-            pass
-
-    shutil.copy(audio_file, mapset_dir / audio_file.name)
-
-    for i, p in enumerate(pred):
-        pred_map = signal_to_map(
-            dict(
-                audio_filename=audio_file.name,
-                title=title,
-                artist=artist,
-                version=f"version {i}",
-            ),
-            p, frame_times, bpm=bpm,
-        )
-
-        out_file = mapset_dir / f"{artist} - {title} (osu!dreamer) [version {i}].osu"
-
-        with open(out_file, "w") as f:
-            f.write(pred_map)
-
-    mapset_zip = Path(shutil.make_archive(mapset_dir, "zip", root_dir=mapset_dir))
-    shutil.rmtree(mapset_dir)
-
-    mapset = mapset_zip.with_suffix('.osz')
-    mapset_zip.rename(mapset)
-    return mapset
+    return l
     
 if __name__ == "__main__":
     import argparse
@@ -106,7 +44,12 @@ if __name__ == "__main__":
     model_args = parser.add_argument_group('model arguments')
     model_args.add_argument('--sample_steps', type=int, default=128, help='number of steps to sample')
     model_args.add_argument('--num_samples', type=int, default=3, help='number of maps to generate')
-    model_args.add_argument('--bpm', type=int, help='BPM of audio (not required)')
+    
+    timing_args = parser.add_argument_group('timing arguments')
+    timing_args.add_argument('--timing_points_from', type=Beatmap,
+        help='beatmap file to take timing points from')
+    timing_args.add_argument('--timing_points', type=list_of_timing_points,
+        help='list of pipe-separated timing points in `OFFSET:BEAT_LENGTH:METER` format (optional)')
     
     metadata_args = parser.add_argument_group('metadata arguments')
     metadata_args.add_argument('--title',
@@ -116,6 +59,8 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    # read metadata from audio file
+    # ======
     import mutagen
     tags = mutagen.File(args.audio_file, easy=True)
     
@@ -130,16 +75,29 @@ if __name__ == "__main__":
             args.artist = tags['artist'][0]
         except KeyError:
             parser.error('no artist provided, and unable to determine artist from audio metadata')
-    
-    if args.bpm is None and 'bpm' in tags:
-        args.bpm = float(tags['bpm'][0])
+
+    timing_points = None
+    if args.timing_points_from is not None:
+        timing_points = args.timing_points_from.uninherited_timing_points
+    elif args.timing_points is not None:
+        timing_points = args.timing_points
             
-    generate_mapset(
-        args.audio_file,
+    # load model
+    # ======
+    model = Model.load_from_checkpoint(
         args.model_path,
-        args.sample_steps,
+        sample_steps=args.sample_steps,
+    ).eval()
+    
+    if torch.cuda.is_available():
+        print('using GPU accelerated inference')
+        model = model.cuda()
+    else:
+        print('WARNING: no GPU found - inference will be slow')
+    
+    model.generate_mapset(
+        args.audio_file,
+        timing_points,
         args.num_samples,
-        args.title,
-        args.artist,
-        args.bpm,
+        args.title, args.artist,
     )

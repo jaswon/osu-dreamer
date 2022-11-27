@@ -3,6 +3,7 @@ import bisect
 import numpy as np
 import scipy
 
+from osu_dreamer.osu.hit_objects import TimingPoint
 from .util import smooth_hit, HIT_SD
 
 map_template = \
@@ -74,7 +75,6 @@ def to_sorted_hits(hit_signal):
         hit_frame_idxs.append(hit_peaks.astype(int).tolist())
     
     # sort hits
-    sorted_hits = []
     (
         tap_idxs,
         slider_start_idxs,
@@ -84,11 +84,11 @@ def to_sorted_hits(hit_signal):
         new_combo_idxs,
     ) = hit_frame_idxs
 
-    sorted_hits.extend([ (t, t, 0, False) for t in tap_idxs ])
-    sorted_hits.extend([ (s, e, 1, False) for s,e in zip(sorted(slider_start_idxs), sorted(slider_end_idxs)) ])
-    sorted_hits.extend([ (s, e, 2, False) for s,e in zip(sorted(spinner_start_idxs), sorted(spinner_end_idxs)) ])
-
-    sorted_hits = sorted(sorted_hits)
+    sorted_hits = sorted([
+        *[ (t, t, 0, False) for t in tap_idxs ],
+        *[ (s, e, 1, False) for s,e in zip(sorted(slider_start_idxs), sorted(slider_end_idxs)) ],
+        *[ (s, e, 2, False) for s,e in zip(sorted(spinner_start_idxs), sorted(spinner_end_idxs)) ],
+    ])
 
     # associate hits with new combos
     for new_combo_idx in new_combo_idxs:
@@ -102,13 +102,10 @@ def to_sorted_hits(hit_signal):
     return sorted_hits
 
 
-def to_map(metadata, sig, frame_times, bpm=None):
+def to_map(metadata, sig, frame_times, timing_points):
     """
     returns the beatmap as the string contents of the beatmap file
     """
-    
-    beat_length = 1000 if bpm is None else 60 * 1000 / bpm
-    base_slider_vel = 100 / beat_length
     
     sig = (sig+1)/2 # [-1, 1] => [0, 1]
     hit_signal, cursor_signal = sig[:4], sig[4:]
@@ -116,8 +113,8 @@ def to_map(metadata, sig, frame_times, bpm=None):
     # process cursor signal
     padding = .06
 
-    pressing = np.clip(hit_signal.max(axis=0, keepdims=True), 0, 1)
-    cs_valid = cursor_signal * pressing
+    # pressing = np.clip((np.array([2,4,4,2])[:, None] * hit_signal).max(axis=0, keepdims=True), 0, 1)
+    cs_valid = cursor_signal # * pressing
     
     cs_valid_min = cs_valid.min(axis=1, keepdims=True)
     cs_valid_max = cs_valid.max(axis=1, keepdims=True)
@@ -125,8 +122,8 @@ def to_map(metadata, sig, frame_times, bpm=None):
     # cs_valid_center = cs_valid.mean(axis=1, keepdims=True)
     # cursor_signal = (cursor_signal - cs_valid_center + 1)/2
     
-    cursor_signal *= np.array([[512],[384]]) * (1 - 2*padding)
-    cursor_signal += np.array([[512],[384]]) * padding
+    cursor_signal = padding + cursor_signal * (1 - 2*padding)
+    cursor_signal *= np.array([[512],[384]])
     
     # process hit signal
     sorted_hits = to_sorted_hits(hit_signal)
@@ -138,7 +135,13 @@ def to_map(metadata, sig, frame_times, bpm=None):
         return pts, l
 
     hos = [] # hit objects
-    tps = [f"0,{beat_length},4,0,0,50,1,0"] # timing points
+    tps = [] # timing points
+    
+    if timing_points is None or len(timing_points) == 0:
+        timing_points = [TimingPoint(0, 1000, None, 4)]
+        
+    beat_length = timing_points[0].beat_length
+    base_slider_vel = 100 / beat_length
 
     last_up = None
     for i, j, t_type, new_combo in sorted_hits:
@@ -148,6 +151,13 @@ def to_map(metadata, sig, frame_times, bpm=None):
         # ignore objects that start before the previous one ends
         if last_up is not None and i < last_up:
             continue
+            
+        # add timing points
+        if len(timing_points) > 0 and t > timing_points[0].t:
+            tp = timing_points.pop(0)
+            tps.append(f"{tp.t},{tp.beat_length},{tp.meter},0,0,50,1,0")
+            beat_length = tp.beat_length
+            base_slider_vel = 100 / beat_length
 
         new_combo = 4 if new_combo else 0
 
@@ -165,11 +175,19 @@ def to_map(metadata, sig, frame_times, bpm=None):
             x1,y1 = ctrl_pts[0]
             curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
             hos.append(f"{x1},{y1},{t},{2 + new_combo},0,B|{curve_pts},1,{length}")
+            
+            if len(tps) == 0:
+                print('warning: inherited timing point added before any uninherited timing points')
             tps.append(f"{t},{-100/SV},4,0,0,50,0,0")
             last_up = j
         elif t_type == 2:
             # spinner
             hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
             last_up = j
+            
+    tps.extend([
+        f"{tp.t},{tp.beat_length},{tp.meter},0,0,50,1,0"
+        for tp in timing_points
+    ])
             
     return map_template.format(**metadata, timing_points="\n".join(tps), hit_objects="\n".join(hos))

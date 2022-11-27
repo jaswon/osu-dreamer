@@ -28,12 +28,16 @@ except:
 import pytorch_lightning as pl
 from torch.utils.data import IterableDataset, DataLoader, random_split
 
-from .osu.beatmap import Beatmap
-from .signal import (
+from osu_dreamer.osu.beatmap import Beatmap
+from osu_dreamer.signal import (
     MAP_SIGNAL_DIM as X_DIM,
+    TIMING_DIM as T_DIM,
     from_beatmap as signal_from_beatmap,
+    timing_signal as beatmap_timing_signal,
 )
 
+import scipy.stats
+bpm_prior = scipy.stats.lognorm(loc=np.log(180), scale=180, s=1)
 
 # audio processing constants
 N_FFT = 2048
@@ -42,16 +46,18 @@ N_MELS = 64
 
 # model constants
 A_DIM = 40
-
 VALID_PAD = 1024
 
+
 #
 #
-# ====================================================================================================================================================================================
+# =============================================================================
 # MODULES
-# ====================================================================================================================================================================================
+# =============================================================================
 #
 #
+
+random_hex_string = lambda num: hex(random.randrange(16**num))[2:]
 
 exists = lambda x: x is not None
 
@@ -210,7 +216,7 @@ class UNet(nn.Module):
         block = partial(ConvNextBlock, mult=convnext_mult, groups=h_dim_groups)
         
         self.init_conv = nn.Sequential(
-            nn.Conv1d(X_DIM+A_DIM, h_dim, 7, padding=3),
+            nn.Conv1d(X_DIM+A_DIM+T_DIM, h_dim, 7, padding=3),
             WaveBlock(h_dim, wave_stack_depth, wave_num_stacks),
         )
 
@@ -220,7 +226,7 @@ class UNet(nn.Module):
         
         # time embeddings
         emb_dim = h_dim * 4
-        self.time_mlp: "N, -> N,time_dim" = nn.Sequential(
+        self.time_mlp: "N, -> N,T" = nn.Sequential(
             SinusoidalPositionEmbeddings(h_dim),
             nn.Linear(h_dim, emb_dim),
             nn.SiLU(),
@@ -258,14 +264,14 @@ class UNet(nn.Module):
         )
         
 
-    def forward(self, x: "N,X,L", a: "N,A,L", t: "N,") -> "N,X,L":
+    def forward(self, x: "N,X,L", a: "N,A,L", t: "N,T,L", ts: "N,") -> "N,X,L":
         
-        x: "N,X+A,L" = torch.cat((x,a), dim=1)
+        x: "N,X+A,L" = torch.cat((x,a,t), dim=1)
         
         x: "N,h_dim,L" = self.init_conv(x)
 
         h = []
-        emb: "N,T" = self.time_mlp(t)
+        emb: "N,T" = self.time_mlp(ts)
 
         # downsample
         for block1, block2, downsample in self.downs:
@@ -290,17 +296,17 @@ class UNet(nn.Module):
     
 #
 #
-# ====================================================================================================================================================================================
+# =============================================================================
 # MODEL DEFINITION
-# ====================================================================================================================================================================================
+# =============================================================================
 #
 #
 
 
-def extract(a, t, x_shape):
-    batch_size = t.shape[0]
-    out = a.gather(-1, t.cpu())
-    return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
+def extract(a, ts, x_shape):
+    batch_size = ts.shape[0]
+    out = a.gather(-1, ts.cpu())
+    return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(ts.device)
     
 class BetaSchedule:
     def __init__(self, betas, net):
@@ -326,41 +332,41 @@ class BetaSchedule:
         self.posterior_variance = self.betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod) # beta_tilde
         assert (self.posterior_variance[1:] != 0).all(), self.posterior_variance[1:]
         
-    def net(self, x,a,t):
-        return self._net(x,a,t)
+    def net(self, x,a,t,ts):
+        return self._net(x,a,t,ts)
 
-    def q_sample(self, x: "N,X,L", t: "N,", noise=None) -> "N,X,L":
+    def q_sample(self, x: "N,X,L", ts: "N,", noise=None) -> "N,X,L":
         """sample q(x_t|x_0) using the nice property"""
         if noise is None:
             noise = torch.randn_like(x)
 
-        sqrt_alphas_cumprod_t = extract(self.sqrt_alphas_cumprod, t, x.shape)
+        sqrt_alphas_cumprod_t = extract(self.sqrt_alphas_cumprod, ts, x.shape)
         sqrt_one_minus_alphas_cumprod_t = extract(
-            self.sqrt_one_minus_alphas_cumprod, t, x.shape
+            self.sqrt_one_minus_alphas_cumprod, ts, x.shape
         )
 
         return sqrt_alphas_cumprod_t * x + sqrt_one_minus_alphas_cumprod_t * noise
     
-    def model_eps_var(self, x,a,t):
-        model_eps = self.net(x,a,t)
-        model_var = extract(self.posterior_variance, t, x.shape)
+    def model_eps_var(self, x, a, t, ts):
+        model_eps = self.net(x,a,t,ts)
+        model_var = extract(self.posterior_variance, ts, x.shape)
         return model_eps, model_var
     
-    def p_eps_mean_var(self, x, a, t):
+    def p_eps_mean_var(self, x, a, t, ts):
         """sample from p(x_{t-1} | x_t)"""
-        model_eps, model_var = self.model_eps_var(x,a,t)
+        model_eps, model_var = self.model_eps_var(x,a,t,ts)
             
         # Equation 11 in the paper
         # Use our model (noise predictor) to predict the mean
-        betas_t = extract(self.betas, t, x.shape)
-        sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x.shape)
-        sqrt_recip_alphas_t = extract(self.sqrt_recip_alphas, t, x.shape)
+        betas_t = extract(self.betas, ts, x.shape)
+        sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, ts, x.shape)
+        sqrt_recip_alphas_t = extract(self.sqrt_recip_alphas, ts, x.shape)
         model_mean = sqrt_recip_alphas_t * (x - betas_t * model_eps / sqrt_one_minus_alphas_cumprod_t)
         
         return model_eps, model_mean, model_var
         
     @torch.no_grad()
-    def sample(self, a: "N,A,L", x: "N,X,L" = None, *, ddim=False) -> "N,X,L":
+    def sample(self, a: "N,A,L", t: "N,T,L", x: "N,X,L" = None, *, ddim=False) -> "N,X,L":
         """sample p(x)"""
         
         b,_,l = a.size()
@@ -371,9 +377,9 @@ class BetaSchedule:
 
         print()
         for i in tqdm(list(reversed(range(self.timesteps))), desc='sampling loop time step'):
-            t = torch.full((b,), i, device=a.device, dtype=torch.long)
+            ts = torch.full((b,), i, device=a.device, dtype=torch.long)
             
-            _, model_mean, model_var = self.p_eps_mean_var(x,a,t)
+            _, model_mean, model_var = self.p_eps_mean_var(x,a,t,ts)
 
             if i == 0 or ddim:
                 x = model_mean
@@ -414,9 +420,9 @@ class StridedBetaSchedule(BetaSchedule):
         super().__init__(torch.tensor(new_betas), *args, **kwargs)
                 
             
-    def net(self, x,a,t):
-        t = torch.tensor(self.ts_map, device=t.device, dtype=t.dtype)[t]
-        return super().net(x,a,t)
+    def net(self, x,a,t,ts):
+        ts = torch.tensor(self.ts_map, device=ts.device, dtype=ts.dtype)[ts]
+        return super().net(x,a,t,ts)
     
 
 class Model(pl.LightningModule):
@@ -433,6 +439,7 @@ class Model(pl.LightningModule):
         sample_steps: int,
     
         loss_type: str,
+        timing_dropout: float,
         learning_rate: float = 0.,
     ):
         super().__init__()
@@ -460,7 +467,16 @@ class Model(pl.LightningModule):
             raise NotImplementedError(loss_type)
 
         self.learning_rate = learning_rate
+        self.timing_dropout = timing_dropout
         self.depth = len(dim_mults)
+    
+#
+#
+# =============================================================================
+# MODEL INFERENCE
+# =============================================================================
+#
+#
         
     def inference_pad(self, x):
         x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
@@ -468,30 +484,107 @@ class Model(pl.LightningModule):
         x = F.pad(x, (0, pad), mode='replicate')
         return x, (..., slice(VALID_PAD,-(VALID_PAD+pad)))
         
-    def forward(self, a: "N,A,L", **kwargs):
+    def forward(self, a: "N,A,L", t: "N,T,L", **kwargs):
         a, sl = self.inference_pad(a)
-        return self.sampling_schedule.sample(a, **kwargs)[sl]
+        t, _  = self.inference_pad(t)
+        return self.sampling_schedule.sample(a, t, **kwargs)[sl]
+    
+    def generate_mapset(
+        self,
+        audio_file,
+        timing_points,
+        num_samples,
+        title,
+        artist,
+    ):
+        import shutil
+        from zipfile import ZipFile
+        from osu_dreamer.signal import to_map as signal_to_map
+        
+        metadata = dict(
+            audio_filename=audio_file.name,
+            title=title,
+            artist=artist,
+        )
+        
+        # load audio
+        # ======
+        dev = next(self.parameters()).device
+        a, sr = load_audio(audio_file)
+        a = torch.tensor(a, device=dev)
+
+        frame_times = librosa.frames_to_time(
+            np.arange(a.shape[-1]),
+            sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
+        ) * 1000
+        
+        # generate maps
+        # ======
+        
+        if timing_points is None:
+            t = torch.tensor(librosa.beat.plp(
+                onset_envelope=librosa.onset.onset_strength(
+                    S=a, center=False,
+                ),
+                prior = bpm_prior,
+                # use 10s of audio to determine local bpm
+                win_length=int(10. / HOP_LEN_S), 
+            )[None], device=dev)
+        else:
+            t = torch.tensor(beatmap_timing_signal(timing_points, frame_times), device=dev).float()
+        
+        pred_signals = self(
+            a.repeat(num_samples,1,1),
+            t[None, :].repeat(num_samples,1,1),
+        ).cpu().numpy()
+        
+        # package mapset
+        # ======
+        while True:
+            mapset = Path(f"_{random_hex_string(7)} {artist} - {title}.osz")
+            if not mapset.exists():
+                break
+                
+        with ZipFile(mapset, 'x') as mapset_archive:
+            mapset_archive.write(audio_file, audio_file.name)
+            
+            for i, pred_signal in enumerate(pred_signals):
+                mapset_archive.writestr(
+                    f"{artist} - {title} (osu!dreamer) [version {i}].osu",
+                    signal_to_map(
+                        dict( **metadata, version=f"version {i}" ),
+                        pred_signal, frame_times, copy.deepcopy(timing_points),
+                    ),
+                )
+                    
+        return mapset
     
 #
 #
-# ====================================================================================================================================================================================
+# =============================================================================
 # MODEL TRAINING
-# ====================================================================================================================================================================================
+# =============================================================================
 #
 #
 
-    def compute_loss(self, a, x, pad=False):
-        t = torch.randint(0, self.schedule.timesteps, (x.size(0),), device=x.device).long()
+    def compute_loss(self, a, t, p, x, pad=False, timing_dropout=0.):
+        ts = torch.randint(0, self.schedule.timesteps, (x.size(0),), device=x.device).long()
         
         if pad:
             a, _ = self.inference_pad(a)
+            t, _ = self.inference_pad(t)
+            p, _ = self.inference_pad(p)
             x, _ = self.inference_pad(x)
+            
+        if timing_dropout > 0:
+            drop_idxs = torch.randperm(t.size(0))[:int(t.size(0) * timing_dropout)]
+            t[drop_idxs] = p[drop_idxs]
         
         true_eps: "N,X,L" = torch.randn_like(x)
 
-        x_t: "N,X,L" = self.schedule.q_sample(x, t, true_eps)
+        x_t: "N,X,L" = self.schedule.q_sample(x, ts, true_eps)
         
-        pred_eps = self.net(x_t, a, t)
+        pred_eps = self.net(x_t, a, t, ts)
         
         return self.loss_fn(true_eps, pred_eps).mean()
 
@@ -506,11 +599,11 @@ class Model(pl.LightningModule):
             ),
         )
     
-    def training_step(self, batch: ("N,X,L", "N,A,L"), batch_idx):
+    def training_step(self, batch: ("N,A,L", "N,T,L", "N,T,L", "N,X,L"), batch_idx):
         torch.cuda.empty_cache()
-        a,x = copy.deepcopy(batch)
+        a,t,p,x = copy.deepcopy(batch)
         
-        loss = self.compute_loss(a,x)
+        loss = self.compute_loss(a,t,p,x,timing_dropout=self.timing_dropout)
         
         self.log(
             "train/loss", loss.detach(),
@@ -519,29 +612,33 @@ class Model(pl.LightningModule):
         
         return loss
 
-    def validation_step(self, batch: ("1,A,L","1,X,L"), batch_idx, *args, **kwargs):
+    def validation_step(self, batch: ("1,A,L","1,T,L","1,T,L","1,X,L"), batch_idx, *args, **kwargs):
         torch.cuda.empty_cache()
-        a,x = copy.deepcopy(batch)
+        a,t,p,x = copy.deepcopy(batch)
         
-        loss = self.compute_loss(a,x, pad=True)
+        loss = self.compute_loss(a,t,p,x, pad=True, timing_dropout=self.timing_dropout)
+        dropout_loss = self.compute_loss(a,t,p,x, pad=True, timing_dropout=1.)
         
         self.log(
             "val/loss", loss.detach(),
             logger=True, on_step=False, on_epoch=True,
         )
         
-        return a,x
+        self.log(
+            "val/dropout_loss", dropout_loss.detach(),
+            logger=True, on_step=False, on_epoch=True,
+        )
         
-    def validation_epoch_end(self, val_outs: "List[(1,X,L),(1,A,L)]"):
+        return a,t,p,x
+        
+    def validation_epoch_end(self, val_outs: "List[(1,A,L),(1,T,L),(1,T,L),(1,X,L)]"):
         if not USE_MATPLOTLIB or len(val_outs) == 0:
             return
         
-        num_samples = 2
-        
         torch.cuda.empty_cache()
-        a,x = copy.deepcopy(val_outs[0])
+        a,t,p,x = copy.deepcopy(val_outs[0])
         
-        samples: "N,X,L" = self(a.repeat(num_samples,1,1)).cpu().numpy()
+        samples = self(a.repeat(2,1,1), torch.cat([ t,p ], dim=0) ).cpu().numpy()
         
         a: "A,L" = a.squeeze(0).cpu().numpy()
         x: "X,L" = x.squeeze(0).cpu().numpy()
@@ -581,9 +678,9 @@ class Model(pl.LightningModule):
 
 #
 #
-# ====================================================================================================================================================================================
+# =============================================================================
 # DATA
-# ====================================================================================================================================================================================
+# =============================================================================
 #
 #
 
@@ -628,9 +725,13 @@ def prepare_map(data_dir, map_file):
         print(f"{map_file}: {e}")
         return
 
-    af_snake = "_".join([bm.audio_filename.stem, *(s[1:] for s in bm.audio_filename.suffixes)])
-    spec_path = data_dir / map_file.parent.name / af_snake / "spec.pt"
-    map_path = spec_path.parent / f"{map_file.stem}.map.pt"
+    af_dir = "_".join([bm.audio_filename.stem, *(s[1:] for s in bm.audio_filename.suffixes)])
+    map_dir = data_dir / map_file.parent.name / af_dir
+    
+    spec_path =  map_dir / "spec.pt"
+    timing_path = map_dir / "timing.pt"
+    plp_path = map_dir / "plp.pt"
+    map_path = map_dir / f"{map_file.stem}.map.pt"
     
     if map_path.exists():
         return
@@ -644,9 +745,7 @@ def prepare_map(data_dir, map_file):
     if spec_path.exists():
         # determine audio sample rate
         sr = torchaudio.info(bm.audio_filename).sample_rate
-
-        with open(spec_path, "rb") as f:
-            spec = np.load(f)
+        spec = np.load(spec_path)
     else:
         # load audio file
         try:
@@ -658,17 +757,36 @@ def prepare_map(data_dir, map_file):
         # save spectrogram
         spec_path.parent.mkdir(parents=True, exist_ok=True)
         with open(spec_path, "wb") as f:
-            np.save(f, spec)
-
-    # compute map signal
-    x: "X,L" = signal_from_beatmap(bm, librosa.frames_to_time(
+            np.save(f, spec, allow_pickle=False)
+            
+    frame_times = librosa.frames_to_time(
         np.arange(spec.shape[-1]),
         sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
-    ) * 1000)
+    ) * 1000
+    
+    # compute timing signal
+    if not timing_path.exists():
+        timing: "T,L" = beatmap_timing_signal(bm, frame_times)
+        with open(timing_path, "wb") as f:
+            np.save(f, timing, allow_pickle=False)
+            
+    # compute plp
+    if not plp_path.exists():
+        plp: "T,L" = librosa.beat.plp(
+            onset_envelope=librosa.onset.onset_strength(
+                S=spec, center=False,
+            ),
+            prior = bpm_prior,
+            # use 10s of audio to determine local bpm
+            win_length=int(10. / HOP_LEN_S), 
+        )[None]
+        with open(plp_path, "wb") as f:
+            np.save(f, plp, allow_pickle=False)
 
-    # save hits
+    # compute map signal
+    x: "X,L" = signal_from_beatmap(bm, frame_times)
     with open(map_path, "wb") as f:
-        np.save(f, x)
+        np.save(f, x, allow_pickle=False)
     
 
 class Data(pl.LightningDataModule):
@@ -807,24 +925,24 @@ class StreamPerSample(IterableDataset):
                     yield x
             finally:
                 reclaim_memory()
-            
+                
+                
+def load_tensors_for_map(map_file):
+    a: "A,L" = torch.tensor(np.load(map_file.parent / "spec.pt")).float()
+    t: "T,L" = torch.tensor(np.load(map_file.parent / "timing.pt")).float()
+    p: "T,L" = torch.tensor(np.load(map_file.parent / "plp.pt")).float()
+    x: "X,L" = torch.tensor(np.load(map_file)).float()
+    return a,t,p,x
 
 class FullSequenceDataset(StreamPerSample):
     MAX_LEN = 60000
             
-    def sample_stream(self, hit_file):
-        with open(hit_file.parent / "spec.pt", "rb") as f:
-            a: "A,L" = torch.tensor(np.load(f)).float()
-
-        with open(hit_file, "rb") as f:
-            x: "X,L" = torch.tensor(np.load(f)).float()
-            
+    def sample_stream(self, map_file):
         yield tuple([ 
             x[...,:self.MAX_LEN]
             # x[...,:self.MAX_LEN] if x.size(-1) > self.MAX_LEN else F.pad(x, (0, self.MAX_LEN - x.size(-1)))
-            for x in (a,x)
-        ])
-            
+            for x in load_tensors_for_map(map_file)
+        ])     
         
 class SubsequenceDataset(StreamPerSample):
     def __init__(self, **kwargs):
@@ -832,20 +950,17 @@ class SubsequenceDataset(StreamPerSample):
         self.subseq_density = kwargs.pop("subseq_density", 2)
         super().__init__(**kwargs)
 
-    def sample_stream(self, hit_file):
-        with open(hit_file.parent / "spec.pt", "rb") as f:
-            a: "A,L" = torch.tensor(np.load(f)).float()
+    def sample_stream(self, map_file):
+        tensors = load_tensors_for_map(map_file)
+        L = tensors[0].size(-1)
 
-        with open(hit_file, "rb") as f:
-            x: "X,L" = torch.tensor(np.load(f)).float()
-
-        if self.seq_len >= a.size(-1):
+        if self.seq_len >= L:
             return
 
-        num_samples = int(a.size(-1) / self.seq_len * self.subseq_density)
+        num_samples = int(L / self.seq_len * self.subseq_density)
 
-        for idx in torch.randperm(a.size(-1) - self.seq_len)[:num_samples]:
-            yield (
-                a[..., idx:idx+self.seq_len].clone(),
-                x[..., idx:idx+self.seq_len].clone(),
-            )
+        for idx in torch.randperm(L - self.seq_len)[:num_samples]:
+            yield tuple([
+                x[..., idx:idx+self.seq_len].clone()
+                for x in tensors
+            ])

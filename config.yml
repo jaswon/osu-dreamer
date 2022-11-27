@@ -29,7 +29,7 @@ data:
     seq_depth: 11
     
     # what fraction of the full dataset to use per epoch (must be between 0 and 1)
-    sample_density: .2
+    sample_density: 1.
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
@@ -63,3 +63,6 @@ model:
 
     # loss function - can be one of {huber, l1, l2}
     loss_type: "huber"
+    
+    # how often the timing signal should be omitted from training
+    timing_dropout: .6
