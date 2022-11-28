@@ -101,6 +101,7 @@ def to_sorted_hits(hit_signal):
 
     return sorted_hits
 
+BEAT_DIVISOR = 4
 
 def to_map(metadata, sig, frame_times, timing):
     """
@@ -142,35 +143,52 @@ def to_map(metadata, sig, frame_times, timing):
     # - number : audio is constant BPM
     # - None : no prior knowledge of audio timing
     if isinstance(timing, list) and len(timing) > 0:
+        beat_snap = True
         timing_points = timing
     elif timing is None:
+        beat_snap = False
         timing_points = [TimingPoint(0, 1000, None, 4)]
     elif isinstance(timing, (int, float)):
+        beat_snap = True
         timing_beat_len = 60 * 1000 / timing
         # compute timing offset
         offs = [ frame_times[i] % timing_beat_len for i,_,_,_ in sorted_hits]
         offset_dist = scipy.stats.gaussian_kde(offs)
         offset = offset_dist.pdf(np.linspace(0, timing_beat_len, 1000)).argmax() / 1000 * timing_beat_len
         timing_points = [TimingPoint(offset, timing_beat_len, None, 4)]
-        
+    
+
+    # dur = length / (slider_mult * 100 * SV) * beat_length
+    # dur = length / (slider_mult * 100) / SV * beat_length
+    # SV  = length / dur / (slider_mult * 100) * beat_length
+    # SV  = length / dur / (slider_mult * 100 / beat_length)
+    # => base_slider_vel = slider_mult * 100 / beat_length
     beat_length = timing_points[0].beat_length
     base_slider_vel = 100 / beat_length
-
+    beat_offset = timing_points[0].t
+    
     last_up = None
     for i, j, t_type, new_combo in sorted_hits:
-
         t,u = frame_times[i], frame_times[j]
-
-        # ignore objects that start before the previous one ends
-        if last_up is not None and i < last_up:
-            continue
-            
+        if beat_snap:
+            beat_f_len = beat_length / BEAT_DIVISOR
+            t = round((t - beat_offset) / beat_f_len) * beat_f_len + beat_offset
+            u = round((u - beat_offset) / beat_f_len) * beat_f_len + beat_offset
+            if u == t:
+                # convert to hit circle
+                t_type = 0
+                
         # add timing points
         if len(timing_points) > 0 and t > timing_points[0].t:
             tp = timing_points.pop(0)
             tps.append(f"{tp.t},{tp.beat_length},{tp.meter},0,0,50,1,0")
             beat_length = tp.beat_length
             base_slider_vel = 100 / beat_length
+            beat_offset = tp.t
+            
+        # ignore objects that start before the previous one ends
+        if last_up is not None and t <= last_up + 1:
+            continue
 
         new_combo = 4 if new_combo else 0
 
@@ -178,11 +196,11 @@ def to_map(metadata, sig, frame_times, timing):
             # hit circle
             x,y = cursor_signal[:, i]
             hos.append(f"{x},{y},{t},{1 + new_combo},0")
-            last_up = i
+            last_up = t
         elif t_type == 1:
             # slider
             ctrl_pts, length = get_ctrl_pts(i, j)
-
+            
             SV = length / (u-t) / base_slider_vel
 
             x1,y1 = ctrl_pts[0]
@@ -192,11 +210,11 @@ def to_map(metadata, sig, frame_times, timing):
             if len(tps) == 0:
                 print('warning: inherited timing point added before any uninherited timing points')
             tps.append(f"{t},{-100/SV},4,0,0,50,0,0")
-            last_up = j
+            last_up = u
         elif t_type == 2:
             # spinner
             hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
-            last_up = j
+            last_up = u
             
     tps.extend([
         f"{tp.t},{tp.beat_length},{tp.meter},0,0,50,1,0"
