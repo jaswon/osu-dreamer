@@ -102,7 +102,7 @@ def to_sorted_hits(hit_signal):
     return sorted_hits
 
 
-def to_map(metadata, sig, frame_times, timing_points):
+def to_map(metadata, sig, frame_times, timing):
     """
     returns the beatmap as the string contents of the beatmap file
     """
@@ -137,8 +137,21 @@ def to_map(metadata, sig, frame_times, timing_points):
     hos = [] # hit objects
     tps = [] # timing points
     
-    if timing_points is None or len(timing_points) == 0:
+    # `timing` can be one of:
+    # - List[TimingPoint] : timed according to timing points
+    # - number : audio is constant BPM
+    # - None : no prior knowledge of audio timing
+    if isinstance(timing, list) and len(timing) > 0:
+        timing_points = timing
+    elif timing is None:
         timing_points = [TimingPoint(0, 1000, None, 4)]
+    elif isinstance(timing, (int, float)):
+        timing_beat_len = 60 * 1000 / timing
+        # compute timing offset
+        offs = [ frame_times[i] % timing_beat_len for i,_,_,_ in sorted_hits]
+        offset_dist = scipy.stats.gaussian_kde(offs)
+        offset = offset_dist.pdf(np.linspace(0, timing_beat_len, 1000)).argmax() / 1000 * timing_beat_len
+        timing_points = [TimingPoint(offset, timing_beat_len, None, 4)]
         
     beat_length = timing_points[0].beat_length
     base_slider_vel = 100 / beat_length

@@ -46,6 +46,8 @@ if __name__ == "__main__":
     model_args.add_argument('--num_samples', type=int, default=3, help='number of maps to generate')
     
     timing_args = parser.add_argument_group('timing arguments')
+    timing_args.add_argument('--bpm', type=float,
+        help='tempo of the whole song in BPM')
     timing_args.add_argument('--timing_points_from', type=Beatmap,
         help='beatmap file to take timing points from')
     timing_args.add_argument('--timing_points', type=list_of_timing_points,
@@ -76,11 +78,13 @@ if __name__ == "__main__":
         except KeyError:
             parser.error('no artist provided, and unable to determine artist from audio metadata')
 
-    timing_points = None
+    timing = None
     if args.timing_points_from is not None:
-        timing_points = args.timing_points_from.uninherited_timing_points
+        timing = args.timing_points_from.uninherited_timing_points
     elif args.timing_points is not None:
-        timing_points = args.timing_points
+        timing = args.timing_points
+    elif args.bpm is not None:
+        timing = args.bpm
             
     # load model
     # ======
@@ -97,7 +101,7 @@ if __name__ == "__main__":
     
     model.generate_mapset(
         args.audio_file,
-        timing_points,
+        timing,
         args.num_samples,
         args.title, args.artist,
     )

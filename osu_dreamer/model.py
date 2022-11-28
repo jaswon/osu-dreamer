@@ -37,7 +37,6 @@ from osu_dreamer.signal import (
 )
 
 import scipy.stats
-bpm_prior = scipy.stats.lognorm(loc=np.log(180), scale=180, s=1)
 
 # audio processing constants
 N_FFT = 2048
@@ -492,7 +491,7 @@ class Model(pl.LightningModule):
     def generate_mapset(
         self,
         audio_file,
-        timing_points,
+        timing,
         num_samples,
         title,
         artist,
@@ -521,17 +520,27 @@ class Model(pl.LightningModule):
         # generate maps
         # ======
         
-        if timing_points is None:
+        # `timing` can be one of:
+        # - List[TimingPoint] : timed according to timing points
+        # - number : audio is constant known BPM
+        # - None : no prior knowledge of audio timing
+        if isinstance(timing, list):
+            t = torch.tensor(beatmap_timing_signal(timing, frame_times), device=dev).float()
+        else:
+            if timing is None:
+                bpm_prior = scipy.stats.lognorm(loc=np.log(180), scale=180, s=1)
+            else:
+                bpm_prior = scipy.stats.norm(loc=timing, scale=1)
+                
             t = torch.tensor(librosa.beat.plp(
                 onset_envelope=librosa.onset.onset_strength(
-                    S=a, center=False,
+                    S=a.cpu().numpy(), center=False,
                 ),
                 prior = bpm_prior,
                 # use 10s of audio to determine local bpm
                 win_length=int(10. / HOP_LEN_S), 
             )[None], device=dev)
-        else:
-            t = torch.tensor(beatmap_timing_signal(timing_points, frame_times), device=dev).float()
+            
         
         pred_signals = self(
             a.repeat(num_samples,1,1),
@@ -553,7 +562,7 @@ class Model(pl.LightningModule):
                     f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                     signal_to_map(
                         dict( **metadata, version=f"version {i}" ),
-                        pred_signal, frame_times, copy.deepcopy(timing_points),
+                        pred_signal, frame_times, copy.deepcopy(timing),
                     ),
                 )
                     
@@ -776,7 +785,7 @@ def prepare_map(data_dir, map_file):
             onset_envelope=librosa.onset.onset_strength(
                 S=spec, center=False,
             ),
-            prior = bpm_prior,
+            prior = scipy.stats.lognorm(loc=np.log(180), scale=180, s=1),
             # use 10s of audio to determine local bpm
             win_length=int(10. / HOP_LEN_S), 
         )[None]
