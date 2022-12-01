@@ -6,6 +6,12 @@ import torch.nn as nn
 
 from einops import rearrange
 
+from osu_dreamer.signal import (
+    MAP_SIGNAL_DIM as X_DIM,
+    TIMING_DIM as T_DIM,
+)
+from .data import A_DIM
+
 
 exists = lambda x: x is not None
 

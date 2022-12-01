@@ -4,7 +4,7 @@ import scipy
 # std dev of impulse indicating a hit
 HIT_SD = 5
 
-def smooth_hit(x: np.ndarray, mu: "Union[float, Tuple[float, float]]", sigma: float = HIT_SD):
+def smooth_hit(x: np.ndarray, mu: "float | [float, float]", sigma: float = HIT_SD):
     """
     a smoothed impulse
     modelled using a normal distribution with mean `mu` and std. dev `sigma`

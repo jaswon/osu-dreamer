@@ -20,8 +20,6 @@ except:
 import pytorch_lightning as pl
 
 from osu_dreamer.signal import (
-    MAP_SIGNAL_DIM as X_DIM,
-    TIMING_DIM as T_DIM,
     timing_signal as beatmap_timing_signal,
 )
 
@@ -29,10 +27,7 @@ from .data import N_FFT, HOP_LEN_S, load_audio
 from .beta_schedule import CosineBetaSchedule, StridedBetaSchedule
 from .modules import UNet
 
-# model constants
-A_DIM = 40
 VALID_PAD = 1024
-    
 
 class Model(pl.LightningModule):
     def __init__(

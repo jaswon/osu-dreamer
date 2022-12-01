@@ -28,16 +28,16 @@ def normalize(v):
 def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent: "2," = None):
     """fit one (ore more) Bezier curves to a set of points"""
     
-    weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(10, len(points)-1))
+    weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(10, len(points)-2))
     
     if left_tangent is None:
         # points[1] - points[0]
-        l_vecs: "N,2" = points[1:1+len(weights)] - points[0]
+        l_vecs: "N,2" = points[2:2+len(weights)] - points[1]
         left_tangent = normalize(np.einsum('np,n->p', l_vecs, weights))
         
     if right_tangent is None:
         # points[-2] - points[-1]
-        r_vecs: "N,2" = points[-2:-2-len(weights):-1] - points[-1]
+        r_vecs: "N,2" = points[-3:-3-len(weights):-1] - points[-2]
         right_tangent = normalize(np.einsum('np,n->p', r_vecs, weights))
     
     # use heuristic if region only has two points in it

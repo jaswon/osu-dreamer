@@ -48,7 +48,7 @@ data:
     
 model:
     learning_rate: .001
-    learning_rate_scheduler_factor: .5
+    learning_rate_schedule_factor: .5
 
     # model hyperparameters
     h_dim: 32

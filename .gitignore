@@ -5,3 +5,4 @@ __pycache__/
 data/
 lightning_logs/
 *.ckpt
+*.ipynb

@@ -29,6 +29,8 @@ N_FFT = 2048
 HOP_LEN_S = 128. / 22050 # ~6 ms per frame
 N_MELS = 64
 
+A_DIM = 40
+
 # check if using WSL
 if os.system("uname -r | grep microsoft > /dev/null") == 0:
     def reclaim_memory():
@@ -51,6 +53,7 @@ def load_audio(audio_file):
     # compute spectrogram
     spec: "A,L" = torchaudio.transforms.MFCC(
         sample_rate=sr, 
+        n_mfcc=A_DIM,
         melkwargs=dict(
             normalized=True,
             n_fft=N_FFT,

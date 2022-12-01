@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import List, Union
 
+import copy
+
 import numpy as np
 import numpy.typing as npt
 import bezier
@@ -194,7 +196,7 @@ class Bezier(Slider):
             assert approx_eq(curve.length, tail_len), f"{curve.length} != {tail_len}"
             curves.append(curve)
             
-        self.path_segments = curves
+        self.path_segments = copy.deepcopy(curves)
 
         while True:
             for i, c in enumerate(curves):
