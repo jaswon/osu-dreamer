@@ -124,4 +124,4 @@ class Slider(HitObject):
         return self.lerp(0)
     
     def end_pos(self) -> NDIntArray:
-        return self.lerp(self.slides % 2)
+        return self.lerp(1)

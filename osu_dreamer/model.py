@@ -498,7 +498,7 @@ class Model(pl.LightningModule):
     ):
         import shutil
         from zipfile import ZipFile
-        from osu_dreamer.signal import to_map as signal_to_map
+        from osu_dreamer.signal import to_beatmap as signal_to_map
         
         metadata = dict(
             audio_filename=audio_file.name,

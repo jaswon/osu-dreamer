@@ -193,6 +193,8 @@ class Bezier(Slider):
 
             assert approx_eq(curve.length, tail_len), f"{curve.length} != {tail_len}"
             curves.append(curve)
+            
+        self.path_segments = curves
 
         while True:
             for i, c in enumerate(curves):

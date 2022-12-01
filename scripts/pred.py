@@ -1,18 +1,10 @@
-import random
-import shutil
-
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
-
-import librosa
-import numpy as np
 
 from osu_dreamer.osu.hit_objects import TimingPoint
 from osu_dreamer.osu.beatmap import Beatmap
-from osu_dreamer.model import Model, load_audio, N_FFT, HOP_LEN_S
-from osu_dreamer.signal import to_map as signal_to_map
+from osu_dreamer.model import Model
 
 def list_of_timing_points(s):
     if not s:
