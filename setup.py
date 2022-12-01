@@ -2,10 +2,11 @@ from setuptools import setup
 
 setup(
     name="osu-dreamer",
-    version="2.3",
+    version="3.0",
     python_requires='>=3.7.15',
     packages=[
         "osu_dreamer",
+        "osu_dreamer.model",
         "osu_dreamer.osu",
         "osu_dreamer.signal",
     ],
