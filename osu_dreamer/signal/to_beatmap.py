@@ -82,11 +82,11 @@ def to_playfield_coordinates(cursor_signal):
     """
     transforms the cursor signal to osu!pixel coordinates, rescaling so that the full playfield is used
     """
-    padding = .06
+    padding = 0.
     
-    cs_valid_min = cursor_signal.min(axis=1, keepdims=True)
-    cs_valid_max = cursor_signal.max(axis=1, keepdims=True)
-    cursor_signal = (cursor_signal - cs_valid_min) / (cs_valid_max - cs_valid_min)
+    # cs_valid_min = cursor_signal.min(axis=1, keepdims=True)
+    # cs_valid_max = cursor_signal.max(axis=1, keepdims=True)
+    # cursor_signal = (cursor_signal - cs_valid_min) / (cs_valid_max - cs_valid_min)
     
     cursor_signal = padding + cursor_signal * (1 - 2*padding)
     return cursor_signal * np.array([[512],[384]])

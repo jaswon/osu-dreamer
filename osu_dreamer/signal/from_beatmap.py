@@ -66,32 +66,34 @@ def slider_signal(beatmap, frame_times: "L,") -> "4,L":
     """
     returns an array encoding slider metadata
     - [0] represents a slider repeat
-    - [1] represents a slider segment boundary
-    - [2] represents slider segment type (1 for bezier, 0 for line) (approx. Perfect with Bezier)
+    - [1] represents a bezier slider segment boundary
+    - [2] represents bezier slider segment type (1 for bezier, 0 for line) (approx. Perfect with Bezier)
     """
-    
+    # `frame_times` mask for times in range
     range_sl = lambda a,b: (frame_times >= a) & (frame_times < b)
     
     sig = np.zeros((3, len(frame_times)))
+
     for ho in beatmap.hit_objects:
         if not isinstance(ho, Slider):
             continue
-            
-        single_slide = ho.slide_duration / ho.slides
-            
+        
+        # only render intermediate slides (ie. exclude start and end)
         if ho.slides > 1:
-            for i in range(ho.slides-1):
-                sig[0] += smooth_hit(frame_times, ho.t + single_slide * (i+1))
+            single_slide = ho.slide_duration / ho.slides
+            for i in range(1, ho.slides):
+                sig[0] += smooth_hit(frame_times, ho.t + single_slide * i)
                 
         if isinstance(ho, Bezier):
-            cur_t, last_t = ho.t, None
-            for c in ho.path_segments[:-1]:
-                last_t = cur_t
-                cur_t += c.length / ho.length * ho.slide_duration
-                sig[1] += smooth_hit(frame_times, cur_t)
-                sig[2, range_sl(last_t, cur_t)] = 0 if c.nodes.shape[-1] == 2 else 1
-            sig[2, range_sl(cur_t, ho.end_time())] = 0 if ho.path_segments[-1].nodes.shape[-1] == 2 else 1
+            seg_len_t = np.cumsum([0] + [ c.length for c in ho.path_segments ])
+            seg_boundaries = seg_len_t / ho.length * ho.slide_duration + ho.t
+            for boundary in seg_boundaries[1:-1]:
+                sig[1] += smooth_hit(frame_times, boundary)
+
+            for start,end,curve in zip(seg_boundaries[:-1], seg_boundaries[1:], ho.path_segments):
+                sig[2, range_sl(start,end)] = 0 if curve.nodes.shape[-1] == 2 else 1
         else:
+            # slider is either Line or Perfect
             sig[2, range_sl(ho.t,ho.end_time())] = 0 if isinstance(ho, Line) else 1
             
     return sig
