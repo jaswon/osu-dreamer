@@ -440,6 +440,7 @@ class Model(pl.LightningModule):
         loss_type: str,
         timing_dropout: float,
         learning_rate: float = 0.,
+        learning_rate_schedule_factor: float = 0.,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -466,6 +467,7 @@ class Model(pl.LightningModule):
             raise NotImplementedError(loss_type)
 
         self.learning_rate = learning_rate
+        self.learning_rate_schedule_factor = learning_rate_schedule_factor
         self.timing_dropout = timing_dropout
         self.depth = len(dim_mults)
     
@@ -603,7 +605,8 @@ class Model(pl.LightningModule):
         return dict(
             optimizer=opt,
             lr_scheduler=dict(
-                scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=.7),
+                scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    opt, factor=self.learning_rate_schedule_factor),
                 monitor="val/loss",
             ),
         )

@@ -47,7 +47,8 @@ data:
     # val_split: .1
     
 model:
-    learning_rate: .00007
+    learning_rate: .001
+    learning_rate_scheduler_factor: .5
 
     # model hyperparameters
     h_dim: 32
