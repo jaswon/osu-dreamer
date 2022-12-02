@@ -1,5 +1,6 @@
 import os
 import random
+import warnings
 
 from pathlib import Path
 from functools import partial
@@ -46,7 +47,9 @@ else:
         pass
 
 def load_audio(audio_file):
-    wave, sr = librosa.load(audio_file)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wave, sr = librosa.load(audio_file)
 
     # compute spectrogram
     spec: "A,L" = torchaudio.transforms.MFCC(
