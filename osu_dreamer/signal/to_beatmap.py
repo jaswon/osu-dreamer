@@ -80,15 +80,17 @@ def to_sorted_hits(hit_signal):
 
 def to_playfield_coordinates(cursor_signal):
     """
-    transforms the cursor signal to osu!pixel coordinates, rescaling so that the full playfield is used
+    transforms the cursor signal to osu!pixel coordinates
     """
-    padding = 0.
-    
+     
+    # rescale to fill the entire playfield
     # cs_valid_min = cursor_signal.min(axis=1, keepdims=True)
     # cs_valid_max = cursor_signal.max(axis=1, keepdims=True)
     # cursor_signal = (cursor_signal - cs_valid_min) / (cs_valid_max - cs_valid_min)
     
-    cursor_signal = padding + cursor_signal * (1 - 2*padding)
+    # pad so that the cursor isn't too close to the edges of the screen
+    # padding = 0.
+    # cursor_signal = padding + cursor_signal * (1 - 2*padding)
     return cursor_signal * np.array([[512],[384]])
       
 
@@ -104,8 +106,6 @@ def to_slider_decoder(frame_times, cursor_signal, slider_signal):
     repeat_idxs: "L," = np.zeros_like(frame_times)
     repeat_idxs[decode_hit(repeat_sig)] = 1
     seg_boundary_idxs = decode_hit(seg_boundary_sig)
-    
-    range_sl = lambda a,b: (frame_times >= a) & (frame_times < b)
     
     def decoder(a, b):
         slides = int(sum(repeat_idxs[a:b+1]) + 1)
@@ -175,7 +175,38 @@ def to_beatmap(metadata, sig, frame_times, timing):
     beat_length = timing_points[0].beat_length
     base_slider_vel = 100 / beat_length
     beat_offset = timing_points[0].t
-    
+
+    def add_hit_circle(i,j,t,u, new_combo):
+        x,y = cursor_signal[:, i].round().astype(int)
+        hos.append(f"{x},{y},{t},{1 + new_combo},0,0:0:0:0:")
+
+    def add_spinner(i,j,t,u, new_combo):
+        if t == u:
+            # start and end time are the same, add a hit circle instead
+            return add_hit_circle(i,j,t,u, new_combo)
+        hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
+
+    def add_slider(i,j,t,u, new_combo):
+        if t == u:
+            # start and end time are the same, add a hit circle instead
+            return add_hit_circle(i,j,t,u, new_combo)
+
+        length, slides, ctrl_pts = slider_decoder(i, j)
+
+        if length == 0:
+            # slider has zero length, add a hit circle instead
+            return add_hit_circle(i,j,t,u, new_combo)
+        
+        SV = length * slides / (u-t) / base_slider_vel
+
+        x1,y1 = ctrl_pts[0]
+        curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
+        hos.append(f"{x1},{y1},{t},{2 + new_combo},0,B|{curve_pts},{slides},{length}")
+        
+        if len(tps) == 0:
+            print('warning: inherited timing point added before any uninherited timing points')
+        tps.append(f"{t},{-100/SV},4,0,0,50,0,0")
+
     last_up = None
     for i, j, t_type, new_combo in sorted_hits:
         t,u = int(frame_times[i]), int(frame_times[j])
@@ -183,9 +214,6 @@ def to_beatmap(metadata, sig, frame_times, timing):
             beat_f_len = beat_length / BEAT_DIVISOR
             t = round((t - beat_offset) / beat_f_len) * beat_f_len + beat_offset
             u = round((u - beat_offset) / beat_f_len) * beat_f_len + beat_offset
-            if u == t:
-                # convert to hit circle
-                t_type = 0
                 
         # add timing points
         if len(timing_points) > 0 and t > timing_points[0].t:
@@ -198,37 +226,8 @@ def to_beatmap(metadata, sig, frame_times, timing):
         # ignore objects that start before the previous one ends
         if last_up is not None and t <= last_up + 1:
             continue
-            
 
-        new_combo = 4 if new_combo else 0
-
-        if t_type == 0:
-            # hit circle
-            x,y = cursor_signal[:, i].round().astype(int)
-            hos.append(f"{x},{y},{t},{1 + new_combo},0,0:0:0:0:")
-            last_up = t
-        elif t_type == 1:
-            # slider
-            length, slides, ctrl_pts = slider_decoder(i, j)
-            
-            SV = length * slides / (u-t) / base_slider_vel
-
-            x1,y1 = ctrl_pts[0]
-            curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
-            hos.append(f"{x1},{y1},{t},{2 + new_combo},0,B|{curve_pts},{slides},{length}")
-            
-            if len(tps) == 0:
-                print('warning: inherited timing point added before any uninherited timing points')
-            tps.append(f"{t},{-100/SV},4,0,0,50,0,0")
-            last_up = u
-        elif t_type == 2:
-            # spinner
-            hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
-            last_up = u
-            
-    tps.extend([
-        f"{tp.t},{tp.beat_length},{tp.meter},0,0,50,1,0"
-        for tp in timing_points
-    ])
+        [add_hit_circle, add_slider, add_spinner][t_type](i,j,t,u, 4 if new_combo else 0)
+        last_up = u
             
     return map_template.format(**metadata, timing_points="\n".join(tps), hit_objects="\n".join(hos))
