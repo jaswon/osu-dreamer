@@ -19,14 +19,15 @@ This will install `osu-dreamer` as well as all dependencies
 
 ## Generate your own maps
 
-[colab notebook](https://colab.research.google.com/drive/1Th6v5OOrY5vcTWvIH3NKZsuj_RMnAEM5?usp=sharing)
+[colab notebook](https://colab.research.google.com/drive/1Th6v5OOrY5vcTWvIH3NKZsuj_RMnAEM5#sandboxMode=true)
 
 ### locally
 
 ```
 $ python scripts/pred.py -h
-
-usage: pred.py [-h] [--sample_steps SAMPLE_STEPS] [--num_samples NUM_SAMPLES] [--bpm BPM] [--title TITLE] [--artist ARTIST] MODEL_PATH AUDIO_FILE
+usage: pred.py [-h] [--sample_steps SAMPLE_STEPS] [--num_samples NUM_SAMPLES] [--bpm BPM] [--timing_points_from TIMING_POINTS_FROM]
+               [--timing_points TIMING_POINTS] [--title TITLE] [--artist ARTIST]
+               MODEL_PATH AUDIO_FILE
 
 generate osu!std maps from raw audio
 
@@ -42,7 +43,13 @@ model arguments:
                         number of steps to sample
   --num_samples NUM_SAMPLES
                         number of maps to generate
-  --bpm BPM             BPM of audio (not required)
+
+timing arguments:
+  --bpm BPM             tempo of the whole song in BPM
+  --timing_points_from TIMING_POINTS_FROM
+                        beatmap file to take timing points from
+  --timing_points TIMING_POINTS
+                        list of pipe-separated timing points in `OFFSET:BEAT_LENGTH:METER` format (optional)
 
 metadata arguments:
   --title TITLE         Song title - must be provided if it cannot be determined from the audio metadata
