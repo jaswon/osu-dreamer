@@ -38,8 +38,12 @@ def decode_hold(sig):
     sig_grad = np.gradient(sig)
     start_sig = np.maximum(0, sig_grad)
     end_sig = -np.minimum(0, sig_grad)
+
+    start_idxs = _decode(start_sig, peak_h=.25, hit_offset=1)
+    end_idxs = _decode(end_sig, peak_h=.25, hit_offset=-1)
+
+    # ensure that ends are after starts
+    while end_idxs[0] < start_idxs[0]:
+        end_idxs.pop(0)
     
-    return (
-        _decode(start_sig, peak_h=.25, hit_offset=1),
-        _decode(end_sig, peak_h=.25, hit_offset=-1),
-    )
+    return start_idxs, end_idxs
