@@ -46,9 +46,7 @@ else:
         pass
 
 def load_audio(audio_file):
-    wave, sr = torchaudio.load(audio_file, normalize=True)
-    if wave.dim() > 1:
-        wave = wave.mean((0,))
+    wave, sr = librosa.load(audio_file)
 
     # compute spectrogram
     spec: "A,L" = torchaudio.transforms.MFCC(
@@ -60,7 +58,7 @@ def load_audio(audio_file):
             hop_length=int(HOP_LEN_S * sr),
             n_mels=N_MELS,
         ),
-    )(wave).numpy()
+    )(torch.tensor(wave)).numpy()
     
     return spec, sr
 
