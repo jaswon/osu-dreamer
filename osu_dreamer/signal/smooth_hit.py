@@ -42,8 +42,14 @@ def decode_hold(sig):
     start_idxs = _decode(start_sig, peak_h=.25, hit_offset=1)
     end_idxs = _decode(end_sig, peak_h=.25, hit_offset=-1)
 
-    # ensure that ends are after starts
-    while end_idxs[0] < start_idxs[0]:
+    # ensure that first start is before first end
+    while len(start_idxs) and len(end_idxs) and start_idxs[0] >= end_idxs[0]:
         end_idxs.pop(0)
+
+    # ensure that there is one end for every start
+    if len(start_idxs) > len(end_idxs):
+        start_idxs = start_idxs[:len(end_idxs) - len(start_idxs)]
+    elif len(end_idxs) > len(start_idxs):
+        end_idxs = end_idxs[:len(start_idxs) - len(end_idxs)]
     
     return start_idxs, end_idxs
