@@ -8,7 +8,7 @@ NDIntArray = npt.NDArray[np.integer]
 
 class Timed:
     def __init__(self, t: int):
-        self.t = t
+        self.t = int(t)
 
     def __repr__(self):
         return f"{self.t:08}:"

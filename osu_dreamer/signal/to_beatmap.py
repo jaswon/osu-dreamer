@@ -209,11 +209,13 @@ def to_beatmap(metadata, sig, frame_times, timing):
 
     last_up = None
     for i, j, t_type, new_combo in sorted_hits:
-        t,u = int(frame_times[i]), int(frame_times[j])
+        t,u = frame_times[i], frame_times[j]
         if beat_snap:
             beat_f_len = beat_length / BEAT_DIVISOR
             t = round((t - beat_offset) / beat_f_len) * beat_f_len + beat_offset
             u = round((u - beat_offset) / beat_f_len) * beat_f_len + beat_offset
+            
+        t,u = int(t), int(u)
                 
         # add timing points
         if len(timing_points) > 0 and t > timing_points[0].t:
