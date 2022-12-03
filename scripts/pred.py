@@ -5,6 +5,7 @@ import torch
 from osu_dreamer.osu.hit_objects import TimingPoint
 from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.model import Model
+from osu_dreamer import generate_mapset 
 
 def list_of_timing_points(s):
     if not s:
@@ -91,7 +92,8 @@ if __name__ == "__main__":
     else:
         print('WARNING: no GPU found - inference will be slow')
     
-    model.generate_mapset(
+    generate_mapset(
+        model,
         args.audio_file,
         timing,
         args.num_samples,

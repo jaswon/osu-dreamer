@@ -1,11 +1,8 @@
 from typing import List, Tuple
 
-from pathlib import Path
-import random
 import copy
 
 import numpy as np
-import scipy.stats
 import librosa
 
 import torch
@@ -19,11 +16,6 @@ except:
 
 import pytorch_lightning as pl
 
-from osu_dreamer.signal import (
-    timing_signal as beatmap_timing_signal,
-)
-
-from .data import N_FFT, HOP_LEN_S, load_audio
 from .beta_schedule import CosineBetaSchedule, StridedBetaSchedule
 from .modules import UNet
 
@@ -75,14 +67,6 @@ class Model(pl.LightningModule):
         self.learning_rate_schedule_factor = learning_rate_schedule_factor
         self.timing_dropout = timing_dropout
         self.depth = len(dim_mults)
-    
-#
-#
-# =============================================================================
-# MODEL INFERENCE
-# =============================================================================
-#
-#
         
     def inference_pad(self, x):
         x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
@@ -95,86 +79,6 @@ class Model(pl.LightningModule):
         t, _  = self.inference_pad(t)
         return self.sampling_schedule.sample(a, t, **kwargs)[sl]
     
-    def generate_mapset(
-        self,
-        audio_file,
-        timing,
-        num_samples,
-        title,
-        artist,
-    ):
-        from zipfile import ZipFile
-        from osu_dreamer.signal import to_beatmap as signal_to_map
-        
-        metadata = dict(
-            audio_filename=audio_file.name,
-            title=title,
-            artist=artist,
-        )
-        
-        # load audio
-        # ======
-        dev = next(self.parameters()).device
-        a, sr = load_audio(audio_file)
-        a = torch.tensor(a, device=dev)
-
-        frame_times = librosa.frames_to_time(
-            np.arange(a.shape[-1]),
-            sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
-        ) * 1000
-        
-        # generate maps
-        # ======
-        
-        # `timing` can be one of:
-        # - List[TimingPoint] : timed according to timing points
-        # - number : audio is constant known BPM
-        # - None : no prior knowledge of audio timing
-        if isinstance(timing, list):
-            t = torch.tensor(beatmap_timing_signal(timing, frame_times), device=dev).float()
-        else:
-            if timing is None:
-                bpm_prior = scipy.stats.lognorm(loc=np.log(180), scale=180, s=1)
-            else:
-                bpm_prior = scipy.stats.norm(loc=timing, scale=1)
-                
-            t = torch.tensor(librosa.beat.plp(
-                onset_envelope=librosa.onset.onset_strength(
-                    S=a.cpu().numpy(), center=False,
-                ),
-                prior = bpm_prior,
-                # use 10s of audio to determine local bpm
-                win_length=int(10. / HOP_LEN_S), 
-            )[None], device=dev)
-            
-        
-        pred_signals = self(
-            a.repeat(num_samples,1,1),
-            t[None, :].repeat(num_samples,1,1),
-        ).cpu().numpy()
-
-        random_hex_string = lambda num: hex(random.randrange(16**num))[2:]
-        
-        # package mapset
-        # ======
-        while True:
-            mapset = Path(f"_{random_hex_string(7)} {artist} - {title}.osz")
-            if not mapset.exists():
-                break
-                
-        with ZipFile(mapset, 'x') as mapset_archive:
-            mapset_archive.write(audio_file, audio_file.name)
-            
-            for i, pred_signal in enumerate(pred_signals):
-                mapset_archive.writestr(
-                    f"{artist} - {title} (osu!dreamer) [version {i}].osu",
-                    signal_to_map(
-                        dict( **metadata, version=f"version {i}" ),
-                        pred_signal, frame_times, copy.deepcopy(timing),
-                    ),
-                )
-                    
-        return mapset
     
 #
 #
