@@ -159,9 +159,22 @@ def to_beatmap(metadata, sig, frame_times, timing):
     elif isinstance(timing, (int, float)):
         timing_beat_len = 60 * 1000 / timing
         # compute timing offset
-        offs = [ frame_times[i] % timing_beat_len for i,_,_,_ in sorted_hits]
-        offset_dist = scipy.stats.gaussian_kde(offs)
-        offset = offset_dist.pdf(np.linspace(0, timing_beat_len, 1000)).argmax() / 1000 * timing_beat_len
+        offset_dist = scipy.stats.gaussian_kde([ frame_times[i] % timing_beat_len for i,_,_,_ in sorted_hits])
+        b_offset = offset_dist.pdf(np.linspace(0, timing_beat_len, 1000)).argmax() / 1000 * timing_beat_len
+
+        # compute meter start
+        m = 4 # TODO: don't assume 4 beat measure
+        offset_dist = scipy.stats.gaussian_kde([
+            (frame_times[i] - b_offset + timing_beat_len * j) % (timing_beat_len * m)
+            for i,_,_,_ in sorted_hits
+            for j in range(m)
+        ])
+
+        offset = offset_dist.pdf(np.linspace(0, timing_beat_len * m, 1000)).argmax() / 1000 * timing_beat_len * m + b_offset
+
+        if offset > timing_beat_len * m * .5:
+            offset -= timing_beat_len * m
+
         beat_snap, timing_points = True, [TimingPoint(offset, timing_beat_len, None, 4)]
 
     hos = [] # hit objects
