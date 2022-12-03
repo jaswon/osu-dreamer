@@ -25,6 +25,7 @@ Artist: {artist}
 ArtistUnicode: {artist}
 Creator: osu!dreamer
 Version: {version}
+Tags: osu_dreamer
 
 [Difficulty]
 HPDrainRate: 0
