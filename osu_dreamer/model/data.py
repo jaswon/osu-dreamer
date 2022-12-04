@@ -90,9 +90,9 @@ def prepare_map(data_dir, map_file):
         return
 
     if spec_path.exists():
-        # determine audio sample rate
-        sr = torchaudio.info(bm.audio_filename).sample_rate
         spec = np.load(spec_path)
+        # determine audio sample rate
+        sr = librosa.get_samplerate(bm.audio_filename)
     else:
         # load audio file
         try:
