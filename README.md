@@ -59,7 +59,7 @@ metadata arguments:
 ## Model training
 
 ```
-python scripts/cli.py fit -c config.yml --model.src_path SONGS_DIR
+python scripts/cli.py fit -c config.yml --data.src_path SONGS_DIR
 ```
 
 replace `SONGS_DIR` with the path to the osu! Songs directory (or a directory with the same structure).
