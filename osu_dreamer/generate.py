@@ -8,7 +8,7 @@ import librosa
 import scipy.stats
 
 from osu_dreamer.signal.from_beatmap import timing_signal as beatmap_timing_signal
-from osu_dreamer.model.data import load_audio, SR, HOP_LEN, N_FFT
+from osu_dreamer.data import load_audio, SR, HOP_LEN, N_FFT
 
 def generate_mapset(
     model,

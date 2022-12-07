@@ -16,11 +16,12 @@ import numpy as np
 
 import pytorch_lightning as pl
 
+from osu_dreamer.data import A_DIM
 from osu_dreamer.signal import (
     MAP_SIGNAL_DIM as X_DIM,
     TIMING_DIM as T_DIM,
 )
-from .data import A_DIM
+
 from .vq import VectorQuantizer
 from .modules import ConvNextBlock, Downsample, Upsample
     
