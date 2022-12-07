@@ -8,7 +8,7 @@ import librosa
 import scipy.stats
 
 from osu_dreamer.signal.from_beatmap import timing_signal as beatmap_timing_signal
-from osu_dreamer.model.data import load_audio, HOP_LEN_S, N_FFT
+from osu_dreamer.model.data import load_audio, SR, HOP_LEN, N_FFT
 
 def generate_mapset(
     model,
@@ -35,7 +35,7 @@ def generate_mapset(
 
     frame_times = librosa.frames_to_time(
         np.arange(a.shape[-1]),
-        sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
+        sr=SR, hop_length=HOP_LEN, n_fft=N_FFT,
     ) * 1000
     
     # generate maps
@@ -59,7 +59,7 @@ def generate_mapset(
             ),
             prior = bpm_prior,
             # use 10s of audio to determine local bpm
-            win_length=int(10. / HOP_LEN_S), 
+            win_length=int(10. * SR / HOP_LEN), 
         )[None], device=dev)
         
     

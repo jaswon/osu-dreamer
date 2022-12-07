@@ -14,7 +14,6 @@ import librosa
 
 
 import torch
-import torchaudio
 from torch.utils.data import IterableDataset, DataLoader, random_split
 
 import pytorch_lightning as pl
@@ -27,7 +26,8 @@ from osu_dreamer.signal import (
 
 # audio processing constants
 N_FFT = 2048
-HOP_LEN_S = 128. / 22050 # ~6 ms per frame
+HOP_LEN = 22 # 1 ms per frame
+SR = 22000
 N_MELS = 64
 
 A_DIM = 40
@@ -49,21 +49,17 @@ else:
 def load_audio(audio_file):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        wave, sr = librosa.load(audio_file)
+        wave, _ = librosa.load(audio_file, sr=SR)
 
     # compute spectrogram
-    spec: "A,L" = torchaudio.transforms.MFCC(
-        sample_rate=sr, 
+    return librosa.feature.mfcc(
+        y=wave,
+        sr=SR,
         n_mfcc=A_DIM,
-        melkwargs=dict(
-            normalized=True,
-            n_fft=N_FFT,
-            hop_length=int(HOP_LEN_S * sr),
-            n_mels=N_MELS,
-        ),
-    )(torch.tensor(wave)).numpy()
-    
-    return spec, sr
+        n_fft=N_FFT,
+        hop_length=HOP_LEN,
+        n_mels=N_MELS,
+    )
 
 def prepare_map(data_dir, map_file):
     try:
@@ -91,12 +87,10 @@ def prepare_map(data_dir, map_file):
 
     if spec_path.exists():
         spec = np.load(spec_path)
-        # determine audio sample rate
-        sr = librosa.get_samplerate(bm.audio_filename)
     else:
         # load audio file
         try:
-            spec, sr = load_audio(bm.audio_filename)
+            spec = load_audio(bm.audio_filename)
         except Exception as e:
             print(f"{bm.audio_filename}: {e}")
             return
@@ -108,7 +102,7 @@ def prepare_map(data_dir, map_file):
             
     frame_times = librosa.frames_to_time(
         np.arange(spec.shape[-1]),
-        sr=sr, hop_length=int(HOP_LEN_S * sr), n_fft=N_FFT,
+        sr=SR, hop_length=HOP_LEN, n_fft=N_FFT,
     ) * 1000
     
     # compute timing signal
@@ -125,7 +119,7 @@ def prepare_map(data_dir, map_file):
             ),
             prior = scipy.stats.lognorm(loc=np.log(180), scale=180, s=1),
             # use 10s of audio to determine local bpm
-            win_length=int(10. / HOP_LEN_S), 
+            win_length=int(10. * SR / HOP_LEN), 
         )[None]
         with open(plp_path, "wb") as f:
             np.save(f, plp, allow_pickle=False)
