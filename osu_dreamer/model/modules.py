@@ -92,17 +92,22 @@ class Attention(nn.Module):
 class WaveBlock(nn.Module):
     """context is acquired from num_stacks*2**stack_depth neighborhood"""
     
-    def __init__(self, dim, stack_depth, num_stacks):
+    def __init__(self, dim, stack_depth, num_stacks, mult=1, h_dim_groups=1, up=False):
         super().__init__()
+
+        self.in_net = nn.Conv1d(dim, dim * mult, 1)
+        self.out_net = nn.Conv1d(dim * mult, dim, 1)
         
         self.nets = nn.ModuleList([
             nn.Sequential(
-                nn.Conv1d(
-                    dim, 2 * dim,
+                (nn.ConvTranspose1d if up else nn.Conv1d)(
+                    in_channels=dim * mult, 
+                    out_channels=2 * dim * mult,
                     kernel_size=2,
                     padding=2**i,
                     dilation=2**(i+1),
-                    padding_mode='reflect',
+                    groups=h_dim_groups,
+                    **({} if up else dict(padding_mode='replicate')),
                 ),
                 nn.GLU(dim=1),
             )
@@ -111,11 +116,12 @@ class WaveBlock(nn.Module):
         ])
         
     def forward(self, x: "N,C,L") -> "N,C,L":
+        x = self.in_net(x)
         h = x
         for net in self.nets:
             h = net(h)
             x = x + h
-        return x
+        return self.out_net(x)
 
 class ConvNextBlock(nn.Module):
     """https://arxiv.org/abs/2201.03545"""
