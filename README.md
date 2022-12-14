@@ -63,11 +63,11 @@ metadata arguments:
 ## Model training
 
 ```
-python scripts/cli.py fit -c config.yml -c model/model.yml --data.src_path [SONGS_DIR]
+python scripts/cli.py fit -c config.yml -c osu_dreamer/model/model.yml --data.src_path [SONGS_DIR]
 ```
 
 Replace `SONGS_DIR` with the path to the osu! Songs directory (or a directory with the same structure).
-other model parameters are in `model/model.yml`, while data and training parameters are in `config.yml`
+other model parameters are in `osu_dreamer/model/model.yml`, while data and training parameters are in `config.yml`
 
 At the end of every epoch, the model parameters will be checkpointed to `lightning_logs/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt_path [PATH TO CHECKPOINT]` to the above command.
 

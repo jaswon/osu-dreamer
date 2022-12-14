@@ -3,6 +3,6 @@ __pycache__/
 .ipynb_checkpoints/
 *.egg-info/
 data*/
-lightning_logs/
+lightning_logs*/
 *.ckpt
 *.ipynb
