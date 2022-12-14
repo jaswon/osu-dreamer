@@ -26,8 +26,8 @@ from osu_dreamer.signal import (
 
 # audio processing constants
 N_FFT = 2048
-HOP_LEN = 22 # 1 ms per frame
 SR = 22000
+HOP_LEN = (SR // 1000) * 6 # 6 ms per frame
 N_MELS = 64
 
 A_DIM = 40
@@ -66,6 +66,11 @@ def prepare_map(data_dir, map_file):
         bm = Beatmap(map_file, meta_only=True)
     except Exception as e:
         print(f"{map_file}: {e}")
+        return
+
+    if bm.mode != 0:
+        # not osu!std, skip
+        print(f"{map_file}: not an osu!std map")
         return
 
     af_dir = "_".join([bm.audio_filename.stem, *(s[1:] for s in bm.audio_filename.suffixes)])
@@ -214,6 +219,8 @@ class Data(pl.LightningDataModule):
         )
         self.val_set = FullSequenceDataset(dataset=val_split)
             
+        print('approximate epoch length:', self.train_set.approx_dataset_size / self.batch_size)
+            
     def train_dataloader(self):
         return DataLoader(
             self.train_set,
@@ -290,6 +297,17 @@ class SubsequenceDataset(StreamPerSample):
         self.seq_len = kwargs.pop("seq_len")
         self.subseq_density = kwargs.pop("subseq_density", 2)
         super().__init__(**kwargs)
+
+        num_samples = 0
+        for map_file in self.dataset:
+            with open(map_file, 'rb') as f:
+                magic = np.lib.format.read_magic(f)
+                read_header = np.lib.format.read_array_header_1_0 if magic[0] == 1 else np.lib.format.read_array_header_2_0
+                shape = read_header(f, max_header_size=100000)[0]
+                num_samples += int(shape[-1] / self.seq_len * self.subseq_density)
+        
+        self.approx_dataset_size = num_samples * self.sample_density
+
 
     def sample_stream(self, map_file):
         tensors = load_tensors_for_map(map_file)

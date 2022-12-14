@@ -2,7 +2,7 @@ venv/
 __pycache__/
 .ipynb_checkpoints/
 *.egg-info/
-data/
+data*/
 lightning_logs/
 *.ckpt
 *.ipynb

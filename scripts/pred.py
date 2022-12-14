@@ -40,17 +40,17 @@ if __name__ == "__main__":
     
     timing_args = parser.add_argument_group('timing arguments')
     timing_args.add_argument('--bpm', type=float,
-        help='tempo of the whole song in BPM')
+        help='tempo of the whole song in BPM (optional)')
     timing_args.add_argument('--timing_points_from', type=Beatmap,
-        help='beatmap file to take timing points from')
+        help='beatmap file to take timing points from (optional)')
     timing_args.add_argument('--timing_points', type=list_of_timing_points,
         help='list of pipe-separated timing points in `OFFSET:BEAT_LENGTH:METER` format (optional)')
     
     metadata_args = parser.add_argument_group('metadata arguments')
     metadata_args.add_argument('--title',
-        help='Song title - must be provided if it cannot be determined from the audio metadata')
+        help='Song title - required if it cannot be determined from the audio metadata')
     metadata_args.add_argument('--artist',
-        help='Song artsit - must be provided if it cannot be determined from the audio metadata')
+        help='Song artsit - required if it cannot be determined from the audio metadata')
     
     args = parser.parse_args()
     

@@ -119,8 +119,8 @@ class Perfect(Slider):
         length: float,
         center: NDIntArray,
         radius: float,
-        start: NDIntArray,
-        end: NDIntArray,
+        start: float,
+        end: float,
     ):
         super().__init__(t, beat_length, slider_mult, new_combo, slides, length)
         self.center = center
@@ -169,7 +169,7 @@ class Bezier(Slider):
 
         total_len = 0
         curves = []
-        for i, c in enumerate(ctrl_curves):
+        for c in ctrl_curves:
             if len(c) < 2:
                 # invalid bezier curve spec
                 continue

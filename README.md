@@ -7,7 +7,13 @@ osu!dreamer is a generative model for osu! beatmaps based on diffusion
 - [sample generated mapset](https://osu.ppy.sh/beatmapsets/1888586#osu/3889513)
 - [video of a generated map](https://streamable.com/ijp1jj)
 
-## Installation
+## Quick start
+
+[colab notebook (no installation required)](https://colab.research.google.com/drive/1Th6v5OOrY5vcTWvIH3NKZsuj_RMnAEM5#sandboxMode=true)
+
+## Installation for development
+
+FFmpeg is a required dependency
 
 Clone this repo, then run:
 
@@ -17,16 +23,13 @@ pip install ./osu-dreamer
 
 This will install `osu-dreamer` as well as all dependencies
 
-## Generate your own maps
-
-[colab notebook](https://colab.research.google.com/drive/1Th6v5OOrY5vcTWvIH3NKZsuj_RMnAEM5#sandboxMode=true)
-
-### locally
+## Generate your own maps locally
 
 ```
 $ python scripts/pred.py -h
-usage: pred.py [-h] [--sample_steps SAMPLE_STEPS] [--num_samples NUM_SAMPLES] [--bpm BPM] [--timing_points_from TIMING_POINTS_FROM]
-               [--timing_points TIMING_POINTS] [--title TITLE] [--artist ARTIST]
+usage: pred.py [-h] [--sample_steps SAMPLE_STEPS] [--num_samples NUM_SAMPLES] [--bpm BPM]
+               [--timing_points_from TIMING_POINTS_FROM] [--timing_points TIMING_POINTS] [--title TITLE]
+               [--artist ARTIST]
                MODEL_PATH AUDIO_FILE
 
 generate osu!std maps from raw audio
@@ -45,27 +48,30 @@ model arguments:
                         number of maps to generate
 
 timing arguments:
-  --bpm BPM             tempo of the whole song in BPM
+  --bpm BPM             tempo of the whole song in BPM (optional)
   --timing_points_from TIMING_POINTS_FROM
-                        beatmap file to take timing points from
+                        beatmap file to take timing points from (optional)
   --timing_points TIMING_POINTS
-                        list of pipe-separated timing points in `OFFSET:BEAT_LENGTH:METER` format (optional)
+                        list of pipe-separated timing points in `OFFSET:BEAT_LENGTH:METER` format
+                        (optional)
 
 metadata arguments:
-  --title TITLE         Song title - must be provided if it cannot be determined from the audio metadata
-  --artist ARTIST       Song artsit - must be provided if it cannot be determined from the audio metadata
+  --title TITLE         Song title - required if it cannot be determined from the audio metadata
+  --artist ARTIST       Song artsit - required if it cannot be determined from the audio metadata
 ```
 
 ## Model training
 
 ```
-python scripts/cli.py fit -c config.yml --model.src_path SONGS_DIR
+python scripts/cli.py fit -c config.yml -c model/model.yml --data.src_path [SONGS_DIR]
 ```
 
-replace `SONGS_DIR` with the path to the osu! Songs directory (or a directory with the same structure).
-other model parameters are in `config.yml`
+Replace `SONGS_DIR` with the path to the osu! Songs directory (or a directory with the same structure).
+other model parameters are in `model/model.yml`, while data and training parameters are in `config.yml`
 
-run `tensorboard --logdir=lightning_logs/` to track training progress in Tensorboard
+At the end of every epoch, the model parameters will be checkpointed to `lightning_logs/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt_path [PATH TO CHECKPOINT]` to the above command.
+
+run `tensorboard --logdir=lightning_logs/` in a new window to track training progress in Tensorboard
 
 ### visual validation
 
