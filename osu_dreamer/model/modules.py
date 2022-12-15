@@ -6,12 +6,6 @@ import torch.nn as nn
 
 from einops import rearrange
 
-from osu_dreamer.data import A_DIM
-from osu_dreamer.signal import (
-    MAP_SIGNAL_DIM as X_DIM,
-    TIMING_DIM as T_DIM,
-)
-
 
 exists = lambda x: x is not None
 
@@ -164,6 +158,8 @@ class ConvNextBlock(nn.Module):
 class UNet(nn.Module):
     def __init__(
         self,
+        in_dim,
+        out_dim,
         h_dim,
         h_dim_groups,
         dim_mults,
@@ -176,7 +172,7 @@ class UNet(nn.Module):
         block = partial(ConvNextBlock, mult=convnext_mult, groups=h_dim_groups)
         
         self.init_conv = nn.Sequential(
-            nn.Conv1d(X_DIM+A_DIM+T_DIM, h_dim, 7, padding=3),
+            nn.Conv1d(in_dim, h_dim, 7, padding=3),
             WaveBlock(h_dim, wave_stack_depth, wave_num_stacks),
         )
 
@@ -220,13 +216,13 @@ class UNet(nn.Module):
 
         self.final_conv = nn.Sequential(
             block(h_dim, h_dim),
-            zero_module(nn.Conv1d(h_dim, X_DIM, 1)),
+            zero_module(nn.Conv1d(h_dim, out_dim, 1)),
         )
         
 
-    def forward(self, x: "N,X,L", a: "N,A,L", t: "N,T,L", ts: "N,") -> "N,X,L":
+    def forward(self, x: "N,X,L", a: "N,A,L", ts: "N,") -> "N,X,L":
         
-        x: "N,X+A,L" = torch.cat((x,a,t), dim=1)
+        x: "N,X+A,L" = torch.cat([x,a], dim=1)
         
         x: "N,h_dim,L" = self.init_conv(x)
 

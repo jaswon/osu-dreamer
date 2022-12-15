@@ -1,5 +1,6 @@
 import os
 import random
+import time
 import warnings
 
 from pathlib import Path
@@ -9,7 +10,6 @@ from multiprocessing import Pool
 from tqdm import tqdm
 
 import numpy as np
-import scipy.stats
 import librosa
 
 
@@ -19,10 +19,7 @@ from torch.utils.data import IterableDataset, DataLoader, random_split
 import pytorch_lightning as pl
 
 from osu_dreamer.osu.beatmap import Beatmap
-from osu_dreamer.signal import (
-    from_beatmap as signal_from_beatmap,
-    timing_signal as beatmap_timing_signal,
-)
+from osu_dreamer.signal import from_beatmap as signal_from_beatmap
 
 # audio processing constants
 N_FFT = 2048
@@ -49,7 +46,7 @@ else:
 def load_audio(audio_file):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        wave, _ = librosa.load(audio_file, sr=SR)
+        wave, _ = librosa.load(audio_file, sr=SR, res_type='polyphase')
 
     # compute spectrogram
     return librosa.feature.mfcc(
@@ -77,8 +74,6 @@ def prepare_map(data_dir, map_file):
     map_dir = data_dir / map_file.parent.name / af_dir
     
     spec_path =  map_dir / "spec.pt"
-    timing_path = map_dir / "timing.pt"
-    plp_path = map_dir / "plp.pt"
     map_path = map_dir / f"{map_file.stem}.map.pt"
     
     if map_path.exists():
@@ -91,7 +86,18 @@ def prepare_map(data_dir, map_file):
         return
 
     if spec_path.exists():
-        spec = np.load(spec_path)
+        for i in range(5):
+            try:
+                spec = np.load(spec_path)
+                break
+            except ValueError:
+                # can be raised if file was created but writing hasn't completed
+                # just wait a little for the writing to finish
+                time.sleep(.001 * 2**i)
+        else:
+            # retried 5 times without success, just skip
+            print(f"{bm.audio_filename}: unable to load spectrogram from {spec_path}")
+            return
     else:
         # load audio file
         try:
@@ -109,25 +115,6 @@ def prepare_map(data_dir, map_file):
         np.arange(spec.shape[-1]),
         sr=SR, hop_length=HOP_LEN, n_fft=N_FFT,
     ) * 1000
-    
-    # compute timing signal
-    if not timing_path.exists():
-        timing: "T,L" = beatmap_timing_signal(bm, frame_times)
-        with open(timing_path, "wb") as f:
-            np.save(f, timing, allow_pickle=False)
-            
-    # compute plp
-    if not plp_path.exists():
-        plp: "T,L" = librosa.beat.plp(
-            onset_envelope=librosa.onset.onset_strength(
-                S=spec, center=False,
-            ),
-            prior = scipy.stats.lognorm(loc=np.log(180), scale=180, s=1),
-            # use 10s of audio to determine local bpm
-            win_length=int(10. * SR / HOP_LEN), 
-        )[None]
-        with open(plp_path, "wb") as f:
-            np.save(f, plp, allow_pickle=False)
 
     # compute map signal
     x: "X,L" = signal_from_beatmap(bm, frame_times)
@@ -218,7 +205,7 @@ class Data(pl.LightningDataModule):
             subseq_density=self.subseq_density,
         )
         self.val_set = FullSequenceDataset(dataset=val_split)
-            
+
         print('approximate epoch length:', self.train_set.approx_dataset_size / self.batch_size)
             
     def train_dataloader(self):
@@ -277,10 +264,8 @@ class StreamPerSample(IterableDataset):
                 
 def load_tensors_for_map(map_file):
     a: "A,L" = torch.tensor(np.load(map_file.parent / "spec.pt")).float()
-    t: "T,L" = torch.tensor(np.load(map_file.parent / "timing.pt")).float()
-    p: "T,L" = torch.tensor(np.load(map_file.parent / "plp.pt")).float()
     x: "X,L" = torch.tensor(np.load(map_file)).float()
-    return a,t,p,x
+    return a,x
 
 class FullSequenceDataset(StreamPerSample):
     MAX_LEN = 60000

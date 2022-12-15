@@ -19,6 +19,9 @@ import pytorch_lightning as pl
 from .beta_schedule import CosineBetaSchedule, StridedBetaSchedule
 from .modules import UNet
 
+from osu_dreamer.data import A_DIM
+from osu_dreamer.signal import MAP_SIGNAL_DIM as X_DIM
+
 VALID_PAD = 1024
 
 class Model(pl.LightningModule):
@@ -35,15 +38,16 @@ class Model(pl.LightningModule):
         sample_steps: int,
     
         loss_type: str,
-        timing_dropout: float,
         learning_rate: float = 0.,
         learning_rate_schedule_factor: float = 0.,
+        learning_rate_patience: int = 0,
     ):
         super().__init__()
         self.save_hyperparameters()
         
         # model
         self.net = UNet(
+            A_DIM+X_DIM, X_DIM,
             h_dim, h_dim_groups, dim_mults, 
             convnext_mult,
             wave_stack_depth,
@@ -65,7 +69,7 @@ class Model(pl.LightningModule):
 
         self.learning_rate = learning_rate
         self.learning_rate_schedule_factor = learning_rate_schedule_factor
-        self.timing_dropout = timing_dropout
+        self.learning_rate_patience = learning_rate_patience
         self.depth = len(dim_mults)
         
     def inference_pad(self, x):
@@ -74,10 +78,9 @@ class Model(pl.LightningModule):
         x = F.pad(x, (0, pad), mode='replicate')
         return x, (..., slice(VALID_PAD,-(VALID_PAD+pad)))
         
-    def forward(self, a: "N,A,L", t: "N,T,L", **kwargs):
+    def forward(self, a: "N,A,L", **kwargs):
         a, sl = self.inference_pad(a)
-        t, _  = self.inference_pad(t)
-        return self.sampling_schedule.sample(a, t, **kwargs)[sl]
+        return self.sampling_schedule.sample(a, **kwargs)[sl]
     
     
 #
@@ -88,26 +91,20 @@ class Model(pl.LightningModule):
 #
 #
 
-    def compute_loss(self, a, t, p, x, pad=False, timing_dropout=0.):
+    def compute_loss(self, a, x, pad=False):
         ts = torch.randint(0, self.schedule.timesteps, (x.size(0),), device=x.device).long()
         
         if pad:
             a, _ = self.inference_pad(a)
-            t, _ = self.inference_pad(t)
-            p, _ = self.inference_pad(p)
             x, _ = self.inference_pad(x)
-            
-        if timing_dropout > 0:
-            drop_idxs = torch.randperm(t.size(0))[:int(t.size(0) * timing_dropout)]
-            t[drop_idxs] = p[drop_idxs]
         
         true_eps: "N,X,L" = torch.randn_like(x)
 
         x_t: "N,X,L" = self.schedule.q_sample(x, ts, true_eps)
         
-        pred_eps = self.net(x_t, a, t, ts)
+        pred_eps = self.net(x_t, a, ts)
         
-        return self.loss_fn(true_eps, pred_eps).mean()
+        return self.loss_fn(pred_eps, true_eps).mean()
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.net.parameters(), lr=self.learning_rate)
@@ -116,16 +113,19 @@ class Model(pl.LightningModule):
             optimizer=opt,
             lr_scheduler=dict(
                 scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    opt, factor=self.learning_rate_schedule_factor),
+                    opt, 
+                    factor=self.learning_rate_schedule_factor,
+                    patience=self.learning_rate_patience,
+                ),
                 monitor="val/loss",
             ),
         )
     
-    def training_step(self, batch: Tuple["N,A,L", "N,T,L", "N,T,L", "N,X,L"], batch_idx):
+    def training_step(self, batch: Tuple["N,A,L", "N,X,L"], batch_idx):
         torch.cuda.empty_cache()
-        a,t,p,x = copy.deepcopy(batch)
+        a,x = copy.deepcopy(batch)
         
-        loss = self.compute_loss(a,t,p,x,timing_dropout=self.timing_dropout)
+        loss = self.compute_loss(a,x)
         
         self.log(
             "train/loss", loss.detach(),
@@ -134,33 +134,27 @@ class Model(pl.LightningModule):
         
         return loss
 
-    def validation_step(self, batch: Tuple["1,A,L","1,T,L","1,T,L","1,X,L"], batch_idx, *args, **kwargs):
+    def validation_step(self, batch: Tuple["1,A,L","1,X,L"], batch_idx, *args, **kwargs):
         torch.cuda.empty_cache()
-        a,t,p,x = copy.deepcopy(batch)
+        a,x = copy.deepcopy(batch)
         
-        loss = self.compute_loss(a,t,p,x, pad=True, timing_dropout=self.timing_dropout)
-        dropout_loss = self.compute_loss(a,t,p,x, pad=True, timing_dropout=1.)
+        loss = self.compute_loss(a,x, pad=True)
         
         self.log(
             "val/loss", loss.detach(),
             logger=True, on_step=False, on_epoch=True,
         )
         
-        self.log(
-            "val/dropout_loss", dropout_loss.detach(),
-            logger=True, on_step=False, on_epoch=True,
-        )
+        return a,x
         
-        return a,t,p,x
-        
-    def validation_epoch_end(self, val_outs: "List[(1,A,L),(1,T,L),(1,T,L),(1,X,L)]"):
+    def validation_epoch_end(self, val_outs: "List[(1,A,L),(1,X,L)]"):
         if not USE_MATPLOTLIB or len(val_outs) == 0:
             return
         
         torch.cuda.empty_cache()
-        a,t,p,x = copy.deepcopy(val_outs[0])
+        a,x = copy.deepcopy(val_outs[0])
         
-        samples = self(a.repeat(2,1,1), torch.cat([ t,p ], dim=0) ).cpu().numpy()
+        samples = self(a.repeat(2,1,1)).cpu().numpy()
         
         a: "A,L" = a.squeeze(0).cpu().numpy()
         x: "X,L" = x.squeeze(0).cpu().numpy()

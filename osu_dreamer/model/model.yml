@@ -1,6 +1,7 @@
 model:
     learning_rate: .001
     learning_rate_schedule_factor: .5
+    learning_rate_patience: 5
 
     # model hyperparameters
     h_dim: 32
@@ -12,10 +13,7 @@ model:
     timesteps: 1024
     
     # number of steps to use for sampling during validation
-    sample_steps: 80
+    sample_steps: 64
 
     # loss function - can be one of {huber, l1, l2}
     loss_type: "huber"
-    
-    # how often the timing signal should be omitted from training
-    timing_dropout: .6

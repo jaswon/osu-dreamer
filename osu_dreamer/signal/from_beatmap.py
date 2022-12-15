@@ -1,39 +1,9 @@
 import numpy as np
 
-from osu_dreamer.osu.beatmap import Beatmap
-from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner, TimingPoint
+from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner
 from osu_dreamer.osu.sliders import Line, Perfect, Bezier
 
 from .smooth_hit import smooth_hit
-
-TIMING_DIM = 1
-    
-def timing_signal(beatmap_or_timing_points, frame_times: "L,") -> "1,L":
-    if isinstance(beatmap_or_timing_points, Beatmap):
-        utps = beatmap_or_timing_points.uninherited_timing_points
-    elif (
-        isinstance(beatmap_or_timing_points, list) and
-        len(beatmap_or_timing_points) > 0 and
-        isinstance(beatmap_or_timing_points[0], TimingPoint)
-    ):
-        utps = beatmap_or_timing_points
-    else:
-        raise ValueError("first argument must be a Beatmap or a list of TimingPoint")
-        
-    # timing point boundaries
-    tpt = np.array([-np.inf] + [ utp.t for utp in utps[1:] ] + [np.inf])[:, None]
-    
-    # active_tp[0, i] = index into `utps` of the timing point active at frame `i`
-    active_tp = (frame_times >= tpt[:-1]) & (frame_times < tpt[1:])
-    active_tp: "[0,TP),L" = np.argwhere(active_tp.T)[None, :, 1]
-    
-    choices: "TP,L" = np.array([ 
-        (frame_times - utp.t) / utp.beat_length * 2 * np.pi * 2
-        for utp in utps
-    ])
-
-    x: "1,L" = np.take_along_axis(choices, active_tp, axis=0)
-    return np.maximum(0, np.cos(x))
 
 
 def hit_signal(beatmap, frame_times: "L,") -> "4,L":
@@ -53,7 +23,7 @@ def hit_signal(beatmap, frame_times: "L,") -> "4,L":
             sig[0] += smooth_hit(frame_times, ho.t)
         elif isinstance(ho, Slider):
             sig[1] += smooth_hit(frame_times, (ho.t, ho.end_time()))
-        else: # Spinner
+        elif isinstance(ho, Spinner):
             sig[2] += smooth_hit(frame_times, (ho.t, ho.end_time()))
 
         if ho.new_combo:
@@ -153,5 +123,6 @@ def from_beatmap(beatmap, frame_times: "L,") -> "9,L":
     slider: "3,L" = slider_signal(beatmap, frame_times)
     cursor: "2,L" = cursor_signal(beatmap, frame_times) / np.array([[512],[384]])
 
-    return np.concatenate([hits, slider, cursor], axis=0) * 2 - 1
-    
+    sig = np.concatenate([hits, slider, cursor], axis=0) * 2 - 1
+    assert sig.shape[0] == MAP_SIGNAL_DIM
+    return sig

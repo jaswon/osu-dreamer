@@ -34,9 +34,9 @@ class BetaSchedule:
         self.posterior_variance = self.betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod) # beta_tilde
         assert (self.posterior_variance[1:] != 0).all(), self.posterior_variance[1:]
         
-    def net(self, x,a,t,ts):
+    def net(self, x,a,ts):
         """predict the mean of the noise added to `x` at timestep `ts`"""
-        return self._net(x,a,t,ts)
+        return self._net(x,a,ts)
 
     def q_sample(self, x: "N,X,L", ts: "N,", noise=None) -> "N,X,L":
         """sample q(x_t|x_0) using the nice property"""
@@ -50,14 +50,14 @@ class BetaSchedule:
 
         return sqrt_alphas_cumprod_t * x + sqrt_one_minus_alphas_cumprod_t * noise
     
-    def model_eps_var(self, x, a, t, ts):
-        model_eps = self.net(x,a,t,ts)
+    def model_eps_var(self, x, a, ts):
+        model_eps = self.net(x,a,ts)
         model_var = extract(self.posterior_variance, ts, x.shape)
         return model_eps, model_var
     
-    def p_eps_mean_var(self, x, a, t, ts):
+    def p_eps_mean_var(self, x, a, ts):
         """sample from p(x_{t-1} | x_t)"""
-        model_eps, model_var = self.model_eps_var(x,a,t,ts)
+        model_eps, model_var = self.model_eps_var(x,a,ts)
             
         # Equation 11 in the paper
         # Use our model (noise predictor) to predict the mean
@@ -69,7 +69,7 @@ class BetaSchedule:
         return model_eps, model_mean, model_var
         
     @torch.no_grad()
-    def sample(self, a: "N,A,L", t: "N,T,L", x: "N,X,L" = None, *, ddim=False) -> "N,X,L":
+    def sample(self, a: "N,A,L", x: "N,X,L" = None, *, ddim=False) -> "N,X,L":
         """sample p(x)"""
         
         b,_,l = a.size()
@@ -82,7 +82,7 @@ class BetaSchedule:
         for i in tqdm(list(reversed(range(self.timesteps))), desc='sampling loop time step'):
             ts = torch.full((b,), i, device=a.device, dtype=torch.long)
             
-            _, model_mean, model_var = self.p_eps_mean_var(x,a,t,ts)
+            _, model_mean, model_var = self.p_eps_mean_var(x,a,ts)
 
             if i == 0 or ddim:
                 x = model_mean
@@ -123,6 +123,6 @@ class StridedBetaSchedule(BetaSchedule):
         super().__init__(torch.tensor(new_betas), *args, **kwargs)
                 
             
-    def net(self, x,a,t,ts):
+    def net(self, x,a,ts):
         ts = torch.tensor(self.ts_map, device=ts.device, dtype=ts.dtype)[ts]
-        return super().net(x,a,t,ts)
+        return super().net(x,a,ts)

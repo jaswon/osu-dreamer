@@ -33,15 +33,15 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: 4.
+    subseq_density: 1.
     
     # size of training batch
-    batch_size: 64
+    batch_size: 32
     
     # number of workers to use for data loading
-    num_workers: 4
+    num_workers: 6
     
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
-    val_size: 32
+    val_size: 16
     # val_split: .1
