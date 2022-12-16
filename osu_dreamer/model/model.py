@@ -33,6 +33,7 @@ class Model(pl.LightningModule):
         convnext_mult: int,
         wave_stack_depth: int,
         wave_num_stacks: int,
+        blocks_per_depth: int,
         
         timesteps: int,
         sample_steps: int,
@@ -52,6 +53,7 @@ class Model(pl.LightningModule):
             convnext_mult,
             wave_stack_depth,
             wave_num_stacks,
+            blocks_per_depth,
         )
         
         self.schedule = CosineBetaSchedule(timesteps, self.net)

@@ -10,6 +10,7 @@ model:
     convnext_mult: 2
     wave_stack_depth: 5
     wave_num_stacks: 5
+    blocks_per_depth: 2
     timesteps: 1024
     
     # number of steps to use for sampling during validation

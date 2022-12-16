@@ -166,6 +166,7 @@ class UNet(nn.Module):
         convnext_mult,
         wave_stack_depth,
         wave_num_stacks,
+        blocks_per_depth,
     ):
         super().__init__()
         
@@ -193,8 +194,10 @@ class UNet(nn.Module):
         
         self.downs = nn.ModuleList([
             nn.ModuleList([
-                block(dim_in, dim_out, emb_dim=emb_dim),
-                block(dim_out, dim_out, emb_dim=emb_dim),
+                nn.ModuleList([
+                    block(dim_in if i==0 else dim_out, dim_out, emb_dim=emb_dim)
+                    for i in range(blocks_per_depth)
+                ]),
                 Downsample(dim_out) if ind < (num_layers - 1) else nn.Identity(),
             ])
             for ind, (dim_in, dim_out) in enumerate(in_out)
@@ -207,8 +210,10 @@ class UNet(nn.Module):
         
         self.ups = nn.ModuleList([
             nn.ModuleList([
-                block(dim_out * 2, dim_in, emb_dim=emb_dim),
-                block(dim_in, dim_in, emb_dim=emb_dim),
+                nn.ModuleList([
+                    block(dim_out * 2 if i==0 else dim_in, dim_in, emb_dim=emb_dim)
+                    for i in range(blocks_per_depth)
+                ]),
                 Upsample(dim_in) if ind < (num_layers - 1) else nn.Identity(),
             ])
             for ind, (dim_in, dim_out) in enumerate(in_out[::-1])
@@ -230,22 +235,22 @@ class UNet(nn.Module):
         emb: "N,T" = self.time_mlp(ts)
 
         # downsample
-        for block1, block2, downsample in self.downs:
-            x: "N,out,L" = block1(x, emb)
-            x: "N,out,L" = block2(x, emb)
+        for blocks, downsample in self.downs:
+            for block in blocks:
+                x = block(x, emb)
             h.append(x)
-            x: "N,out,L//2" = downsample(x)
+            x = downsample(x)
 
         # bottleneck
-        x: "N,mid,L" = self.mid_block1(x, emb)
-        x: "N,mid,L" = self.mid_attn(x)
-        x: "N,mid,L" = self.mid_block2(x, emb)
+        x = self.mid_block1(x, emb)
+        x = self.mid_attn(x)
+        x = self.mid_block2(x, emb)
 
         # upsample
-        for block1, block2, upsample in self.ups:
-            x: "N,2*out,L" = torch.cat((x, h.pop()), dim=1)
-            x: "N,in,L" = block1(x, emb)
-            x: "N,in,L" = block2(x, emb)
-            x: "N,in,L*2" = upsample(x)
+        for blocks, upsample in self.ups:
+            x = torch.cat((x, h.pop()), dim=1)
+            for block in blocks:
+                x = block(x, emb)
+            x = upsample(x)
 
         return self.final_conv(x)
