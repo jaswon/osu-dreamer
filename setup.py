@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="osu-dreamer",
-    version="3.0",
+    version="3.1",
     python_requires='>=3.7.15',
     packages=[
         "osu_dreamer",
@@ -15,7 +15,6 @@ setup(
         "librosa",
         "tqdm",
         "torch",
-        "torchaudio",
         "einops",
         "pytorch-lightning",
         "jsonargparse[signatures]",
