@@ -14,7 +14,8 @@ model:
     timesteps: 1024
     
     # number of steps to use for sampling during validation
-    sample_steps: 64
+    sample_steps: 32
+    ddim: true
 
     # loss function - can be one of {huber, l1, l2}
     loss_type: "huber"

@@ -37,6 +37,7 @@ if __name__ == "__main__":
     model_args = parser.add_argument_group('model arguments')
     model_args.add_argument('--sample_steps', type=int, default=128, help='number of steps to sample')
     model_args.add_argument('--num_samples', type=int, default=3, help='number of maps to generate')
+    model_args.add_argument('--ddim', action='store_true', help='whether to use DDIM sampling')
     
     timing_args = parser.add_argument_group('timing arguments')
     timing_args.add_argument('--bpm', type=float,
@@ -84,6 +85,7 @@ if __name__ == "__main__":
     model = Model.load_from_checkpoint(
         args.model_path,
         sample_steps=args.sample_steps,
+        ddim=args.ddim,
     ).eval()
     
     if torch.cuda.is_available():

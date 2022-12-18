@@ -37,6 +37,7 @@ class Model(pl.LightningModule):
         
         timesteps: int,
         sample_steps: int,
+        ddim: bool,
     
         loss_type: str,
         learning_rate: float = 0.,
@@ -57,7 +58,7 @@ class Model(pl.LightningModule):
         )
         
         self.schedule = CosineBetaSchedule(timesteps, self.net)
-        self.sampling_schedule = StridedBetaSchedule(self.schedule, sample_steps, self.net)
+        self.sampling_schedule = StridedBetaSchedule(self.schedule, sample_steps, ddim, self.net)
         
         # training params
         try:

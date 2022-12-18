@@ -22,15 +22,16 @@ class BetaSchedule:
         self.alphas = 1. - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, axis=0)
         self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
-        self.sqrt_recip_alphas = torch.rsqrt(self.alphas)
+        self.sqrt_recip_alphas_cumprod = torch.rsqrt(self.alphas_cumprod)
+        self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1.0/self.alphas_cumprod - 1)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - self.alphas_cumprod)
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
-        
-        # Improved DDPM, Eqn. 10
+        self.posterior_mean_x0_coef = self.betas * torch.sqrt(self.alphas_cumprod_prev) / (1. - self.alphas_cumprod)
+        self.posterior_mean_xt_coef = (1.0 - self.alphas_cumprod_prev) * torch.sqrt(self.alphas) / (1.0 - self.alphas_cumprod)
         self.posterior_variance = self.betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod) # beta_tilde
         assert (self.posterior_variance[1:] != 0).all(), self.posterior_variance[1:]
         
@@ -44,32 +45,35 @@ class BetaSchedule:
             noise = torch.randn_like(x)
 
         sqrt_alphas_cumprod_t = extract(self.sqrt_alphas_cumprod, ts, x.shape)
-        sqrt_one_minus_alphas_cumprod_t = extract(
-            self.sqrt_one_minus_alphas_cumprod, ts, x.shape
-        )
+        sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, ts, x.shape)
 
         return sqrt_alphas_cumprod_t * x + sqrt_one_minus_alphas_cumprod_t * noise
-    
-    def model_eps_var(self, x, a, ts):
-        model_eps = self.net(x,a,ts)
-        model_var = extract(self.posterior_variance, ts, x.shape)
-        return model_eps, model_var
+
+    def q_posterior_mean_var(self, x0, x, ts):
+        """sample from q(x_{t-1} | x_t, x_0)"""
+
+        posterior_mean_x0_coef_t = extract(self.posterior_mean_x0_coef, ts, x.shape)
+        posterior_mean_xt_coef_t = extract(self.posterior_mean_xt_coef, ts, x.shape)
+
+        posterior_mean = posterior_mean_x0_coef_t * x0 + posterior_mean_xt_coef_t * x
+        posterior_var = extract(self.posterior_variance, ts, x.shape)
+
+        return posterior_mean, posterior_var
     
     def p_eps_mean_var(self, x, a, ts):
         """sample from p(x_{t-1} | x_t)"""
-        model_eps, model_var = self.model_eps_var(x,a,ts)
-            
-        # Equation 11 in the paper
-        # Use our model (noise predictor) to predict the mean
-        betas_t = extract(self.betas, ts, x.shape)
-        sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, ts, x.shape)
-        sqrt_recip_alphas_t = extract(self.sqrt_recip_alphas, ts, x.shape)
-        model_mean = sqrt_recip_alphas_t * (x - betas_t * model_eps / sqrt_one_minus_alphas_cumprod_t)
+        model_eps = self.net(x,a,ts)
         
-        return model_eps, model_mean, model_var
+        sqrt_recip_alphas_cumprod_t = extract(self.sqrt_recip_alphas_cumprod, ts, x.shape)
+        sqrt_recipm1_alphas_cumprod_t = extract(self.sqrt_recipm1_alphas_cumprod, ts, x.shape)
+
+        model_x0 = sqrt_recip_alphas_cumprod_t * x - model_eps * sqrt_recipm1_alphas_cumprod_t # nice property
+        model_mean, model_var = self.q_posterior_mean_var(model_x0, x, ts)
+        
+        return model_eps, model_mean, model_var, model_x0
         
     @torch.no_grad()
-    def sample(self, a: "N,A,L", x: "N,X,L" = None, *, ddim=False) -> "N,X,L":
+    def sample(self, a: "N,A,L", x: "N,X,L" = None) -> "N,X,L":
         """sample p(x)"""
         
         b,_,l = a.size()
@@ -82,9 +86,9 @@ class BetaSchedule:
         for i in tqdm(list(reversed(range(self.timesteps))), desc='sampling loop time step'):
             ts = torch.full((b,), i, device=a.device, dtype=torch.long)
             
-            _, model_mean, model_var = self.p_eps_mean_var(x,a,ts)
+            _, model_mean, model_var, _ = self.p_eps_mean_var(x,a,ts)
 
-            if i == 0 or ddim:
+            if i == 0:
                 x = model_mean
             else:
                 x = model_mean + torch.sqrt(model_var) * torch.randn_like(x)
@@ -107,10 +111,10 @@ class CosineBetaSchedule(BetaSchedule):
 
     
 class StridedBetaSchedule(BetaSchedule):
-    def __init__(self, schedule, steps, *args, **kwargs):
-        # use_timesteps = set(torch.linspace(1, schedule.timesteps, steps).round().int().tolist())
-        use_timesteps = set(torch.arange(1,schedule.timesteps, schedule.timesteps/steps).round().int().tolist())
+    def __init__(self, schedule, steps, ddim, *args, **kwargs):
+        use_timesteps = set(range(0, schedule.timesteps, int(schedule.timesteps/steps)+1))
         self.ts_map = []
+        self.ddim = ddim
 
         last_alpha_cumprod = 1.0
         new_betas = []
@@ -126,3 +130,17 @@ class StridedBetaSchedule(BetaSchedule):
     def net(self, x,a,ts):
         ts = torch.tensor(self.ts_map, device=ts.device, dtype=ts.dtype)[ts]
         return super().net(x,a,ts)
+        
+    def p_eps_mean_var(self, x, a, ts):
+        model_eps, model_mean, model_var, model_x0 = super().p_eps_mean_var(x,a,ts)
+
+        if self.ddim:
+            eta = 0 # TODO: configuration
+            alpha_cumprod_prev_t = extract(self.alphas_cumprod_prev, ts, x.shape)
+            model_var = eta ** 2 * model_var
+            model_mean = (
+                model_x0 * torch.sqrt(alpha_cumprod_prev_t)
+                + model_eps * torch.sqrt(1 - alpha_cumprod_prev_t - model_var)
+            )
+
+        return model_eps, model_mean, model_var, model_x0
