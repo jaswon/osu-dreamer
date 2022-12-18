@@ -156,6 +156,17 @@ def to_beatmap(metadata, sig, frame_times, timing):
     if isinstance(timing, list) and len(timing) > 0:
         beat_snap, timing_points = True, timing
     elif timing is None:
+        # TODO: compute tempo from hit times
+
+        # the following code only works when the whole song is a constant tempo
+
+        # diff_dist = scipy.stats.gaussian_kde([ 
+        #     np.log(frame_times[b[0]] - frame_times[a[0]])
+        #     for a,b in zip(sorted_hits[:-1], sorted_hits[1:])
+        # ])
+        # x = np.linspace(0,20,1000)
+        # timing_beat_len = np.exp(x[diff_dist(x).argmax()])
+        
         beat_snap, timing_points = False, [TimingPoint(0, 1000, None, 4)]
     elif isinstance(timing, (int, float)):
         timing_beat_len = 60. * 1000. / float(timing)
