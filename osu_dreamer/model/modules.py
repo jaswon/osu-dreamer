@@ -81,7 +81,18 @@ class Attention(nn.Module):
         out:"N,h,L,d" = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
         out = rearrange(out, "b h l c -> b (h c) l")
         return out
-        
+
+class LinearAttention(Attention):
+    """https://arxiv.org/abs/1812.01243"""
+    
+    def attn(self, q: "N,h,d,L", k: "N,h,d,L", v: "N,h,d,L"):
+        q = q.softmax(dim=-2) * self.scale
+        k = k.softmax(dim=-1)
+
+        ctx: "N,h,d,d" = torch.einsum("b h d n, b h e n -> b h d e", k, v)
+        out: "N,h,d,l" = torch.einsum("b h d e, b h d n -> b h e n", ctx, q)
+        out = rearrange(out, "b h c l -> b (h c) l")
+        return out
     
 class WaveBlock(nn.Module):
     """context is acquired from num_stacks*2**stack_depth neighborhood"""
@@ -136,11 +147,11 @@ class ConvNextBlock(nn.Module):
 
         self.net = nn.Sequential(
             nn.GroupNorm(1, dim) if norm else nn.Identity(),
-            nn.Conv1d(dim, dim_out * mult, 3,1,1, padding_mode='reflect', groups=groups),
+            nn.Conv1d(dim, dim_out * mult, 7,1,3, padding_mode='reflect', groups=groups),
             nn.SiLU(),
 
             nn.GroupNorm(1, dim_out * mult),
-            nn.Conv1d(dim_out * mult, dim_out, 3,1,1, padding_mode='reflect', groups=groups),
+            nn.Conv1d(dim_out * mult, dim_out, 7,1,3, padding_mode='reflect', groups=groups),
         )
 
         self.res_conv = nn.Conv1d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
@@ -196,6 +207,10 @@ class UNet(nn.Module):
                     block(dim_in if i==0 else dim_out, dim_out, emb_dim=emb_dim)
                     for i in range(blocks_per_depth)
                 ]),
+                nn.ModuleList([
+                    Residual(PreNorm(dim_out, LinearAttention(dim_out)))
+                    for _ in range(blocks_per_depth)
+                ]),
                 Downsample(dim_out) if ind < (num_layers - 1) else nn.Identity(),
             ])
             for ind, (dim_in, dim_out) in enumerate(in_out)
@@ -211,6 +226,10 @@ class UNet(nn.Module):
                 nn.ModuleList([
                     block(dim_out * 2 if i==0 else dim_in, dim_in, emb_dim=emb_dim)
                     for i in range(blocks_per_depth)
+                ]),
+                nn.ModuleList([
+                    Residual(PreNorm(dim_in, LinearAttention(dim_in)))
+                    for _ in range(blocks_per_depth)
                 ]),
                 Upsample(dim_in) if ind < (num_layers - 1) else nn.Identity(),
             ])
@@ -236,9 +255,9 @@ class UNet(nn.Module):
         emb: "N,T" = self.time_mlp(ts)
 
         # downsample
-        for blocks, downsample in self.downs:
-            for block in blocks:
-                x = block(x, emb)
+        for blocks, attns, downsample in self.downs:
+            for block, attn in zip(blocks, attns):
+                x = attn(block(x, emb))
             h.append(x)
             x = downsample(x)
 
@@ -248,10 +267,10 @@ class UNet(nn.Module):
         x = self.mid_block2(x, emb)
 
         # upsample
-        for blocks, upsample in self.ups:
+        for blocks, attns, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim=1)
-            for block in blocks:
-                x = block(x, emb)
+            for block, attn in zip(blocks, attns):
+                x = attn(block(x, emb))
             x = upsample(x)
 
         return self.final_conv(x)
