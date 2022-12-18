@@ -81,9 +81,14 @@ class Model(pl.LightningModule):
         x = F.pad(x, (0, pad), mode='replicate')
         return x, (..., slice(VALID_PAD,-(VALID_PAD+pad)))
         
-    def forward(self, a: "N,A,L", **kwargs):
+    def forward(self, a: "N,A,L", x: "N,X,L" = None, *, sample_steps=None, ddim=None):
+        if sample_steps is not None and ddim is not None:
+            sch = StridedBetaSchedule(self.schedule, sample_steps, ddim, self.net)
+        else:
+            sch = self.sampling_schedule
+
         a, sl = self.inference_pad(a)
-        return self.sampling_schedule.sample(a, **kwargs)[sl]
+        return sch.sample(a, x)[sl]
     
     
 #

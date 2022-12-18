@@ -16,6 +16,8 @@ def generate_mapset(
     num_samples,
     title,
     artist,
+    sample_steps,
+    ddim,
 ):
     
     metadata = dict(
@@ -38,7 +40,11 @@ def generate_mapset(
     
     # generate maps
     # ======
-    pred_signals = model(a.repeat(num_samples,1,1)).cpu().numpy()
+    pred_signals = model(
+        a.repeat(num_samples,1,1),
+        sample_steps=sample_steps,
+        ddim=ddim,
+    ).cpu().numpy()
 
     # package mapset
     # ======

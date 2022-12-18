@@ -82,11 +82,7 @@ if __name__ == "__main__":
             
     # load model
     # ======
-    model = Model.load_from_checkpoint(
-        args.model_path,
-        sample_steps=args.sample_steps,
-        ddim=args.ddim,
-    ).eval()
+    model = Model.load_from_checkpoint(args.model_path).eval()
     
     if torch.cuda.is_available():
         print('using GPU accelerated inference')
@@ -100,4 +96,6 @@ if __name__ == "__main__":
         timing,
         args.num_samples,
         args.title, args.artist,
+        args.sample_steps,
+        args.ddim,
     )
