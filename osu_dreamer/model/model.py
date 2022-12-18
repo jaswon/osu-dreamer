@@ -27,9 +27,8 @@ VALID_PAD = 1024
 class Model(pl.LightningModule):
     def __init__(
         self,
-        h_dim: int,
+        h_dims: List[int],
         h_dim_groups: int,
-        dim_mults: List[int],
         convnext_mult: int,
         wave_stack_depth: int,
         wave_num_stacks: int,
@@ -50,7 +49,7 @@ class Model(pl.LightningModule):
         # model
         self.net = UNet(
             A_DIM+X_DIM, X_DIM,
-            h_dim, h_dim_groups, dim_mults, 
+            h_dims, h_dim_groups,
             convnext_mult,
             wave_stack_depth,
             wave_num_stacks,
@@ -73,7 +72,7 @@ class Model(pl.LightningModule):
         self.learning_rate = learning_rate
         self.learning_rate_schedule_factor = learning_rate_schedule_factor
         self.learning_rate_patience = learning_rate_patience
-        self.depth = len(dim_mults)
+        self.depth = len(h_dims)-1
         
     def inference_pad(self, x):
         x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')

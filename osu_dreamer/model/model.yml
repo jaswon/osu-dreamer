@@ -4,9 +4,8 @@ model:
     learning_rate_patience: 5
 
     # model hyperparameters
-    h_dim: 32
+    h_dims: [128,128,128,128,128]
     h_dim_groups: 1
-    dim_mults: [1,2,4,8,16]
     convnext_mult: 2
     wave_stack_depth: 5
     wave_num_stacks: 5

@@ -160,9 +160,8 @@ class UNet(nn.Module):
         self,
         in_dim,
         out_dim,
-        h_dim,
+        h_dims,
         h_dim_groups,
-        dim_mults,
         convnext_mult,
         wave_stack_depth,
         wave_num_stacks,
@@ -171,21 +170,20 @@ class UNet(nn.Module):
         super().__init__()
         
         block = partial(ConvNextBlock, mult=convnext_mult, groups=h_dim_groups)
-        
-        self.init_conv = nn.Sequential(
-            nn.Conv1d(in_dim, h_dim, 7, padding=3),
-            WaveBlock(h_dim, wave_stack_depth, wave_num_stacks),
-        )
 
-        dims = [h_dim, *(h_dim*m for m in dim_mults)]
-        in_out = list(zip(dims[:-1], dims[1:]))
+        in_out = list(zip(h_dims[:-1], h_dims[1:]))
         num_layers = len(in_out)
         
+        self.init_conv = nn.Sequential(
+            nn.Conv1d(in_dim, h_dims[0], 7, padding=3),
+            WaveBlock(h_dims[0], wave_stack_depth, wave_num_stacks),
+        )
+        
         # time embeddings
-        emb_dim = h_dim * 4
+        emb_dim = h_dims[0] * 4
         self.time_mlp: "N, -> N,T" = nn.Sequential(
-            SinusoidalPositionEmbeddings(h_dim),
-            nn.Linear(h_dim, emb_dim),
+            SinusoidalPositionEmbeddings(h_dims[0]),
+            nn.Linear(h_dims[0], emb_dim),
             nn.SiLU(),
             nn.Linear(emb_dim, emb_dim),
         )
@@ -203,7 +201,7 @@ class UNet(nn.Module):
             for ind, (dim_in, dim_out) in enumerate(in_out)
         ])
 
-        mid_dim = dims[-1]
+        mid_dim = h_dims[-1]
         self.mid_block1 = block(mid_dim, mid_dim, emb_dim=emb_dim)
         self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
         self.mid_block2 = block(mid_dim, mid_dim, emb_dim=emb_dim)
@@ -220,8 +218,11 @@ class UNet(nn.Module):
         ])
 
         self.final_conv = nn.Sequential(
-            block(h_dim, h_dim),
-            zero_module(nn.Conv1d(h_dim, out_dim, 1)),
+            *(
+                block(h_dims[0], h_dims[0])
+                for _ in range(blocks_per_depth)
+            ),
+            zero_module(nn.Conv1d(h_dims[0], out_dim, 1)),
         )
         
 
