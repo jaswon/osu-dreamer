@@ -167,14 +167,14 @@ def to_beatmap(metadata, sig, frame_times, timing):
         # x = np.linspace(0,20,1000)
         # timing_beat_len = np.exp(x[diff_dist(x).argmax()])
         
-        beat_snap, timing_points = False, [TimingPoint(0, 1000, None, 4)]
+        beat_snap, timing_points = False, [TimingPoint(0, 1000, None, 4, None)]
     elif isinstance(timing, (int, float)):
         timing_beat_len = 60. * 1000. / float(timing)
         # compute timing offset
         offset_dist = scipy.stats.gaussian_kde([ frame_times[i] % timing_beat_len for i,_,_,_ in sorted_hits])
         offset = offset_dist.pdf(np.linspace(0, timing_beat_len, 1000)).argmax() / 1000. * timing_beat_len
 
-        beat_snap, timing_points = True, [TimingPoint(offset, timing_beat_len, None, 4)]
+        beat_snap, timing_points = True, [TimingPoint(offset, timing_beat_len, None, 4, None)]
 
     hos = [] # hit objects
     tps = [] # timing points
