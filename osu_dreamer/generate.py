@@ -5,9 +5,11 @@ from zipfile import ZipFile
 import numpy as np
 import torch
 import librosa
+import os
 
 from osu_dreamer.data import load_audio, HOP_LEN, SR, N_FFT
 from osu_dreamer.signal import to_beatmap as signal_to_map
+
 
 def generate_mapset(
     model,
@@ -18,14 +20,18 @@ def generate_mapset(
     artist,
     sample_steps,
     ddim,
+    directory,
 ):
-    
+
     metadata = dict(
         audio_filename=audio_file.name,
         title=title,
         artist=artist,
     )
-    
+
+    if directory == None:
+        directory = os.getcwd()
+
     # load audio
     # ======
     dev = next(model.parameters()).device
@@ -37,34 +43,35 @@ def generate_mapset(
         n_fft=N_FFT,
         sr=SR,
     ) * 1000
-    
+
     # generate maps
     # ======
     pred_signals = model(
-        a.repeat(num_samples,1,1),
+        a.repeat(num_samples, 1, 1),
         sample_steps=sample_steps,
         ddim=ddim,
     ).cpu().numpy()
 
     # package mapset
     # ======
-    random_hex_string = lambda num: hex(random.randrange(16**num))[2:]
+    def random_hex_string(num): return hex(random.randrange(16**num))[2:]
 
     while True:
-        mapset = Path(f"_{random_hex_string(7)} {artist} - {title}.osz")
+        mapset = Path(os.path.join(
+            directory, f"_{random_hex_string(7)} {artist} - {title}.osz"))
         if not mapset.exists():
             break
-            
+
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
-        
+
         for i, pred_signal in enumerate(pred_signals):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 signal_to_map(
-                    dict( **metadata, version=f"version {i}" ),
+                    dict(**metadata, version=f"version {i}"),
                     pred_signal, frame_times, timing,
                 ),
             )
-                
+
     return mapset

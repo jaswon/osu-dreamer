@@ -19,6 +19,11 @@ setup(
         "pytorch-lightning",
         "jsonargparse[signatures]",
         "mutagen",
+        "requests",
+        "flask",
+        "flask_cors",
+        "unidecode",
+        "fake_useragent"
     ],
     extras_require={
         "dev": ["matplotlib"],
