@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-    name="osu-dreamer",
+    name="osu-dreamer-server",
     version="3.1",
     python_requires='>=3.7.15',
     packages=[
