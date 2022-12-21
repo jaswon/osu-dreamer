@@ -20,7 +20,7 @@ from .beta_schedule import CosineBetaSchedule, StridedBetaSchedule
 from .modules import UNet
 
 from osu_dreamer.data import A_DIM
-from osu_dreamer.signal import MAP_SIGNAL_DIM as X_DIM
+from osu_dreamer.signal import X_DIM
 
 VALID_PAD = 1024
 
