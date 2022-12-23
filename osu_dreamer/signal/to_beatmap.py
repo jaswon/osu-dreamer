@@ -133,9 +133,9 @@ def to_beatmap(metadata, sig, frame_times, timing):
     sig = sig[AUX_DIM:] # ignore auxiliary signals
     sig = (sig+1)/2 # [-1, 1] => [0, 1]
     
-    hit_signal, sig = sig[:HIT_DIM], sig[HIT_DIM:]
-    slider_signal, sig = sig[:SLIDER_DIM], sig[SLIDER_DIM:]
-    cursor_signal, sig = sig[:CURSOR_DIM], sig[CURSOR_DIM:]
+    hit_signal, sig = np.split(sig, (HIT_DIM,))
+    slider_signal, sig = np.split(sig, (SLIDER_DIM,))
+    cursor_signal, sig = np.split(sig, (CURSOR_DIM,))
     assert sig.shape[0] == 0
     
     # process hit signal

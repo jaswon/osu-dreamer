@@ -105,13 +105,16 @@ def cursor_signal(beatmap, frame_times: "L,") -> "CURSOR_DIM,L":
             pos.append(b.start_pos())
         elif t < a.end_time():
             # hitting current hit object
-            if isinstance(a, (Circle, Spinner)):
+            # note: will not be a `Circle` due to `hit_object_pairs`
+            if isinstance(a, Spinner):
                 pos.append(a.start_pos())
             else: # is a slider
-                # NOTE: for the duration of the slider, the cursor signal generated
-                # will only traverse a single slide of the slider, regardless of 
-                # how many slides the slider actually has
-                pos.append(a.lerp((t - a.t) / a.slide_duration))
+                single_slide = a.slide_duration / a.slides
+                ts = (t - a.t) % (single_slide * 2) / single_slide
+                if ts < 1:  # start -> end
+                    pos.append(a.lerp(ts))
+                else:  # end -> start
+                    pos.append(a.lerp(2 - ts))
         elif b is None:
             # after last hit object
             pos.append(a.end_pos())

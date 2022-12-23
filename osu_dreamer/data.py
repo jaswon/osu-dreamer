@@ -67,7 +67,7 @@ def prepare_map(data_dir, map_file):
 
     if bm.mode != 0:
         # not osu!std, skip
-        print(f"{map_file}: not an osu!std map")
+        # print(f"{map_file}: not an osu!std map")
         return
 
     af_dir = "_".join([bm.audio_filename.stem, *(s[1:] for s in bm.audio_filename.suffixes)])

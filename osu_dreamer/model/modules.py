@@ -65,8 +65,6 @@ class Attention(nn.Module):
         self.to_out = nn.Conv1d(h_dim, dim, 1)
 
     def forward(self, x: "N,C,L") -> "N,C,L":
-        n, c, l = x.shape
-        
         qkv: "3,N,h_dim,L" = self.to_qkv(x).chunk(3, dim=1)
         out = self.attn(*( t.unflatten(1, (self.heads, -1)) for t in qkv ))
         return self.to_out(out)

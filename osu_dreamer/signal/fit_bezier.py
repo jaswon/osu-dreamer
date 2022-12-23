@@ -33,8 +33,10 @@ def compute_error(p: "N,2", points: "L,2", u: "L,"):
 
 def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent: "2," = None):
     """fit one (ore more) Bezier curves to a set of points"""
+
+    assert points.shape[0] > 0
     
-    weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(10, len(points)-2))
+    weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(5, len(points)-2))
     
     if left_tangent is None:
         # points[1] - points[0]
@@ -77,10 +79,6 @@ def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent:
                 return [bez_curve[[0,-1]]]
 
             return [bez_curve]
-        
-        if err > max_err ** 2:
-            # error too large
-            break
 
     # Fitting failed -- split at max error point and fit recursively
     center_tangent = normalize(points[split_point-1] - points[split_point+1])
