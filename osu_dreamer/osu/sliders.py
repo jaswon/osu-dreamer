@@ -107,6 +107,9 @@ class Line(Slider):
         ret = (1 - t) * self.start + t * self.end
         return ret.round(0).astype(np.integer)
 
+    def vel(self, t: float) -> NDIntArray:
+        return (self.end - self.start) / (self.slide_duration / self.slides)
+
 
 class Perfect(Slider):
     def __init__(
@@ -136,6 +139,11 @@ class Perfect(Slider):
         angle = (1 - t) * self.start + t * self.end
         ret = self.center + self.radius * np.array([np.cos(angle), np.sin(angle)])
         return ret.round(0).astype(np.integer)
+
+    def vel(self, t: float) ->  NDIntArray:
+        angle = (1 - t) * self.start + t * self.end
+        return self.radius * np.array([-np.sin(angle), np.cos(angle)]) / (self.slide_duration / self.slides)
+
 
 
 class Bezier(Slider):
@@ -196,32 +204,27 @@ class Bezier(Slider):
             assert approx_eq(curve.length, tail_len), f"{curve.length} != {tail_len}"
             curves.append(curve)
             
-        self.path_segments = copy.deepcopy(curves)
-
-        while True:
-            for i, c in enumerate(curves):
-                if c.length > self.SEG_LEN:
-                    curves[i:i+1] = c.subdivide()
-                    break
-            else:
-                break
-
-        self.seg_starts = np.array([ c.nodes[:, 0] for c in curves ]).T
-        self.seg_ends = np.array([ c.nodes[:, -1] for c in curves ]).T
+        self.path_segments = curves
         self.cum_t = np.cumsum([ c.length for c in curves ]) / self.length
         self.cum_t[-1] = 1.
 
+    def curve_reparameterize(self, t: float) -> "(int, float)":
+        """
+        converts the parameter to an index into the sequence of curves and a new parameter localized to that curve
+        """
+        idx = np.searchsorted(self.cum_t, min(1, max(0, t)))
+        assert idx < len(self.cum_t), (idx, t, self.cum_t)
 
-    def lerp(self, t: Union[float, npt.NDArray[np.floating], ]):
-        idxs = np.searchsorted(self.cum_t, t)
-
-        # self.seg_starts, self.seg_ends : 2 x n
-        seg_start = self.seg_starts[:, idxs]
-        seg_end = self.seg_ends[:, idxs]
-
-        range_start = np.insert(self.cum_t, 0, 0)[idxs]
-        range_end = self.cum_t[idxs]
+        range_start = np.insert(self.cum_t, 0, 0)[idx]
+        range_end = self.cum_t[idx]
 
         t = (t - range_start) / (range_end - range_start)
+        return idx, t
 
-        return (1.-t) * seg_start + t * seg_end
+    def lerp(self, t: float):
+        idx, t = self.curve_reparameterize(t)
+        return self.path_segments[idx].evaluate(t)[:,0].round(0).astype(np.integer)
+
+    def vel(self, t: float) -> NDIntArray:
+        idx, t = self.curve_reparameterize(t)
+        return self.path_segments[idx].evaluate_hodograph(t)[:,0].round(0).astype(np.integer) / (self.slide_duration / self.slides)
