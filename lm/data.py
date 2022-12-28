@@ -306,7 +306,8 @@ class Dataset(IterableDataset):
             return np.array(toks, dtype=int), librosa.time_to_frames(np.array(times), sr=SR, hop_length=HOP_LEN).round().astype(int)
 
         for idx in torch.randperm(L - self.seq_length)[:num_samples]:
-            toks, times = tokens_for_range(*librosa.frames_to_time(np.array([idx, idx+self.seq_length]), sr=SR, hop_length=HOP_LEN))
+            start_time, end_time = librosa.frames_to_time(np.array([idx, idx+self.seq_length]), sr=SR, hop_length=HOP_LEN) * 1000
+            toks, times = tokens_for_range(start_time, end_time)
             mask = np.ones_like(toks)
             if len(toks) <= self.context_len:
                 pad_amt = self.context_len - len(toks) + 1
