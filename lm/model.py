@@ -76,10 +76,11 @@ class Model(pl.LightningModule):
         
     def forward(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N"):
         z: "B,L,D" = self.enc(a.permute(0,2,1))
+        context_mask = torch.ones(z.shape[:-1], dtype=bool, device=z.device)
         out: "B,N,V+T" = self.dec(torch.cat([
             self.token_embeddings(tokens),
             self.to_time_embedding(times),
-        ], dim=2), context=z, mask=mask.bool(), context_mask = torch.ones(z.shape[:-1], dtype=bool))
+        ], dim=2), context=z, mask=mask.bool(), context_mask = context_mask)
         return torch.tensor_split(out, (VOCAB_SIZE,), dim=-1)
     
     

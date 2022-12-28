@@ -140,4 +140,4 @@ def newton_raphson_root_find(bez: "4,2", points: "L,2", u: "L,"):
     num = (d * qp).sum(-1)
     den = (qp**2 + d*qprimeprime(bez, u)).sum(-1)
     
-    return u + np.where(den==0, 0, num/den)
+    return u - np.divide(num, den, out=np.zeros_like(num), where=den!=0)
