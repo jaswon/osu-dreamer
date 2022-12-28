@@ -10,7 +10,7 @@ TO_IDX = { x:i for i,x in enumerate([
     'END',
     'EOS', # end of sequence
     'BSS', # before sequence start
-    *( f'{x:d}' for x in range(512) ),
+    *( f'X{x:d}' for x in range(512) ),
     *( f'Y{y:d}' for y in range(384) ),
 ])}
 
