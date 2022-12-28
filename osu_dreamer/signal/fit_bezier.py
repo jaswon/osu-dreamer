@@ -32,7 +32,7 @@ def compute_error(p: "N,2", points: "L,2", u: "L,"):
 
 
 def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent: "2," = None):
-    """fit one (ore more) Bezier curves to a set of points"""
+    """fit one (or more) Bezier curves to a set of points"""
 
     assert points.shape[0] > 0
     
@@ -48,15 +48,8 @@ def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent:
         r_vecs: "N,2" = points[-3:-3-len(weights):-1] - points[-2]
         right_tangent = normalize(np.einsum('np,n->p', r_vecs, weights))
     
-    # use heuristic if region only has two points in it
     if len(points) == 2:
-        dist = np.linalg.norm(points[0] - points[1]) / 3.0
-        return [[
-            points[0],
-            points[0] + left_tangent * dist,
-            points[1] + right_tangent * dist,
-            points[1],
-        ]]
+        return [points]
     
     u = None
     for _ in range(32):
