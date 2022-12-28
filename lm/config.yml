@@ -27,9 +27,8 @@ trainer:
     enable_model_summary: true
     
 data:
-    # length in frames of each audio segment as an exponent with base 2
-    # eg. length = 2**seq_depth
-    seq_depth: 11
+    # length in frames of each audio segment (must be a power of 2)
+    seq_length: 2048
     
     # what fraction of the full dataset to use per epoch (must be between 0 and 1)
     sample_density: 1.
@@ -38,7 +37,7 @@ data:
     # higher number means more samples from the same beatmap
     subseq_density: .6
 
-    context_len: 512
+    context_len: 1024
     
     # size of training batch
     batch_size: 1

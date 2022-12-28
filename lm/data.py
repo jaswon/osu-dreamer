@@ -1,6 +1,5 @@
 import os
 import random
-import time
 import warnings
 
 import pickle
@@ -21,7 +20,7 @@ from torch.utils.data import IterableDataset, DataLoader, random_split
 import pytorch_lightning as pl
 
 from osu_dreamer.osu.beatmap import Beatmap
-from osu_dreamer.tokens import TO_IDX, EOS, BSS, from_beatmap as tokens_from_beatmap
+from osu_dreamer.tokens import TO_IDX, EOS, BOS, TIME, PAD, from_beatmap as tokens_from_beatmap
 
 # audio processing constants
 N_FFT = 2048
@@ -97,7 +96,7 @@ class Data(pl.LightningDataModule):
     def __init__(
         self,
         
-        seq_depth: int,
+        seq_length: int,
         sample_density: float,
         subseq_density: float,
         context_len: int,
@@ -110,8 +109,9 @@ class Data(pl.LightningDataModule):
         val_size: int = None,
     ):
         super().__init__()
-        
-        self.seq_len = 2 ** seq_depth
+    
+        assert 2**round(np.log(seq_length)/np.log(2)) == seq_length, f'`seq_length` must be a power of 2: {seq_length}'
+        self.seq_length = seq_length
         
         self.sample_density = sample_density
         self.subseq_density = subseq_density
@@ -172,7 +172,7 @@ class Data(pl.LightningDataModule):
         train_split, val_split = random_split(full_set, [train_size, val_size])
         
         dataset_kwargs = dict(
-            seq_len=self.seq_len,
+            seq_length=self.seq_length,
             sample_density=self.sample_density,
             subseq_density=self.subseq_density,
             context_len=self.context_len,
@@ -198,11 +198,11 @@ class Data(pl.LightningDataModule):
     
     
 class Dataset(IterableDataset):
-    def __init__(self, *, dataset, seq_len, subseq_density, sample_density, context_len, **kwargs):
+    def __init__(self, *, dataset, seq_length, subseq_density, sample_density, context_len, **kwargs):
         super().__init__()
         self.dataset = dataset
         self.sample_density = sample_density
-        self.seq_len = seq_len
+        self.seq_length = seq_length
         self.subseq_density = subseq_density
         self.context_len = context_len
         
@@ -218,7 +218,7 @@ class Dataset(IterableDataset):
                 magic = np.lib.format.read_magic(f)
                 read_header = np.lib.format.read_array_header_1_0 if magic[0] == 1 else np.lib.format.read_array_header_2_0
                 shape = read_header(f, max_header_size=100000)[0]
-                num_samples += int(shape[-1] / self.seq_len * self.subseq_density)
+                num_samples += int(shape[-1] / self.seq_length * self.subseq_density)
         
         self.approx_dataset_size = num_samples * self.sample_density
         
@@ -252,10 +252,10 @@ class Dataset(IterableDataset):
         a: "A,L" = torch.tensor(np.load(map_file.parent / "spec.npy")).float()
         
         L = a.size(-1)
-        if self.seq_len >= L:
+        if self.seq_length >= L:
             return
 
-        num_samples = int(L / self.seq_len * self.subseq_density)
+        num_samples = int(L / self.seq_length * self.subseq_density)
 
         with open(map_file, 'rb') as f:
             sentences, sentence_starts, sentence_ends = pickle.load(f)
@@ -269,12 +269,12 @@ class Dataset(IterableDataset):
             - toks: 1D array of ints that are keys into `TO_IDX`
             - times: 1D array of ints that are frame indices (that are relative to `start`) for `TIME`-type tokens
             """
-            toks = [BSS] * self.context_len
-            times = [-1] * self.context_len
+            toks = [BOS]
+            times = [-1]
             for idx in np.nonzero((start <= sentence_starts) & (end >= sentence_ends))[0]:
                 for tok in sentences[idx]:
                     if isinstance(tok, int):
-                        toks.append(TO_IDX["TIME"])
+                        toks.append(TIME)
                         times.append(tok - start)
                     else:
                         toks.append(TO_IDX[tok])
@@ -285,18 +285,18 @@ class Dataset(IterableDataset):
 
             return np.array(toks, dtype=int), librosa.time_to_frames(np.array(times), sr=SR, hop_length=HOP_LEN).round().astype(int)
 
-        for idx in torch.randperm(L - self.seq_len)[:num_samples]:
-            toks, times = tokens_for_range(*librosa.frames_to_time(np.array([idx, idx+self.seq_len]), sr=SR, hop_length=HOP_LEN))
+        for idx in torch.randperm(L - self.seq_length)[:num_samples]:
+            toks, times = tokens_for_range(*librosa.frames_to_time(np.array([idx, idx+self.seq_length]), sr=SR, hop_length=HOP_LEN))
             if len(toks) <= self.context_len:
                 pad_amt = self.context_len - len(toks) + 1
-                toks = np.pad(toks, (0, pad_amt), constant_values=EOS)
+                toks = np.pad(toks, (0, pad_amt), constant_values=PAD)
                 times = np.pad(toks, (0, pad_amt), constant_values=-1)
 
-            seen_context = torch.randperm(len(toks)-self.context_len)[0]
+            token_idx = torch.randperm(len(toks)-self.context_len)[0]
             yield tuple([
-                a[:, idx:idx+self.seq_len].clone(),
-                toks[seen_context:seen_context+self.context_len],
-                times[seen_context:seen_context+self.context_len],
-                toks[seen_context+1:seen_context+self.context_len+1],
-                times[seen_context+1:seen_context+self.context_len+1],
+                a[:, token_idx:token_idx+self.seq_length].clone(),
+                toks[token_idx:token_idx+self.context_len],
+                times[token_idx:token_idx+self.context_len],
+                toks[token_idx+1:token_idx+self.context_len+1],
+                times[token_idx+1:token_idx+self.context_len+1],
             ])

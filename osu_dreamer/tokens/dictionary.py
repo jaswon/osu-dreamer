@@ -9,14 +9,16 @@ TO_IDX = { x:i for i,x in enumerate([
     'SLIDE',
     'END',
     'EOS', # end of sequence
-    'BSS', # before sequence start
-    *( f'X{x:d}' for x in range(512) ),
-    *( f'Y{y:d}' for y in range(384) ),
+    'BOS', # beginning of sequence
+    'PAD', # padding token
+    *( f'X{x:+d}' for x in range(-256,512+256) ),
+    *( f'Y{y:+d}' for y in range(-192,384+192) ),
 ])}
 
 TIME = TO_IDX['TIME']
 EOS = TO_IDX['EOS']
-BSS = TO_IDX['BSS']
+BOS = TO_IDX['BOS']
+PAD = TO_IDX['PAD']
 
 FROM_IDX = { i:x for x,i in TO_IDX.items() }
 
