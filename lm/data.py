@@ -179,6 +179,8 @@ class Data(pl.LightningDataModule):
         )
         self.train_set = Dataset(dataset=train_split, **dataset_kwargs)
         self.val_set = Dataset(dataset=val_split, **dataset_kwargs)
+
+        print('approximate epoch length:', self.train_set.approx_dataset_size / self.batch_size)
             
     def train_dataloader(self):
         return DataLoader(
@@ -209,6 +211,16 @@ class Dataset(IterableDataset):
             
         if len(kwargs):
             raise ValueError(f"unexpected kwargs: {kwargs}")
+
+        num_samples = 0
+        for map_file in self.dataset:
+            with open(map_file.parent / "spec.npy", 'rb') as f:
+                magic = np.lib.format.read_magic(f)
+                read_header = np.lib.format.read_array_header_1_0 if magic[0] == 1 else np.lib.format.read_array_header_2_0
+                shape = read_header(f, max_header_size=100000)[0]
+                num_samples += int(shape[-1] / self.seq_len * self.subseq_density)
+        
+        self.approx_dataset_size = num_samples * self.sample_density
         
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
@@ -257,8 +269,8 @@ class Dataset(IterableDataset):
             - toks: 1D array of ints that are keys into `TO_IDX`
             - times: 1D array of ints that are frame indices (that are relative to `start`) for `TIME`-type tokens
             """
-            toks = [BSS] * (self.context_len - 1)
-            times = [-1] * (self.context_len - 1)
+            toks = [BSS] * self.context_len
+            times = [-1] * self.context_len
             for idx in np.nonzero((start <= sentence_starts) & (end >= sentence_ends))[0]:
                 for tok in sentences[idx]:
                     if isinstance(tok, int):

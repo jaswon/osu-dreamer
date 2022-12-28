@@ -74,8 +74,13 @@ class Model(pl.LightningModule):
         mask = self.time_dim_mask.to(times.device, times.dtype)
         return torch.sum(mask * times.round(), -1)
         
-    def forward(self, a: "N,A,L", x: "N,X,L" = None):
-        pass
+    def forward(self, a: "B,A,L", tokens: "B,N", times: "B,N"):
+        z: "B,L,D" = self.enc(a.permute(0,2,1))
+        out: "B,N,V+T" = self.dec(torch.cat([
+            self.token_embeddings(tokens),
+            self.to_time_embedding(times),
+        ], dim=2), context=z)
+        return torch.tensor_split(out, (VOCAB_SIZE,), dim=-1)
     
     
 #
@@ -86,23 +91,17 @@ class Model(pl.LightningModule):
 #
 #
 
-    def compute_loss(self, a: "B,A,L", toks: "B,N", times: "B,N", true_toks: "B,N", true_times: "B,N"):
+    def compute_loss(self, a: "B,A,L", tokens: "B,N", times: "B,N", true_tokens: "B,N", true_times: "B,N"):
 
-        time_idxs = (toks == TIME).clone()
+        pred_tokens, pred_times = self(a, tokens, times)
 
-        toks: "B,N,E" = self.token_embeddings(toks)
-        times: "B,N,T" = self.to_time_embedding(times)
+        classification_loss = F.cross_entropy(pred_tokens.flatten(0,1), true_tokens.flatten(0,1))
+
+        time_idxs = tokens == TIME
         true_times: "B,N,T" = self.to_time_embedding(true_times)
-
-        z: "B,L,D" = self.enc(a.permute(0,2,1))
-        out: "B,N,V+T" = self.dec(torch.cat([toks, times],dim=2), context=z)
-        out_toks, out_times = torch.tensor_split(out, (VOCAB_SIZE,), dim=-1)
-
-        classification_loss = F.cross_entropy(out_toks.flatten(0,1), true_toks.flatten(0,1))
-
         time_reconstruction_loss = 0
         if time_idxs.any():
-            time_reconstruction_loss = F.binary_cross_entropy_with_logits(out_times[time_idxs], true_times[time_idxs])
+            time_reconstruction_loss = F.binary_cross_entropy_with_logits(pred_times[time_idxs], true_times[time_idxs])
 
         return classification_loss + time_reconstruction_loss
 
@@ -144,3 +143,6 @@ class Model(pl.LightningModule):
             "val/loss", loss.detach(),
             logger=True, on_step=False, on_epoch=True,
         )
+
+    def predict_step(self, batch, *args, **kwargs):
+        pass
