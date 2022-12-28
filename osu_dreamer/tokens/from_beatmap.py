@@ -25,7 +25,7 @@ def arc_to_cubic_bezier(center, radius, start, end) -> "4,2":
     return [p0,p1,p2,p3]
 
 def pos_tokens(x,y):
-    return [ f'X{round(x):d}', f'Y{round(y):d}' ]
+    return [ f'X{round(x):+d}', f'Y{round(y):+d}' ]
 
 def from_beatmap(bm):
     sentence_starts = [] # start times of sentences
