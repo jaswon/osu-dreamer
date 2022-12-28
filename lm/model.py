@@ -3,6 +3,7 @@ from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import WeightedRandomSampler
 
 import pytorch_lightning as pl
 
@@ -19,6 +20,9 @@ class Model(pl.LightningModule):
         context_len: int,
         embed_dim: int,
         time_dim: int,
+        h_dim: int,
+
+        topk: int,
     
         learning_rate: float = 0.,
         learning_rate_schedule_factor: float = 0.,
@@ -28,18 +32,17 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
         
         # model
+        self.topk = topk
         self.context_len = context_len
         self.audio_seq_length = 2**(time_dim-1)
         self.time_dim_mask = 2**torch.arange(time_dim)
         self.token_embeddings = nn.Embedding(VOCAB_SIZE, embed_dim)
 
-        enc_audio_dim = 128
-
         self.enc = ContinuousTransformerWrapper(
             dim_in=A_DIM,
             max_seq_len=2**time_dim-1,
             attn_layers=Encoder(
-                dim=enc_audio_dim,
+                dim=h_dim,
                 depth=6,
             ),
         ) # B,L,A -> B,L,D
@@ -50,7 +53,7 @@ class Model(pl.LightningModule):
             max_seq_len=context_len,
             use_abs_pos_emb = False,
             attn_layers=Decoder(
-                dim=enc_audio_dim,
+                dim=h_dim,
                 depth=6,
                 rotary_xpos = True,
                 # rel_pos_bias = True,
@@ -170,7 +173,9 @@ class Model(pl.LightningModule):
             while True:
                 pred_tokens, pred_times = self(a_seg, tokens, times)
 
-                next_token: "1,1" = pred_tokens[:,-1:].argmax(dim=-1)
+                topk_weights, topk_idxs = torch.topk(pred_tokens[0, -1], k=self.topk, dim=-1) 
+                next_token: "1,1" = topk_idxs[None, None, next(iter(WeightedRandomSampler(topk_weights, 1)))]
+                # next_token: "1,1" = pred_tokens[:,-1:].argmax(dim=-1)
                 next_time: "1,1" = self.from_time_embedding(pred_times[:,-1:].sigmoid())
 
                 next_token_i = next_token.item()

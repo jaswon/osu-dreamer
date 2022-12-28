@@ -54,7 +54,10 @@ model:
     learning_rate_schedule_factor: .5
     learning_rate_patience: 10
 
+    topk: 8
+
     # model hyperparameters
     context_len: 512
     embed_dim: 64
     time_dim: 12
+    h_dim: 256
