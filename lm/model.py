@@ -76,12 +76,12 @@ class Model(pl.LightningModule):
         return torch.sum(mask * times.round(), -1).int()
         
     def forward(self, a: "B,A,L", tokens: "B,N", times: "B,N", mask: "B,N" = None):
+        z: "B,L,D" = self.enc(a.permute(0,2,1))
+        
         mask_args = dict(
             mask=mask.bool(),
             context_mask = torch.ones(z.shape[:-1], dtype=bool, device=z.device),
         ) if mask is not None else {}
-
-        z: "B,L,D" = self.enc(a.permute(0,2,1))
 
         out: "B,N,V+T" = self.dec(torch.cat([
             self.token_embeddings(tokens),
