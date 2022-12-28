@@ -35,9 +35,9 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .6
+    subseq_density: .1
 
-    context_len: 1024
+    context_len: 512
     
     # size of training batch
     batch_size: 1
@@ -55,6 +55,6 @@ model:
     learning_rate_patience: 10
 
     # model hyperparameters
-    context_len: 1024
+    context_len: 512
     embed_dim: 64
     time_dim: 12

@@ -47,7 +47,7 @@ class Model(pl.LightningModule):
             dim_in=embed_dim+time_dim,
             dim_out=VOCAB_SIZE+time_dim,
             max_seq_len=context_len,
-            # use_abs_pos_emb = False,
+            use_abs_pos_emb = False,
             attn_layers=Decoder(
                 dim=enc_audio_dim,
                 depth=6,
@@ -74,12 +74,12 @@ class Model(pl.LightningModule):
         mask = self.time_dim_mask.to(times.device, times.dtype)
         return torch.sum(mask * times.round(), -1)
         
-    def forward(self, a: "B,A,L", tokens: "B,N", times: "B,N"):
+    def forward(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N"):
         z: "B,L,D" = self.enc(a.permute(0,2,1))
         out: "B,N,V+T" = self.dec(torch.cat([
             self.token_embeddings(tokens),
             self.to_time_embedding(times),
-        ], dim=2), context=z)
+        ], dim=2), context=z, mask=mask.bool(), context_mask = torch.ones(z.shape[:-1], dtype=bool))
         return torch.tensor_split(out, (VOCAB_SIZE,), dim=-1)
     
     
@@ -91,9 +91,8 @@ class Model(pl.LightningModule):
 #
 #
 
-    def compute_loss(self, a: "B,A,L", tokens: "B,N", times: "B,N", true_tokens: "B,N", true_times: "B,N"):
-
-        pred_tokens, pred_times = self(a, tokens, times)
+    def compute_loss(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N", true_tokens: "B,N", true_times: "B,N"):
+        pred_tokens, pred_times = self(a, mask, tokens, times)
 
         classification_loss = F.cross_entropy(pred_tokens.flatten(0,1), true_tokens.flatten(0,1))
 

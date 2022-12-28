@@ -258,7 +258,10 @@ class Dataset(IterableDataset):
         num_samples = int(L / self.seq_length * self.subseq_density)
 
         with open(map_file, 'rb') as f:
-            sentences, sentence_starts, sentence_ends = pickle.load(f)
+            try:
+                sentences, sentence_starts, sentence_ends = pickle.load(f)
+            except:
+                return
         sentence_starts = np.array(sentence_starts)
         sentence_ends = np.array(sentence_ends)
 
@@ -287,14 +290,17 @@ class Dataset(IterableDataset):
 
         for idx in torch.randperm(L - self.seq_length)[:num_samples]:
             toks, times = tokens_for_range(*librosa.frames_to_time(np.array([idx, idx+self.seq_length]), sr=SR, hop_length=HOP_LEN))
+            mask = np.ones_like(toks)
             if len(toks) <= self.context_len:
                 pad_amt = self.context_len - len(toks) + 1
                 toks = np.pad(toks, (0, pad_amt), constant_values=PAD)
                 times = np.pad(toks, (0, pad_amt), constant_values=-1)
+                mask = np.pad(mask, (0, pad_amt), constant_values=0)
 
             token_idx = torch.randperm(len(toks)-self.context_len)[0]
             yield tuple([
-                a[:, token_idx:token_idx+self.seq_length].clone(),
+                a[:, token_idx:token_idx+self.seq_length],
+                mask[token_idx:token_idx+self.context_len],
                 toks[token_idx:token_idx+self.context_len],
                 times[token_idx:token_idx+self.context_len],
                 toks[token_idx+1:token_idx+self.context_len+1],
