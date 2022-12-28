@@ -179,6 +179,7 @@ class Data(pl.LightningDataModule):
         )
         self.train_set = Dataset(dataset=train_split, **dataset_kwargs)
         self.val_set = Dataset(dataset=val_split, **dataset_kwargs)
+        self.predict_set = AudioDataset(dataset=val_split)
 
         print('approximate epoch length:', self.train_set.approx_dataset_size / self.batch_size)
             
@@ -195,7 +196,23 @@ class Data(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
         )
+
+    def predict_dataloader(self):
+        return DataLoader(
+            self.predict_set,
+            batch_size=1,
+            num_workers=self.num_workers,
+        )
     
+class AudioDataset(IterableDataset):
+    def __init__(self, *, dataset):
+        super().__init__()
+        self.dataset = dataset
+    
+    def __iter__(self):
+        for datum in self.dataset:
+            yield torch.tensor(np.load(datum.parent / "spec.npy")).float()
+
     
 class Dataset(IterableDataset):
     def __init__(self, *, dataset, seq_length, subseq_density, sample_density, context_len, **kwargs):

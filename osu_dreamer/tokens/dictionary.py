@@ -16,6 +16,7 @@ TO_IDX = { x:i for i,x in enumerate([
 ])}
 
 TIME = TO_IDX['TIME']
+END = TO_IDX['END']
 EOS = TO_IDX['EOS']
 BOS = TO_IDX['BOS']
 PAD = TO_IDX['PAD']

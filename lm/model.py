@@ -6,10 +6,10 @@ import torch.nn.functional as F
 
 import pytorch_lightning as pl
 
-from x_transformers import ContinuousTransformerWrapper, TransformerWrapper, Encoder, Decoder
+from x_transformers import ContinuousTransformerWrapper, Encoder, Decoder
 
 from osu_dreamer.data import A_DIM
-from osu_dreamer.tokens import VOCAB_SIZE, TIME
+from osu_dreamer.tokens import FROM_IDX, VOCAB_SIZE, TIME, BOS, EOS, END
 
 
 class Model(pl.LightningModule):
@@ -28,7 +28,8 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
         
         # model
-        self.time_dim = time_dim
+        self.context_len = context_len
+        self.audio_seq_length = 2**(time_dim-1)
         self.time_dim_mask = 2**torch.arange(time_dim)
         self.token_embeddings = nn.Embedding(VOCAB_SIZE, embed_dim)
 
@@ -72,7 +73,7 @@ class Model(pl.LightningModule):
 
     def from_time_embedding(self, times: "B,N,T") -> "B,N":
         mask = self.time_dim_mask.to(times.device, times.dtype)
-        return torch.sum(mask * times.round(), -1)
+        return torch.sum(mask * times.round(), -1).int()
         
     def forward(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N"):
         z: "B,L,D" = self.enc(a.permute(0,2,1))
@@ -144,5 +145,59 @@ class Model(pl.LightningModule):
             logger=True, on_step=False, on_epoch=True,
         )
 
-    def predict_step(self, batch, *args, **kwargs):
-        pass
+    def predict_step(self, a: "1,A,L", *args, **kwargs):
+        assert a.size(0) == 1
+
+        output = []
+        num_lookback = 5
+
+        recent_times = []
+        cur = 0
+
+        while True:
+            print(f'{cur=}')
+            a_seg: "1,A,l" = a[...,cur:cur+self.audio_seq_length]
+
+            tokens: "1,1" = torch.tensor([[BOS]], device=a.device)
+            times: "1,1" = torch.tensor([[-1]], device=a.device)
+            cut: "1,1" = torch.tensor([0])
+
+            while True:
+                mask = torch.ones_like(tokens, device=a.device)
+                pred_tokens, pred_times = self(a_seg, mask, tokens, times)
+
+                next_token: "1,1" = pred_tokens[:,-1:].argmax(dim=-1)
+                next_time: "1,1" = self.from_time_embedding(pred_times[:,-1:].sigmoid())
+
+                next_token_i = next_token.item()
+                print(f'{FROM_IDX[next_token_i]}')
+                if next_token_i == EOS:
+                    break
+                elif next_token_i == TIME:
+                    t = int(next_time.item())
+                    output.append(t+cur)
+                    recent_times.append(t)
+                    cut += 1
+                else:
+                    if next_token_i == END and isinstance(output[-1], int):
+                        # don't count spinner/slider ends in `recent_times`
+                        recent_times.pop()
+                        cut -= 1
+                        cut[-1] = 0
+                    output.append(FROM_IDX[next_token_i])
+
+                tokens = torch.cat([tokens, next_token], dim=1)[:,-self.context_len:]
+                times = torch.cat([times, next_time], dim=1)[:,-self.context_len:]
+                cut = torch.cat([cut, torch.tensor([0])])[-self.context_len:]
+
+            if cur+self.audio_seq_length >= a.size(-1):
+                break
+
+            cur += recent_times[-num_lookback]
+            cut_idx = torch.nonzero(cut == num_lookback)[-1].item()
+            tokens = tokens[:,cut_idx:]
+            times = times[:,cut_idx:] - recent_times[-num_lookback]
+            cut = cut[cut_idx:]
+            recent_times = recent_times[-num_lookback:]
+
+        return output
