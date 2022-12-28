@@ -193,11 +193,16 @@ class Model(pl.LightningModule):
             if cur+self.audio_seq_length >= a.size(-1):
                 break
 
-            cur += recent_times[-num_lookback]
-            cut_idx = torch.nonzero(cut == num_lookback)[-1].item()
-            tokens = tokens[:,cut_idx:]
-            times = times[:,cut_idx:] - recent_times[-num_lookback]
-            cut = cut[cut_idx:]
-            recent_times = recent_times[-num_lookback:]
+            if len(recent_times) > 0:
+                cur_lookback = min(num_lookback, len(recent_times))
+                cur += recent_times[-cur_lookback]
+                cut_idx = torch.nonzero(cut == cur_lookback)[-1].item()
+                tokens = tokens[:,cut_idx:]
+                times = times[:,cut_idx:] - recent_times[-cur_lookback]
+                cut = cut[cut_idx:]
+                recent_times = recent_times[-cur_lookback:]
+            else:
+                # no objects placed yet
+                cur += self.audio_seq_length
 
         return output
