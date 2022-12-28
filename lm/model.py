@@ -104,7 +104,7 @@ class Model(pl.LightningModule):
     def compute_loss(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N", true_tokens: "B,N", true_times: "B,N"):
         pred_tokens, pred_times = self(a, tokens, times, mask)
 
-        classification_loss = F.cross_entropy(pred_tokens.flatten(0,1), true_tokens.flatten(0,1))
+        classification_loss = F.cross_entropy(pred_tokens.permute(0,2,1), true_tokens)
 
         time_idxs = tokens == TIME
         true_times: "B,N,T" = self.to_time_embedding(true_times)
