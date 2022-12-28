@@ -75,13 +75,18 @@ class Model(pl.LightningModule):
         mask = self.time_dim_mask.to(times.device, times.dtype)
         return torch.sum(mask * times.round(), -1).int()
         
-    def forward(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N"):
+    def forward(self, a: "B,A,L", tokens: "B,N", times: "B,N", mask: "B,N" = None):
+        mask_args = dict(
+            mask=mask.bool(),
+            context_mask = torch.ones(z.shape[:-1], dtype=bool, device=z.device),
+        ) if mask is not None else {}
+
         z: "B,L,D" = self.enc(a.permute(0,2,1))
-        context_mask = torch.ones(z.shape[:-1], dtype=bool, device=z.device)
+
         out: "B,N,V+T" = self.dec(torch.cat([
             self.token_embeddings(tokens),
             self.to_time_embedding(times),
-        ], dim=2), context=z, mask=mask.bool(), context_mask = context_mask)
+        ], dim=2), context=z, **mask_args)
         return torch.tensor_split(out, (VOCAB_SIZE,), dim=-1)
     
     
@@ -94,7 +99,7 @@ class Model(pl.LightningModule):
 #
 
     def compute_loss(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N", true_tokens: "B,N", true_times: "B,N"):
-        pred_tokens, pred_times = self(a, mask, tokens, times)
+        pred_tokens, pred_times = self(a, tokens, times, mask)
 
         classification_loss = F.cross_entropy(pred_tokens.flatten(0,1), true_tokens.flatten(0,1))
 
@@ -163,8 +168,7 @@ class Model(pl.LightningModule):
             cut: "1,1" = torch.tensor([0])
 
             while True:
-                mask = torch.ones_like(tokens, device=a.device)
-                pred_tokens, pred_times = self(a_seg, mask, tokens, times)
+                pred_tokens, pred_times = self(a_seg, tokens, times)
 
                 next_token: "1,1" = pred_tokens[:,-1:].argmax(dim=-1)
                 next_time: "1,1" = self.from_time_embedding(pred_times[:,-1:].sigmoid())
