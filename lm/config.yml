@@ -62,3 +62,5 @@ model:
     time_dim: 12
     h_dim: 64
     depth: 12
+    pos_dim: 16
+    pos_depth: 9

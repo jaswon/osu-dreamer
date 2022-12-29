@@ -1,5 +1,7 @@
 TO_IDX = { x:i for i,x in enumerate([
-    'TIME',
+    'START_TIME',
+    'END_TIME',
+    'POSITION',
     'NEW_COMBO',
     'SPINNER',
     'CIRCLE',
@@ -11,11 +13,11 @@ TO_IDX = { x:i for i,x in enumerate([
     'EOS', # end of sequence
     'BOS', # beginning of sequence
     'PAD', # padding token
-    *( f'X{x:+d}' for x in range(-256,512+256) ),
-    *( f'Y{y:+d}' for y in range(-192,384+192) ),
 ])}
 
-TIME = TO_IDX['TIME']
+START_TIME = TO_IDX['START_TIME']
+END_TIME = TO_IDX['END_TIME']
+POSITION = TO_IDX['POSITION']
 END = TO_IDX['END']
 EOS = TO_IDX['EOS']
 BOS = TO_IDX['BOS']

@@ -20,7 +20,7 @@ from torch.utils.data import IterableDataset, DataLoader, random_split
 import pytorch_lightning as pl
 
 from osu_dreamer.osu.beatmap import Beatmap
-from osu_dreamer.tokens import TO_IDX, EOS, BOS, TIME, PAD, from_beatmap as tokens_from_beatmap
+from osu_dreamer.tokens import TO_IDX, EOS, BOS, TIME, POSITION, PAD, from_beatmap as tokens_from_beatmap
 
 # audio processing constants
 N_FFT = 2048
@@ -215,13 +215,23 @@ class AudioDataset(IterableDataset):
 
     
 class Dataset(IterableDataset):
-    def __init__(self, *, dataset, seq_length, subseq_density, sample_density, context_len, **kwargs):
+    def __init__(
+        self, *,
+        dataset,
+        seq_length,
+        subseq_density,
+        sample_density,
+        context_len,
+        position_depth,
+        **kwargs,
+    ):
         super().__init__()
         self.dataset = dataset
         self.sample_density = sample_density
         self.seq_length = seq_length
         self.subseq_density = subseq_density
         self.context_len = context_len
+        self.position_depth = position_depth
         
         if not 0 < self.sample_density <= 1:
             raise ValueError("sample density must be in (0, 1]:", self.sample_density)
@@ -282,45 +292,95 @@ class Dataset(IterableDataset):
         sentence_starts = np.array(sentence_starts)
         sentence_ends = np.array(sentence_ends)
 
+        no_time = -1
+        no_pos = np.zeros(2**self.position_depth, 2**self.position_depth)
+
         def tokens_for_range(start, end):
             """
             returns all tokens between `start` and `end` inclusive
 
-            - toks: 1D array of ints that are keys into `TO_IDX`
+            - tokens: 1D array of ints that are keys into `TO_IDX`
             - times: 1D array of ints that are frame indices (that are relative to `start`) for `TIME`-type tokens
+            - positions: N,2^depth,2^depth array of floats representing positions
             """
-            toks = [BOS]
-            times = [-1]
+            tokens = [BOS]
+            times = [no_time]
+            positions = [no_pos]
             for idx in np.nonzero((start <= sentence_starts) & (end >= sentence_ends))[0]:
                 for tok in sentences[idx]:
-                    if isinstance(tok, int):
-                        toks.append(TIME)
-                        times.append(tok - start)
+                    if isinstance(tok, tuple):
+                        if tok[0] == 'TIME':
+                            tokens.append(TIME)
+                            times.append(tok[1] - start)
+                            positions.append(no_pos)
+                        elif tok[0] == 'POSITION':
+                            x,y = tok[1:]
+                            tokens.append(POSITION)
+                            times.append(no_time)
+                            positions.append(convert_pos_to_img(self.position_depth,x,y))
                     else:
-                        toks.append(TO_IDX[tok])
-                        times.append(-1)
+                        tokens.append(TO_IDX[tok])
+                        times.append(no_time)
+                        positions.append(no_pos)
 
-            toks.append(EOS)
-            times.append(-1)
+            tokens.append(EOS)
+            times.append(no_time)
+            positions.append(no_pos)
 
-            return np.array(toks, dtype=int), librosa.time_to_frames(np.array(times), sr=SR, hop_length=HOP_LEN).round().astype(int)
+            return (
+                np.array(tokens, dtype=int),
+                librosa.time_to_frames(
+                    np.array(times),
+                    sr=SR,
+                    hop_length=HOP_LEN,
+                ).round().astype(int),
+                np.array(positions),
+            )
 
         for idx in torch.randperm(L - self.seq_length)[:num_samples]:
             start_time, end_time = librosa.frames_to_time(np.array([idx, idx+self.seq_length]), sr=SR, hop_length=HOP_LEN) * 1000
-            toks, times = tokens_for_range(start_time, end_time)
-            mask = np.ones_like(toks)
-            if len(toks) <= self.context_len:
-                pad_amt = self.context_len - len(toks) + 1
-                toks = np.pad(toks, (0, pad_amt), constant_values=PAD)
-                times = np.pad(toks, (0, pad_amt), constant_values=-1)
+            tokens, times, positions = tokens_for_range(start_time, end_time)
+            mask = np.ones_like(tokens)
+            if len(tokens) <= self.context_len:
+                pad_amt = self.context_len - len(tokens) + 1
+                tokens = np.pad(tokens, (0, pad_amt), constant_values=PAD)
+                times = np.pad(times, (0, pad_amt), constant_values=no_time)
+                positions = np.pad(positions, ((0, pad_amt),(0,0),(0,0)), constant_values=0)
                 mask = np.pad(mask, (0, pad_amt), constant_values=0)
 
-            token_idx = torch.randperm(len(toks)-self.context_len)[0]
-            yield tuple([
+            token_idx = torch.randperm(len(tokens)-self.context_len)[0]
+            yield (
                 a[:, token_idx:token_idx+self.seq_length],
                 mask[token_idx:token_idx+self.context_len],
-                toks[token_idx:token_idx+self.context_len],
+                tokens[token_idx:token_idx+self.context_len],
                 times[token_idx:token_idx+self.context_len],
-                toks[token_idx+1:token_idx+self.context_len+1],
+                positions[token_idx:token_idx+self.context_len],
+                tokens[token_idx+1:token_idx+self.context_len+1],
                 times[token_idx+1:token_idx+self.context_len+1],
-            ])
+                positions[token_idx+1:token_idx+self.context_len+1],
+            )
+
+
+def convert_pos_to_img(depth: int, x: int, y: int, sigma: float = 1.) -> "2^depth,2^depth":
+    """
+    returns a square matrix representing a position on the osu! playfield as a 2D Gaussian
+    """
+
+    xx,yy = np.meshgrid(
+        np.linspace(-256,512+256,2**depth) - x,
+        np.linspace(-192,384+192,2**depth) - y,
+    )
+
+    return np.exp(-.5 * (xx**2 + yy**2) / sigma)
+
+def convert_img_to_pos(img: 'D,D') -> '(int,int)':
+    """
+    returns the position represented by the return value of `convert_pos_to_img`
+    """
+
+    x,y = np.unravel_index(img.argmax(), img.shape)
+
+    return (
+        round(np.linspace(-256, 512+256, img.shape[0])[x]),
+        round(np.linspace(-192, 384+192, img.shape[1])[y]),
+    )

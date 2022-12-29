@@ -46,9 +46,8 @@ def iter_sentences(tokens):
             sentence.append(tok)
 
 def parse_position(tok_iter):
-    x_tok, y_tok = next(tok_iter), next(tok_iter)
-    return int(x_tok[1:]), int(y_tok[1:])
-
+    _, x, y = next(tok_iter)
+    return x,y
 
 def to_beatmap(metadata, tokens):
     """
@@ -67,7 +66,9 @@ def to_beatmap(metadata, tokens):
     last_up = None
     for sentence in iter_sentences(tokens):
         toks = iter(sentence)
-        t = next(toks)
+
+        tok, t = next(toks)
+        assert tok == 'START_TIME'
                 
         # add timing points
         if len(timing_points) > 0 and t > timing_points[0].t:
@@ -88,7 +89,8 @@ def to_beatmap(metadata, tokens):
             typ = next(toks)
 
         if typ == 'SPINNER':
-            u = next(toks)
+            tok, u = next(toks)
+            assert tok == 'END_TIME'
             hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
             last_up = u
         elif typ == 'CIRCLE':
@@ -118,7 +120,8 @@ def to_beatmap(metadata, tokens):
                 slides += 1
                 tok = next(toks)
 
-            u = tok
+            tok, u = tok
+            assert tok == 'END_TIME'
             SV = length * slides / (u-t) / base_slider_vel
 
             x1,y1 = ctrl_pts[0]

@@ -25,7 +25,7 @@ def arc_to_cubic_bezier(center, radius, start, end) -> "4,2":
     return [p0,p1,p2,p3]
 
 def pos_tokens(x,y):
-    return [ f'X{round(x):+d}', f'Y{round(y):+d}' ]
+    return [ ('POSITION', round(x), round(y)) ]
 
 def from_beatmap(bm):
     sentence_starts = [] # start times of sentences
@@ -39,7 +39,7 @@ def from_beatmap(bm):
         sentence_ends.append(round(ho.end_time()))
 
         # all sentences start with a timestamp
-        sentence = [ round(ho.t) ]
+        sentence = [ ('START_TIME', round(ho.t)) ]
 
         # followed by an optional new combo flag
         if ho.new_combo:
@@ -47,11 +47,11 @@ def from_beatmap(bm):
 
         if isinstance(ho, Spinner):
             # spinners provide only an end timestamp
-            sentence.extend([ 'SPINNER', round(ho.end_time()), 'END' ])
+            sentence.extend([ 'SPINNER', ('END_TIME', round(ho.end_time())) ])
 
         elif isinstance(ho, Circle):
             # hit circles provide only a position
-            sentence.extend([ 'CIRCLE', *pos_tokens(ho.x, ho.y), 'END' ])
+            sentence.extend([ 'CIRCLE', *pos_tokens(ho.x, ho.y) ])
 
         elif isinstance(ho, Slider):
             sentence.append('SLIDER')
@@ -90,11 +90,11 @@ def from_beatmap(bm):
                             else:
                                 sentence.extend(pos_tokens(*p))
 
-            # slider sentences end by providing `SLIDE` for each slide (not including the initial)
+            # slider sentences end by providing `SLIDE` for each slide after the first
             sentence.extend(['SLIDE'] * (ho.slides - 1))
 
             # followed by the end timestamp
-            sentence.extend([int(ho.t + ho.slide_duration), 'END'])
+            sentence.append(('END_TIME', round(ho.end_time())))
 
         sentences.append(sentence)
 
