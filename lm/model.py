@@ -21,6 +21,7 @@ class Model(pl.LightningModule):
         embed_dim: int,
         time_dim: int,
         h_dim: int,
+        depth: int,
 
         topk: int,
     
@@ -43,7 +44,7 @@ class Model(pl.LightningModule):
             max_seq_len=2**time_dim-1,
             attn_layers=Encoder(
                 dim=h_dim,
-                depth=6,
+                depth=depth,
             ),
         ) # B,L,A -> B,L,D
 
@@ -54,7 +55,7 @@ class Model(pl.LightningModule):
             use_abs_pos_emb = False,
             attn_layers=Decoder(
                 dim=h_dim,
-                depth=6,
+                depth=depth,
                 rotary_xpos = True,
                 # rel_pos_bias = True,
                 # use_rmsnorm = True,

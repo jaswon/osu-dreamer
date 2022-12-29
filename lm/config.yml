@@ -28,7 +28,7 @@ trainer:
     
 data:
     # length in frames of each audio segment (must be a power of 2)
-    seq_length: 2048
+    seq_length: 1024
     
     # what fraction of the full dataset to use per epoch (must be between 0 and 1)
     sample_density: 1.
@@ -37,7 +37,7 @@ data:
     # higher number means more samples from the same beatmap
     subseq_density: .1
 
-    context_len: 512
+    context_len: 128
     
     # size of training batch
     batch_size: 1
@@ -57,7 +57,8 @@ model:
     topk: 8
 
     # model hyperparameters
-    context_len: 512
+    context_len: 128
     embed_dim: 64
     time_dim: 12
-    h_dim: 256
+    h_dim: 64
+    depth: 12
