@@ -10,5 +10,4 @@ from .dictionary import (
     END_TIME,
     POSITION,
     PAD,
-    END,
 )

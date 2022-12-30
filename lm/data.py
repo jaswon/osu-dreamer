@@ -20,7 +20,7 @@ from torch.utils.data import IterableDataset, DataLoader, random_split
 import pytorch_lightning as pl
 
 from osu_dreamer.osu.beatmap import Beatmap
-from osu_dreamer.tokens import TO_IDX, EOS, BOS, TIME, POSITION, PAD, from_beatmap as tokens_from_beatmap
+from osu_dreamer.tokens import TO_IDX, EOS, BOS, START_TIME, END_TIME, POSITION, PAD, from_beatmap as tokens_from_beatmap
 
 # audio processing constants
 N_FFT = 2048
@@ -100,6 +100,8 @@ class Data(pl.LightningDataModule):
         sample_density: float,
         subseq_density: float,
         context_len: int,
+        position_depth: int,
+
         batch_size: int,
         num_workers: int,
         
@@ -116,6 +118,7 @@ class Data(pl.LightningDataModule):
         self.sample_density = sample_density
         self.subseq_density = subseq_density
         self.context_len = context_len
+        self.position_depth = position_depth
         self.batch_size = batch_size
         self.num_workers = num_workers
         
@@ -176,6 +179,7 @@ class Data(pl.LightningDataModule):
             sample_density=self.sample_density,
             subseq_density=self.subseq_density,
             context_len=self.context_len,
+            position_depth=self.position_depth,
         )
         self.train_set = Dataset(dataset=train_split, **dataset_kwargs)
         self.val_set = Dataset(dataset=val_split, **dataset_kwargs)
@@ -292,16 +296,16 @@ class Dataset(IterableDataset):
         sentence_starts = np.array(sentence_starts)
         sentence_ends = np.array(sentence_ends)
 
-        no_time = -1
-        no_pos = np.zeros(2**self.position_depth, 2**self.position_depth)
+        no_time = np.nan
+        no_pos = (np.nan, np.nan)
 
         def tokens_for_range(start, end):
             """
             returns all tokens between `start` and `end` inclusive
 
-            - tokens: 1D array of ints that are keys into `TO_IDX`
-            - times: 1D array of ints that are frame indices (that are relative to `start`) for `TIME`-type tokens
-            - positions: N,2^depth,2^depth array of floats representing positions
+            - tokens: N, array of ints that are keys into `TO_IDX`
+            - times: N, array of ints that are frame indices (that are relative to `start`) for `TIME`-type tokens
+            - positions: N,2 array of ints representing positions as coordinate pairs
             """
             tokens = [BOS]
             times = [no_time]
@@ -309,15 +313,16 @@ class Dataset(IterableDataset):
             for idx in np.nonzero((start <= sentence_starts) & (end >= sentence_ends))[0]:
                 for tok in sentences[idx]:
                     if isinstance(tok, tuple):
-                        if tok[0] == 'TIME':
-                            tokens.append(TIME)
-                            times.append(tok[1] - start)
-                            positions.append(no_pos)
-                        elif tok[0] == 'POSITION':
+                        if tok[0] == 'POSITION':
                             x,y = tok[1:]
                             tokens.append(POSITION)
                             times.append(no_time)
-                            positions.append(convert_pos_to_img(self.position_depth,x,y))
+                            positions.append((x,y))
+                        else:
+                            tokens.append(START_TIME if tok[0] == 'START_TIME' else END_TIME)
+                            times.append(tok[1] - start)
+                            positions.append(no_pos)
+
                     else:
                         tokens.append(TO_IDX[tok])
                         times.append(no_time)
@@ -333,7 +338,7 @@ class Dataset(IterableDataset):
                     np.array(times),
                     sr=SR,
                     hop_length=HOP_LEN,
-                ).round().astype(int),
+                ).round().astype(float),
                 np.array(positions),
             )
 
@@ -344,8 +349,8 @@ class Dataset(IterableDataset):
             if len(tokens) <= self.context_len:
                 pad_amt = self.context_len - len(tokens) + 1
                 tokens = np.pad(tokens, (0, pad_amt), constant_values=PAD)
-                times = np.pad(times, (0, pad_amt), constant_values=no_time)
-                positions = np.pad(positions, ((0, pad_amt),(0,0),(0,0)), constant_values=0)
+                times = np.pad(times, (0, pad_amt), constant_values=np.nan)
+                positions = np.pad(positions, ((0, pad_amt),(0,0)), constant_values=np.nan)
                 mask = np.pad(mask, (0, pad_amt), constant_values=0)
 
             token_idx = torch.randperm(len(tokens)-self.context_len)[0]
@@ -359,28 +364,3 @@ class Dataset(IterableDataset):
                 times[token_idx+1:token_idx+self.context_len+1],
                 positions[token_idx+1:token_idx+self.context_len+1],
             )
-
-
-def convert_pos_to_img(depth: int, x: int, y: int, sigma: float = 1.) -> "2^depth,2^depth":
-    """
-    returns a square matrix representing a position on the osu! playfield as a 2D Gaussian
-    """
-
-    xx,yy = np.meshgrid(
-        np.linspace(-256,512+256,2**depth) - x,
-        np.linspace(-192,384+192,2**depth) - y,
-    )
-
-    return np.exp(-.5 * (xx**2 + yy**2) / sigma)
-
-def convert_img_to_pos(img: 'D,D') -> '(int,int)':
-    """
-    returns the position represented by the return value of `convert_pos_to_img`
-    """
-
-    x,y = np.unravel_index(img.argmax(), img.shape)
-
-    return (
-        round(np.linspace(-256, 512+256, img.shape[0])[x]),
-        round(np.linspace(-192, 384+192, img.shape[1])[y]),
-    )
