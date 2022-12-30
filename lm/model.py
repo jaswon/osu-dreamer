@@ -45,7 +45,7 @@ class TimeEncoder(nn.Module):
         *B, L = x.size()
         return self.net(x.reshape(-1, 1, L)).reshape(*B, self.dim)
 
-class TimeDecoder(nn.Sequential):
+class TimeDecoder(nn.Module):
     def __init__(self, dim, depth):
         super().__init__()
 
@@ -110,7 +110,7 @@ class PositionEncoder(nn.Module):
         *B, W, H = x.size()
         return self.net(x.reshape(-1, 1, W, H)).reshape(*B, self.dim)
 
-class PositionDecoder(nn.Sequential):
+class PositionDecoder(nn.Module):
     def __init__(self, dim, depth):
         super().__init__()
 
