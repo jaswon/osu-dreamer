@@ -14,130 +14,119 @@ from osu_dreamer.tokens import FROM_IDX, VOCAB_SIZE, POSITION, BOS, EOS, START_T
 
 ### TIME
 
-class TimeEncoder(nn.Module):
+class TimeEmbedding(nn.Module):
     def __init__(self, dim, depth):
         super().__init__()
 
         self.dim = dim
         self.size = 2**depth
 
-        self.line: '2^d,' = torch.arange(2**depth, dtype=float)
+        self.line: 'L,1' = torch.arange(2**depth, dtype=float)
 
-        self.net = nn.Sequential(*(
+        self.encoder = nn.Sequential(*(
             nn.Conv1d(1 if i==0 else dim, dim, 4,2,1)
             for i in range(depth)
         )) # B,1,L -> B,dim,1
 
-    def to_signal(self, times: '*,', sigma: float = 3.) -> "*,2^d":
-        """
-        returns a signal representing a time as a 1D Gaussian
-
-        if `times[i]` contains nan then `return[i]` will contain all zeros
-        """
-
-        B = times.size()
-
-        r2: 'N,2^d' = (self.line[None].to(times.device) - times.reshape(-1,1)) ** 2
-
-        return torch.nan_to_num(torch.exp(-.5 * r2 / sigma).reshape(*B,self.size), nan=0)
-
-    def forward(self, x: '*,L') -> '*,C':
-        *B, L = x.size()
-        return self.net(x.reshape(-1, 1, L)).reshape(*B, self.dim)
-
-class TimeDecoder(nn.Module):
-    def __init__(self, dim, depth):
-        super().__init__()
-
-        self.line: '2^d,' = torch.arange(2**depth, dtype=float)
-
-        self.net = nn.Sequential(*(
+        self.decoder = nn.Sequential(*(
             nn.ConvTranspose1d(dim, dim if i < depth-1 else 1, 4,2,1)
             for i in range(depth)
         )) # B,dim,1 -> B,1,L
 
-    def from_signal(self, signals: '*,L') -> '*,':
+    def signal_from_time(self, times: '*,1', sigma: float = 3.) -> "*,L":
         """
-        returns the time represented by the return value of `TimeEncoder.to_signal`
+        returns a signal encoding a time as the mean of a 1D Gaussian
+
+        if `times[i]` contains nan then `return[i]` will contain all zeros
         """
-        *B,L = signals.size()
 
-        signals = signals.reshape(-1,L)
+        diff: 'N,L,1' = self.line[None].to(times.device) - times.reshape(-1,1,1)
+        r2: 'N,L' = (diff ** 2).sum(dim=-1)
 
-        times = (self.line[None].to(signals.device) * signals).sum(1) / signals.sum(1)
+        pdf = torch.rsqrt(2 * torch.pi) / sigma * torch.exp(-.5 * r2 / sigma ** 2)
 
-        return times.round().int().reshape(*B)
+        return torch.nan_to_num(torch.unflatten(pdf, 0, times.size()[:-1]), nan=0)
 
-    def forward(self, x: '*,C') -> '*,L':
+    def to_time(self, embs: '*,C') -> '*,1':
+        """
+        returns the time encoded by the return value of `from_signal`
+        """
+
+        signal = self.to_signal(embs)
+        *B,L = signal.size()
+
+        times = (self.line[None].to(signal.device) * signal.reshape(-1,L)).sum(dim=1)
+
+        return times.reshape(*B,1).round().int()
+
+    def from_signal(self, x: '*,L') -> '*,C':
+        *B, L = x.size()
+        return self.net(x.reshape(-1, 1, L)).reshape(*B, self.dim)
+
+    def to_signal(self, x: '*,C') -> '*,L':
         *B, C = x.size()
-        return self.net(x.reshape(-1, C, 1)).reshape(*B,*self.line.shape)
+        signal_logits = self.net(x.reshape(-1, C, 1)).reshape(*B,*self.line.shape)
+        return F.softmax(signal_logits, dim=-1)
 
 
 ### POSITON
 
-class PositionEncoder(nn.Module):
+class PositionEmbedding(nn.Module):
     def __init__(self, dim, depth):
         super().__init__()
 
         self.dim = dim
         self.depth = depth
 
-        self.grid: '2^d,2^d,2' = torch.stack(torch.meshgrid(
+        self.grid: 'D,D,2' = torch.stack(torch.meshgrid(
             torch.linspace(-256,512+256,2**depth),
             torch.linspace(-192,384+192,2**depth),
             indexing='ij',
         ), dim=-1)
 
-        self.net = nn.Sequential(*(
+        self.encoder = nn.Sequential(*(
             nn.Conv2d(1 if i==0 else dim, dim, 4,2,1)
             for i in range(depth)
         )) # B,1,W,H -> B,dim,1,1
 
-    def to_img(self, positions: '*,2', sigma: float = 3.) -> "*,2^d,2^d":
-        """
-        returns a square matrix representing a position on the osu! playfield as a 2D Gaussian
-
-        if `position[i]` contains nan then `return[i]` will contain all zeros
-        """
-
-        *B, _ = positions.size()
-
-        r2: 'N,2^d,2^d' = ((self.grid[None].to(positions.device) - positions.reshape(-1, 2)[:,None,None]) ** 2).sum(-1)
-
-        return torch.nan_to_num(torch.exp(-.5 * r2 / sigma).reshape(*B,*self.grid.shape[:2]), nan=0)
-
-    def forward(self, x: '*,D,D') -> '*,C':
-        *B, W, H = x.size()
-        return self.net(x.reshape(-1, 1, W, H)).reshape(*B, self.dim)
-
-class PositionDecoder(nn.Module):
-    def __init__(self, dim, depth):
-        super().__init__()
-
-        self.grid: '2^d,2^d,2' = torch.stack(torch.meshgrid(
-            torch.linspace(-256,512+256,2**depth),
-            torch.linspace(-192,384+192,2**depth),
-            indexing='ij',
-        ), dim=-1)
-
-        self.net = nn.Sequential(*(
+        self.decoder = nn.Sequential(*(
             nn.ConvTranspose2d(dim, dim if i < depth-1 else 1, 4,2,1)
             for i in range(depth)
         )) # B,dim,1,1 -> B,1,W,H
 
-    def from_img(self, imgs: '*,D,D') -> '*,2':
+    def image_from_position(self, positions: '*,2', sigma: float = 3.) -> "*,D,D":
         """
-        returns the position represented by the return value of `PositionEncoder.to_img`
+        returns a square matrix encoding a position on the osu! playfield as the mean of a 2D Gaussian
+
+        if `position[i]` contains nan then `return[i]` will contain all zeros
         """
-        *B,W,H = imgs.size()
 
-        imgs = imgs.reshape(-1,W,H)
+        diff: 'N,D,D,2' = self.grid[None].to(positions.device) - positions.reshape(-1, 1, 1, 2)
+        r2: 'N,D,D' = (diff ** 2).sum(dim=-1)
 
-        positions = (self.grid[None].to(imgs.device) * imgs[...,None]).sum((1,2)) / imgs.sum((1,2))[...,None]
+        pdf = torch.rsqrt(2 * torch.pi) / sigma * torch.exp(-.5 * r2 / sigma ** 2)
 
-        return positions.round().int().reshape(*B,2)
+        return torch.nan_to_num(torch.unflatten(pdf, 0, positions.size()[:-1]), nan=0)
 
-    def forward(self, x: '*,C') -> '*,D,D':
+    def to_position(self, embs: '*,C') -> '*,2':
+        """
+        returns the position represented by the return value of `to_image`
+        """
+
+        image_logits = self(embs)
+        *B,W,H = image_logits.size()
+
+        image: 'B,W,H' = F.softmax(image_logits.reshape(*B,-1), dim=-1).reshape(-1,W,H)
+
+        positions = (self.grid[None].to(image.device) * image[...,None]).sum((1,2))
+
+        return positions.reshape(*B,2).round().int()
+
+    def from_image(self, x: '*,D,D') -> '*,C':
+        *B, W, H = x.size()
+        return self.net(x.reshape(-1, 1, W, H)).reshape(*B, self.dim)
+
+    def to_image(self, x: '*,C') -> '*,D,D':
         *B, C = x.size()
         return self.net(x.reshape(-1, C, 1, 1)).reshape(*B,*self.grid.shape[:2])
 
@@ -147,7 +136,7 @@ class Model(pl.LightningModule):
         self,
 
         context_len: int,
-        embed_dim: int,
+        token_dim: int,
 
         time_dim: int,
         time_depth: int,
@@ -156,52 +145,53 @@ class Model(pl.LightningModule):
         pos_depth: int,
 
         h_dim: int,
-        depth: int,
+        attn_depth: int,
 
         topk: int,
-    
+
         learning_rate: float = 0.,
         learning_rate_schedule_factor: float = 0.,
         learning_rate_patience: int = 0,
     ):
         super().__init__()
         self.save_hyperparameters()
-        
+
+        # training params
+        self.learning_rate = learning_rate
+        self.learning_rate_schedule_factor = learning_rate_schedule_factor
+        self.learning_rate_patience = learning_rate_patience
+
         # model
         self.topk = topk
         self.context_len = context_len
         self.audio_seq_length = 2**time_depth
 
-        self.time_dim = time_dim
-        self.time_enc = TimeEncoder(time_dim, time_depth)
-        self.time_dec = TimeDecoder(time_dim, time_depth)
-
-        self.token_emb = nn.Embedding(VOCAB_SIZE, embed_dim)
-
-        self.pos_depth = pos_depth
-        self.pos_enc = PositionEncoder(pos_dim, pos_depth)
-        self.pos_dec = PositionDecoder(pos_dim, pos_depth)
+        self.token_emb = nn.Embedding(VOCAB_SIZE, token_dim)
+        self.time_emb = TimeEmbedding(time_dim, time_depth)
+        self.pos_emb = PositionEmbedding(pos_dim, pos_depth)
 
         self.enc = ContinuousTransformerWrapper(
             dim_in=A_DIM,
             max_seq_len=self.audio_seq_length,
             attn_layers=Encoder(
                 dim=h_dim,
-                depth=depth,
+                depth=attn_depth,
                 rel_pos_bias=True,
                 ff_glu = True,
+                ff_no_bias = True,
                 use_rmsnorm = True,
             ),
         ) # B,L,A -> B,L,D
 
+        self.dec_split, dim_out = torch.cumsum([VOCAB_SIZE,time_dim,pos_dim])
         self.dec = ContinuousTransformerWrapper(
-            dim_in=embed_dim+time_dim+pos_dim,
-            dim_out=VOCAB_SIZE+time_dim+pos_dim,
+            dim_in=token_dim+time_dim+pos_dim,
+            dim_out=dim_out,
             max_seq_len=context_len,
             use_abs_pos_emb=False,
             attn_layers=Decoder(
                 dim=h_dim,
-                depth=depth,
+                depth=attn_depth,
                 deepnorm = True,
                 ff_glu = True,
                 ff_no_bias = True,
@@ -217,32 +207,26 @@ class Model(pl.LightningModule):
             ),
         ) # B,N,E+T+P + B,L,D -> B,N,V+T+P
 
-        # training params
-
-        self.learning_rate = learning_rate
-        self.learning_rate_schedule_factor = learning_rate_schedule_factor
-        self.learning_rate_patience = learning_rate_patience
-
-    def forward(self, a: "B,A,L", tokens: "B,N", times: "B,N", positions: "B,N,2", mask: "B,N" = None):
+    def forward(self, a: "B,A,L", tokens: "B,N", times: "B,N,1", positions: "B,N,2", mask: "B,N" = None):
         z: "B,L,D" = self.enc(a.permute(0,2,1))
-        
+
         mask_args = dict(
             mask=mask.bool(),
             context_mask = torch.ones(z.shape[:-1], dtype=bool, device=z.device),
         ) if mask is not None else {}
 
-        time_signals: 'B,N,L' = self.time_enc.to_signal(times).type_as(a)
-        position_imgs: 'B,N,D,D' = self.pos_enc.to_img(positions).type_as(a)
+        time_signals: 'B,N,L' = self.time_emb.signal_from_time(times).type_as(a)
+        position_imgs: 'B,N,D,D' = self.pos_emb.to_img(positions).type_as(a)
 
         out: "B,N,V+T+P" = self.dec(torch.cat([
             self.token_emb(tokens),
-            self.time_enc(time_signals),
-            self.pos_enc(position_imgs),
+            self.time_emb.from_signal(time_signals),
+            self.pos_emb.from_image(position_imgs),
         ], dim=-1), context=z, **mask_args)
 
-        return torch.tensor_split(out, (VOCAB_SIZE,VOCAB_SIZE+self.time_dim), dim=-1)
-    
-    
+        return torch.tensor_split(out, self.dec_split, dim=-1)
+
+
 #
 #
 # =============================================================================
@@ -271,7 +255,7 @@ class Model(pl.LightningModule):
             for i, token in enumerate(tokens[0]):
                 token = token.item()
                 if token == POSITION:
-                    x,y = [ round(i) for i in positions[0,i].tolist()]
+                    x,y = [ round(i) for i in positions[0,i].tolist() ]
                     true_toks.append(f'({x},{y})')
                 elif token == START_TIME:
                     t = round(times[0,i].item())
@@ -286,13 +270,13 @@ class Model(pl.LightningModule):
             for i,token in enumerate(pred_tokens[0]):
                 token = token.argmax(dim=-1).item()
                 if token == POSITION:
-                    x,y = [ round(i) for i in self.pos_dec.from_img(self.pos_dec(pred_pos_embs[:1,i]))[0].tolist()]
+                    x,y = [ round(i.item()) for i in self.pos_emb.to_position(pred_pos_embs[0,i]) ]
                     pred_toks.append(f'({x},{y})')
                 elif token == START_TIME:
-                    t = round(self.time_dec.from_signal(self.time_dec(pred_time_embs[:1,i]))[0].item())
+                    t = round(self.time_emb.to_time(pred_time_embs[0,i]).item())
                     pred_toks.append(f'START: {t}')
                 elif token == END_TIME:
-                    t = round(self.time_dec.from_signal(self.time_dec(pred_time_embs[:1,i]))[0].item())
+                    t = round(self.time_emb.to_time(pred_time_embs[0,i]).item())
                     pred_toks.append(f'END: {t}')
                 else:
                     pred_toks.append(FROM_IDX[token])
@@ -305,19 +289,19 @@ class Model(pl.LightningModule):
 
         # position loss
         pos_idxs = tokens == POSITION
-        pred_position_imgs: 'B,N,D,D' = self.pos_dec(pred_pos_embs)
-        true_position_imgs: 'B,N,D,D' = self.pos_enc.to_img(true_positions)
+        pred_position_imgs: 'B,N,D,D' = self.pos_emb.to_image(pred_pos_embs)
+        true_position_imgs: 'B,N,D,D' = self.pos_emb.image_from_position(true_positions)
         position_loss = torch.tensor(0.)
         if pos_idxs.any():
-            position_loss = F.smooth_l1_loss(pred_position_imgs[pos_idxs], true_position_imgs[pos_idxs])
+            position_loss = F.cross_entropy(pred_position_imgs[pos_idxs].flatten(0,1), true_position_imgs[pos_idxs].flatten(0,1))
 
         # time loss
         time_idxs = (tokens == START_TIME) | (tokens == END_TIME)
-        pred_time_signals: 'B,N,L' = self.time_dec(pred_time_embs)
-        true_time_signals: "B,N,L" = self.time_enc.to_signal(true_times)
+        pred_time_signals: 'B,N,L' = self.time_emb.to_signal(pred_time_embs)
+        true_time_signals: "B,N,L" = self.time_emb.signal_from_time(true_times)
         time_loss = torch.tensor(0.)
         if time_idxs.any():
-            time_loss = F.smooth_l1_loss(pred_time_signals[time_idxs], true_time_signals[time_idxs])
+            time_loss = F.cross_entropy(pred_time_signals[time_idxs].flatten(0,1), true_time_signals[time_idxs].flatten(0,1))
 
         loss = token_loss + time_loss + position_loss
 
@@ -334,10 +318,8 @@ class Model(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW([
-            *self.time_enc.parameters(),
-            *self.time_dec.parameters(),
-            *self.pos_enc.parameters(),
-            *self.pos_dec.parameters(),
+            *self.time_emb.parameters(),
+            *self.pos_emb.parameters(),
             *self.enc.parameters(),
             *self.dec.parameters(),
             *self.token_emb.parameters(),
@@ -381,7 +363,7 @@ class Model(pl.LightningModule):
             a_seg: "1,A,l" = a[...,audio_idx:audio_idx+self.audio_seq_length]
 
             tokens: "1,N" = torch.tensor([[BOS]], device=a.device)
-            times: "1,N" = torch.full((1,1), torch.nan, device=a.device)
+            times: "1,N,1" = torch.full((1,1,1), torch.nan, device=a.device)
             positions: "1,N,2" = torch.full((1,1,2), torch.nan, device=a.device)
 
             while True:
@@ -391,7 +373,7 @@ class Model(pl.LightningModule):
                 # next_token: "1,1" = topk_idxs[None, None, next(iter(WeightedRandomSampler(topk_weights, 1)))]
                 next_token: "1,1" = pred_tokens[:,-1:].argmax(dim=-1)
 
-                next_time: "1,1" = torch.full((1,1), torch.nan, device=a.device)
+                next_time: "1,1,1" = torch.full((1,1,1), torch.nan, device=a.device)
                 next_pos: "1,1,2" = torch.full((1,1,2), torch.nan, device=a.device)
 
                 next_token_i = next_token.item()
@@ -399,7 +381,7 @@ class Model(pl.LightningModule):
                     print('EOS')
                     break
                 elif next_token_i == START_TIME:
-                    next_time: "1,1" = self.time_dec.from_signal(self.time_dec(pred_time_embs[:,-1:]))
+                    next_time: '1,1,1' = self.time_emb.to_time(pred_time_embs[:,-1:])
                     t = int(next_time.item())
                     output.append(('START_TIME', t+audio_idx))
                     print(('START_TIME', t+audio_idx))
@@ -408,12 +390,12 @@ class Model(pl.LightningModule):
                     recent_times = (recent_times + [t])[-min(len(recent_times), num_lookback):]
                     slice_idxs.append(tokens.size(1))
                 elif next_token_i == END_TIME:
-                    next_time: "1,1" = self.time_dec.from_signal(self.time_dec(pred_time_embs[:,-1:]))
+                    next_time: '1,1,1' = self.time_emb.to_time(pred_time_embs[:,-1:])
                     t = int(next_time.item())
                     output.append(('END_TIME', t+audio_idx))
                     print(('END_TIME', t+audio_idx))
                 elif next_token_i == POSITION:
-                    next_pos: "1,1,2" = self.pos_dec.from_img(self.pos_dec(pred_pos_embs[:,-1:]))
+                    next_pos: '1,1,2'=  self.pos_emb.to_position(pred_pos_embs[:,-1:])
                     output.append(('POSITION', *next_pos[0,0].tolist()))
                     print(('POSITION', *next_pos[0,0].tolist()))
                 else:
@@ -446,7 +428,7 @@ class Model(pl.LightningModule):
                 # no objects placed in this section, start next section from scratch
                 audio_idx += self.audio_seq_length
                 tokens: "1,N" = torch.tensor([[BOS]], device=a.device)
-                times: "1,N" = torch.full((1,1), torch.nan, device=a.device)
+                times: "1,N,1" = torch.full((1,1,1), torch.nan, device=a.device)
                 positions: "1,N,2" = torch.full((1,1,2), torch.nan, device=a.device)
 
 

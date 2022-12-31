@@ -59,7 +59,7 @@ model:
 
     # model hyperparameters
     context_len: 2048
-    embed_dim: 64
+    token_dim: 64
 
     time_dim: 4
     time_depth: 9
@@ -68,4 +68,4 @@ model:
     pos_depth: 5
 
     h_dim: 64
-    depth: 6
+    attn_depth: 6
