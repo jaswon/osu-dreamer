@@ -4,7 +4,8 @@ trainer:
 
     # comment this line out if you're training without a gpu
     accelerator: 'gpu'
-        
+    
+    num_sanity_val_steps: 2
     
     # number of epochs to run for. `-1` means run forever (until you interrupt manually)
     max_epochs: -1
@@ -60,11 +61,11 @@ model:
     context_len: 2048
     embed_dim: 64
 
-    time_dim: 8
+    time_dim: 4
     time_depth: 9
 
-    pos_dim: 16
+    pos_dim: 8
     pos_depth: 5
 
     h_dim: 64
-    depth: 12
+    depth: 6

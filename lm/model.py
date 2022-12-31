@@ -21,7 +21,7 @@ class TimeEncoder(nn.Module):
         self.dim = dim
         self.size = 2**depth
 
-        self.line = torch.linspace(0,2**depth,2**depth)
+        self.line: '2^d,' = torch.arange(2**depth, dtype=float)
 
         self.net = nn.Sequential(*(
             nn.Conv1d(1 if i==0 else dim, dim, 4,2,1)
@@ -49,7 +49,7 @@ class TimeDecoder(nn.Module):
     def __init__(self, dim, depth):
         super().__init__()
 
-        self.line: '2^d,' = torch.linspace(0,2**depth,2**depth)
+        self.line: '2^d,' = torch.arange(2**depth, dtype=float)
 
         self.net = nn.Sequential(*(
             nn.ConvTranspose1d(dim, dim if i < depth-1 else 1, 4,2,1)
@@ -93,7 +93,7 @@ class PositionEncoder(nn.Module):
             for i in range(depth)
         )) # B,1,W,H -> B,dim,1,1
 
-    def to_img(self, positions: '*,2', sigma: float = 1024.) -> "*,2^d,2^d":
+    def to_img(self, positions: '*,2', sigma: float = 3.) -> "*,2^d,2^d":
         """
         returns a square matrix representing a position on the osu! playfield as a 2D Gaussian
 
@@ -170,7 +170,7 @@ class Model(pl.LightningModule):
         # model
         self.topk = topk
         self.context_len = context_len
-        self.audio_seq_length = 2**(time_dim-1)
+        self.audio_seq_length = 2**time_depth
 
         self.time_dim = time_dim
         self.time_enc = TimeEncoder(time_dim, time_depth)
@@ -184,10 +184,13 @@ class Model(pl.LightningModule):
 
         self.enc = ContinuousTransformerWrapper(
             dim_in=A_DIM,
-            max_seq_len=2**time_depth,
+            max_seq_len=self.audio_seq_length,
             attn_layers=Encoder(
                 dim=h_dim,
                 depth=depth,
+                rel_pos_bias=True,
+                ff_glu = True,
+                use_rmsnorm = True,
             ),
         ) # B,L,A -> B,L,D
 
@@ -195,14 +198,22 @@ class Model(pl.LightningModule):
             dim_in=embed_dim+time_dim+pos_dim,
             dim_out=VOCAB_SIZE+time_dim+pos_dim,
             max_seq_len=context_len,
+            use_abs_pos_emb=False,
             attn_layers=Decoder(
                 dim=h_dim,
                 depth=depth,
+                deepnorm = True,
+                ff_glu = True,
+                ff_no_bias = True,
+                sandwich_coef = 6,
+                attn_sparse_topk = 8,
+                attn_one_kv_head = True,
                 rotary_xpos = True,
-                # rel_pos_bias = True,
-                # use_rmsnorm = True,
+                rel_pos_bias = True,
+                use_rmsnorm = True,
                 # sandwich_norm = True,
                 cross_attend=True,
+                dec_cross_residual_attn = True,
             ),
         ) # B,N,E+T+P + B,L,D -> B,N,V+T+P
 
@@ -240,10 +251,54 @@ class Model(pl.LightningModule):
 #
 #
 
-    def compute_loss(self, a: "B,A,L", mask: "B,N", tokens: "B,N", times: "B,N", positions: "B,N,2", true_tokens: "B,N", true_times: "B,N", true_positions: "B,N,2", val=False):
+    def compute_loss(self, batch, val=False, log_pred=False):
         torch.cuda.empty_cache()
+        (
+            a, # B,A,L
+            mask, # B,N
+            tokens, # B,N
+            times, # B,N
+            positions, # B,N,2
+            true_tokens, # B,N
+            true_times, # B,N
+            true_positions, # B,N,2
+        ) = batch
 
         pred_tokens, pred_time_embs, pred_pos_embs = self(a, tokens, times, positions, mask)
+
+        if log_pred:
+            true_toks = []
+            for i, token in enumerate(tokens[0]):
+                token = token.item()
+                if token == POSITION:
+                    x,y = [ round(i) for i in positions[0,i].tolist()]
+                    true_toks.append(f'({x},{y})')
+                elif token == START_TIME:
+                    t = round(times[0,i].item())
+                    true_toks.append(f'START: {t}')
+                elif token == END_TIME:
+                    t = round(times[0,i].item())
+                    true_toks.append(f'END: {t}')
+                else:
+                    true_toks.append(FROM_IDX[token])
+
+            pred_toks = []
+            for i,token in enumerate(pred_tokens[0]):
+                token = token.argmax(dim=-1).item()
+                if token == POSITION:
+                    x,y = [ round(i) for i in self.pos_dec.from_img(self.pos_dec(pred_pos_embs[:1,i]))[0].tolist()]
+                    pred_toks.append(f'({x},{y})')
+                elif token == START_TIME:
+                    t = round(self.time_dec.from_signal(self.time_dec(pred_time_embs[:1,i]))[0].item())
+                    pred_toks.append(f'START: {t}')
+                elif token == END_TIME:
+                    t = round(self.time_dec.from_signal(self.time_dec(pred_time_embs[:1,i]))[0].item())
+                    pred_toks.append(f'END: {t}')
+                else:
+                    pred_toks.append(FROM_IDX[token])
+
+            for true_tok, pred_tok,_ in zip(true_toks, pred_toks, range(50)):
+                print(f'{str(true_tok):<15}{pred_tok}')
 
         # token loss
         token_loss = F.cross_entropy(pred_tokens.flatten(0,1), true_tokens.flatten(0,1))
@@ -291,20 +346,22 @@ class Model(pl.LightningModule):
         return dict(
             optimizer=opt,
             lr_scheduler=dict(
+                interval='step',
+                frequency=100,
                 scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(
                     opt, 
                     factor=self.learning_rate_schedule_factor,
                     patience=self.learning_rate_patience,
                 ),
-                monitor="val/loss",
+                monitor="train/loss",
             ),
         )
     
     def training_step(self, batch, *args, **kwargs):
-        return self.compute_loss(*batch)
+        return self.compute_loss(batch)
 
-    def validation_step(self, batch, *args, **kwargs):
-        self.compute_loss(*batch, val=True)
+    def validation_step(self, batch, batch_idx, *args, **kwargs):
+        self.compute_loss(batch, val=True, log_pred=batch_idx==0)
         
     def predict_step(self, a: "1,A,L", *args, **kwargs):
         assert a.size(0) == 1
@@ -324,7 +381,7 @@ class Model(pl.LightningModule):
             a_seg: "1,A,l" = a[...,audio_idx:audio_idx+self.audio_seq_length]
 
             tokens: "1,N" = torch.tensor([[BOS]], device=a.device)
-            times: "1,N" = torch.tensor([[-1]], device=a.device)
+            times: "1,N" = torch.full((1,1), torch.nan, device=a.device)
             positions: "1,N,2" = torch.full((1,1,2), torch.nan, device=a.device)
 
             while True:
@@ -389,8 +446,8 @@ class Model(pl.LightningModule):
                 # no objects placed in this section, start next section from scratch
                 audio_idx += self.audio_seq_length
                 tokens: "1,N" = torch.tensor([[BOS]], device=a.device)
-                times: "1,N" = torch.tensor([[-1]], device=a.device)
-                next_pos: "1,1,2" = torch.full((1,1,2), torch.nan, device=a.device)
+                times: "1,N" = torch.full((1,1), torch.nan, device=a.device)
+                positions: "1,N,2" = torch.full((1,1,2), torch.nan, device=a.device)
 
 
         return output

@@ -299,18 +299,18 @@ class Dataset(IterableDataset):
         no_time = np.nan
         no_pos = (np.nan, np.nan)
 
-        def tokens_for_range(start, end):
+        def tokens_for_range(start_time, end):
             """
-            returns all tokens between `start` and `end` inclusive
+            returns all tokens between `start_time` and `end` inclusive
 
             - tokens: N, array of ints that are keys into `TO_IDX`
-            - times: N, array of ints that are frame indices (that are relative to `start`) for `TIME`-type tokens
+            - times: N, array of ints that are frame indices (that are relative to `start_time`) for `TIME`-type tokens
             - positions: N,2 array of ints representing positions as coordinate pairs
             """
             tokens = [BOS]
             times = [no_time]
             positions = [no_pos]
-            for idx in np.nonzero((start <= sentence_starts) & (end >= sentence_ends))[0]:
+            for idx in np.nonzero((start_time <= sentence_starts) & (end >= sentence_ends))[0]:
                 for tok in sentences[idx]:
                     if isinstance(tok, tuple):
                         if tok[0] == 'POSITION':
@@ -320,7 +320,7 @@ class Dataset(IterableDataset):
                             positions.append((x,y))
                         else:
                             tokens.append(START_TIME if tok[0] == 'START_TIME' else END_TIME)
-                            times.append(tok[1] - start)
+                            times.append(tok[1] - start_time)
                             positions.append(no_pos)
 
                     else:
@@ -335,7 +335,7 @@ class Dataset(IterableDataset):
             return (
                 np.array(tokens, dtype=int),
                 librosa.time_to_frames(
-                    np.array(times),
+                    np.array(times)/1000,
                     sr=SR,
                     hop_length=HOP_LEN,
                 ).round().astype(float),
