@@ -6,3 +6,4 @@ data*/
 lightning_logs*/
 *.ckpt
 *.ipynb
+build/
