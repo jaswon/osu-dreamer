@@ -100,7 +100,6 @@ class Data(pl.LightningDataModule):
         sample_density: float,
         subseq_density: float,
         context_len: int,
-        position_depth: int,
 
         batch_size: int,
         num_workers: int,
@@ -118,7 +117,6 @@ class Data(pl.LightningDataModule):
         self.sample_density = sample_density
         self.subseq_density = subseq_density
         self.context_len = context_len
-        self.position_depth = position_depth
         self.batch_size = batch_size
         self.num_workers = num_workers
         
@@ -179,7 +177,6 @@ class Data(pl.LightningDataModule):
             sample_density=self.sample_density,
             subseq_density=self.subseq_density,
             context_len=self.context_len,
-            position_depth=self.position_depth,
         )
         self.train_set = Dataset(dataset=train_split, **dataset_kwargs)
         self.val_set = Dataset(dataset=val_split, **dataset_kwargs)
@@ -226,7 +223,6 @@ class Dataset(IterableDataset):
         subseq_density,
         sample_density,
         context_len,
-        position_depth,
         **kwargs,
     ):
         super().__init__()
@@ -235,7 +231,6 @@ class Dataset(IterableDataset):
         self.seq_length = seq_length
         self.subseq_density = subseq_density
         self.context_len = context_len
-        self.position_depth = position_depth
         
         if not 0 < self.sample_density <= 1:
             raise ValueError("sample density must be in (0, 1]:", self.sample_density)
@@ -296,7 +291,7 @@ class Dataset(IterableDataset):
         sentence_starts = np.array(sentence_starts)
         sentence_ends = np.array(sentence_ends)
 
-        no_time = np.nan
+        no_time = [np.nan]
         no_pos = (np.nan, np.nan)
 
         def tokens_for_range(start_time, end):
@@ -320,7 +315,7 @@ class Dataset(IterableDataset):
                             positions.append((x,y))
                         else:
                             tokens.append(START_TIME if tok[0] == 'START_TIME' else END_TIME)
-                            times.append(tok[1] - start_time)
+                            times.append([tok[1] - start_time])
                             positions.append(no_pos)
 
                     else:
@@ -349,7 +344,7 @@ class Dataset(IterableDataset):
             if len(tokens) <= self.context_len:
                 pad_amt = self.context_len - len(tokens) + 1
                 tokens = np.pad(tokens, (0, pad_amt), constant_values=PAD)
-                times = np.pad(times, (0, pad_amt), constant_values=np.nan)
+                times = np.pad(times, ((0, pad_amt),(0,0)), constant_values=np.nan)
                 positions = np.pad(positions, ((0, pad_amt),(0,0)), constant_values=np.nan)
                 mask = np.pad(mask, (0, pad_amt), constant_values=0)
 

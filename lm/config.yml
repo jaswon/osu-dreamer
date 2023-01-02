@@ -30,15 +30,13 @@ data:
     seq_length: 512
     
     # what fraction of the full dataset to use per epoch (must be between 0 and 1)
-    sample_density: .05
+    sample_density: .1
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
     subseq_density: .05
 
     context_len: 2048
-
-    position_depth: 9
     
     # size of training batch
     batch_size: 1
@@ -61,11 +59,11 @@ model:
     context_len: 2048
     token_dim: 64
 
-    time_dim: 4
+    time_dim: 8
     time_depth: 9
 
-    pos_dim: 8
+    pos_dim: 16
     pos_depth: 5
 
     h_dim: 64
-    attn_depth: 6
+    attn_depth: 8
