@@ -129,15 +129,73 @@ def cursor_signal(beatmap, frame_times: "L,") -> "CURSOR_DIM,L":
 
 # auxiliary signal
 
+KIAI_DIM = 1
 def kiai_signal(beatmap, frame_times: "L,") -> "1,L":
     """
     returns a [1,L] where [0,t] is 1 if kiai time is enabled otherwise 0
     """
-    return np.array([
+    sig = np.array([
         1 if tp is not None and tp.kiai else 0
         for tp in active_timing_point(beatmap, frame_times)
     ])[None]
+    assert sig.shape[0] == KIAI_DIM
+    return sig
 
+MOTION_DIM = 3
+def motion_signal(beatmap, frame_times: "L,") -> "3,L":
+    """
+    returns a [6,L] with values in [0,1] where:
+    - [0] represents magnitude of velocity (speed)
+    - [1] represents the x component of the normalized velocity
+    - [2] represents the y component of the normalized velocity
+    """
+
+    APPROX_MAX_SPEED = 640
+
+    sig = []
+    for t, (a,b) in zip(frame_times, hit_object_pairs(beatmap, frame_times)):
+        if a is None:
+            # before first hit object
+            vel = np.array([0,0])
+        elif t < a.end_time():
+            # hitting current hit object
+            # note: will not be a `Circle` due to `hit_object_pairs`
+            if isinstance(a, Spinner):
+                vel = np.array([0,0])
+            elif isinstance(a, Slider):
+                single_slide = a.slide_duration / a.slides
+                ts = (t - a.t) % (single_slide * 2) / single_slide
+                if ts < 1:  # start -> end
+                    vel_dir = 1
+                else:  # end -> start
+                    vel_dir = -1
+                    ts = 2 - ts
+
+                vel = a.vel(ts) * vel_dir
+        elif b is None:
+            # after last hit object
+            vel = np.array([0,0])
+        else:
+            # moving to next hit object
+            vel = (b.start_pos() - a.end_pos()) / (b.t - a.end_time())
+
+        # compute signal
+        speed = np.linalg.norm(vel) # [0, inf)
+        exp_speed = np.exp(speed * 6 / APPROX_MAX_SPEED)
+        vel = vel/speed if speed > 0 else np.array([0,0])
+
+        sig.append([
+            (exp_speed-1)/exp_speed,
+            (vel[0]+1)/2,
+            (vel[1]+1)/2,
+        ])
+    
+    sig = np.array(sig).T
+    assert sig.shape[0] == MOTION_DIM
+    return sig
+            
+
+BEAT_DIM = 2
 def beat_signal(beatmap, frame_times: "L,") -> "2,L":
     """
     returns a [2,L] where:
@@ -162,30 +220,11 @@ def beat_signal(beatmap, frame_times: "L,") -> "2,L":
 
     sig: "1,2,L" = np.take_along_axis(choices, active_tp, axis=0)
     
-    return np.cos(sig[0])**2
-        
-AUX_DIM = 3
-
-def auxiliary_signal(
-    beatmap,
-    frame_times: "L,",
-) -> "AUX_DIM,L":
-    """
-    returns a [AUX_DIM,L] scaled to [-1,1]
-
-    this signal should be predicted by the model, but is not used during map generation
-    the idea is to learn higher level features that the model can use to inform map generation
-
-    - `frame_times`: array of times at each frame in ms
-    """
-
-    kiai = kiai_signal(beatmap, frame_times)
-    beat = beat_signal(beatmap, frame_times)
-
-    sig = np.concatenate([kiai, beat], axis=0) * 2 - 1
-    assert sig.shape[0] == AUX_DIM
+    sig = np.cos(sig[0])**2
+    assert sig.shape[0] == BEAT_DIM
     return sig
-
+        
+AUX_DIM = KIAI_DIM + BEAT_DIM + MOTION_DIM
 MAP_SIGNAL_DIM = HIT_DIM + SLIDER_DIM + CURSOR_DIM
 X_DIM = MAP_SIGNAL_DIM + AUX_DIM
 
@@ -196,14 +235,21 @@ def from_beatmap(beatmap, frame_times: "L,") -> "X_DIM,L":
 
     - `frame_times`: array of times at each frame in ms
     """
-    hits: "HIT_DIM,L" = hit_signal(beatmap, frame_times)
-    slider: "SLIDER_DIM,L" = slider_signal(beatmap, frame_times)
-    cursor: "CURSOR_DIM,L" = cursor_signal(beatmap, frame_times)
 
-    sig = np.concatenate([hits, slider, cursor], axis=0) * 2 - 1
+    sig = np.concatenate([
+        hit_signal(beatmap, frame_times),
+        slider_signal(beatmap, frame_times),
+        cursor_signal(beatmap, frame_times),
+    ], axis=0) * 2 - 1
     assert sig.shape[0] == MAP_SIGNAL_DIM
 
-    aux = auxiliary_signal(beatmap, frame_times)
+    # the auxiliary signal should be predicted by the model, but is not used during map generation
+    # the idea is that if the model can learn these higher level features, it can also use them to inform map generation
+    aux = np.concatenate([
+        kiai_signal(beatmap, frame_times),
+        beat_signal(beatmap, frame_times),
+        motion_signal(beatmap, frame_times),
+    ], axis=0) * 2 - 1
     assert aux.shape[0] == AUX_DIM
 
     return np.concatenate([aux, sig], axis=0)
