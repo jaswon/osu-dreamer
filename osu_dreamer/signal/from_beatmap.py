@@ -123,7 +123,7 @@ def cursor_signal(beatmap, frame_times: "L,") -> "CURSOR_DIM,L":
             f = (t - a.end_time()) / (b.t - a.end_time())
             pos.append((1 - f) * a.end_pos() + f * b.start_pos())
             
-    sig = np.array(pos).T
+    sig = (np.array(pos) / np.array([512,384])).T
     assert sig.shape[0] == CURSOR_DIM
     return sig
 
@@ -198,7 +198,7 @@ def from_beatmap(beatmap, frame_times: "L,") -> "X_DIM,L":
     """
     hits: "HIT_DIM,L" = hit_signal(beatmap, frame_times)
     slider: "SLIDER_DIM,L" = slider_signal(beatmap, frame_times)
-    cursor: "CURSOR_DIM,L" = cursor_signal(beatmap, frame_times) / np.array([[512],[384]])
+    cursor: "CURSOR_DIM,L" = cursor_signal(beatmap, frame_times)
 
     sig = np.concatenate([hits, slider, cursor], axis=0) * 2 - 1
     assert sig.shape[0] == MAP_SIGNAL_DIM
