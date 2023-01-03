@@ -57,13 +57,13 @@ model:
 
     # model hyperparameters
     context_len: 2048
-    token_dim: 64
+    token_dim: 16
 
-    time_dim: 8
+    time_dim: 16
     time_depth: 9
 
-    pos_dim: 16
-    pos_depth: 5
+    pos_dim: 32
+    pos_depth: 6
 
     h_dim: 64
-    attn_depth: 8
+    attn_depth: 6
