@@ -1,18 +1,19 @@
 model:
-    learning_rate: .001
+    learning_rate: .0001
     learning_rate_schedule_factor: .5
-    learning_rate_patience: 5
+    learning_rate_patience: 10
 
     # model hyperparameters
-    h_dims: [128,128,128,128,128]
-    h_dim_groups: 1
+    h_dims: [256,256,256,256,256,256]
+    h_dim_groups: 4
     convnext_mult: 2
-    wave_stack_depth: 5
-    wave_num_stacks: 5
+    wave_stack_depth: 4
+    wave_num_stacks: 4
     blocks_per_depth: 2
     attn_heads: 8
     attn_dim: 8
-    timesteps: 500
+    rel_attn_radius: 128
+    timesteps: 1000
     
     # number of steps to use for sampling during validation
     sample_steps: 32

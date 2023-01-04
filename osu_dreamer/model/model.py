@@ -35,6 +35,7 @@ class Model(pl.LightningModule):
         blocks_per_depth: int,
         attn_heads: int,
         attn_dim: int,
+        rel_attn_radius: int,
         
         timesteps: int,
         sample_steps: int,
@@ -58,6 +59,7 @@ class Model(pl.LightningModule):
             blocks_per_depth,
             attn_heads,
             attn_dim,
+            rel_attn_radius,
         )
         
         self.schedule = CosineBetaSchedule(timesteps, self.net)
@@ -148,7 +150,7 @@ class Model(pl.LightningModule):
     def validation_step(self, batch: Tuple["1,A,L","1,X,L"], batch_idx, *args, **kwargs):
         torch.cuda.empty_cache()
         a,x = copy.deepcopy(batch)
-        
+
         loss = self.compute_loss(a,x, pad=True)
         
         self.log(
