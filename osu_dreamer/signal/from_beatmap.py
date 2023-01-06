@@ -224,7 +224,8 @@ def beat_signal(beatmap, frame_times: "L,") -> "2,L":
     assert sig.shape[0] == BEAT_DIM
     return sig
         
-AUX_DIM = KIAI_DIM + BEAT_DIM + MOTION_DIM
+# AUX_DIM = KIAI_DIM + BEAT_DIM + MOTION_DIM
+AUX_DIM = 0
 MAP_SIGNAL_DIM = HIT_DIM + SLIDER_DIM + CURSOR_DIM
 X_DIM = MAP_SIGNAL_DIM + AUX_DIM
 
@@ -237,19 +238,19 @@ def from_beatmap(beatmap, frame_times: "L,") -> "X_DIM,L":
     """
 
     sig = np.concatenate([
+        ### AUXILIARY SIGNALS
+        # auxiliary signals should be predicted by the model, but are not used during map generation
+        # the idea is that if the model can learn these higher level features, it can also use them to inform map generation
+
+        # kiai_signal(beatmap, frame_times),
+        # beat_signal(beatmap, frame_times),
+        # motion_signal(beatmap, frame_times),
+
+        ### MAP SIGNALS
+        # map signals are interpreted for the purpose of map generation
         hit_signal(beatmap, frame_times),
         slider_signal(beatmap, frame_times),
         cursor_signal(beatmap, frame_times),
     ], axis=0) * 2 - 1
     assert sig.shape[0] == MAP_SIGNAL_DIM
-
-    # the auxiliary signal should be predicted by the model, but is not used during map generation
-    # the idea is that if the model can learn these higher level features, it can also use them to inform map generation
-    aux = np.concatenate([
-        kiai_signal(beatmap, frame_times),
-        beat_signal(beatmap, frame_times),
-        motion_signal(beatmap, frame_times),
-    ], axis=0) * 2 - 1
-    assert aux.shape[0] == AUX_DIM
-
-    return np.concatenate([aux, sig], axis=0)
+    return sig
