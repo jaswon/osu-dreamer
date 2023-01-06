@@ -3,9 +3,10 @@ from functools import partial
 
 import torch
 import torch.nn as nn
-from x_transformers import Encoder
+# from x_transformers import Encoder
+from linear_attention_transformer.linear_attention_transformer import SelfAttention
 
-from einops import rearrange
+# from einops import rearrange
 from einops.layers.torch import Rearrange
 
 exists = lambda x: x is not None
@@ -54,44 +55,44 @@ class SinusoidalPositionEmbeddings(nn.Module):
         embs = torch.cat([embs.sin(), embs.cos()], dim=-1)
         return embs
     
-class Attention(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=32):
-        super().__init__()
-        self.scale = dim_head**-0.5
-        self.heads = heads
-        h_dim = dim_head * heads
-        self.dim_head = dim_head
+# class Attention(nn.Module):
+#     def __init__(self, dim, heads=8, dim_head=32):
+#         super().__init__()
+#         self.scale = dim_head**-0.5
+#         self.heads = heads
+#         h_dim = dim_head * heads
+#         self.dim_head = dim_head
         
-        self.to_qkv: "N,C,L -> N,3H,L" = nn.Conv1d(dim, h_dim*3, 1, bias=False)
-        self.to_out = nn.Conv1d(h_dim, dim, 1)
+#         self.to_qkv: "N,C,L -> N,3H,L" = nn.Conv1d(dim, h_dim*3, 1, bias=False)
+#         self.to_out = nn.Conv1d(h_dim, dim, 1)
 
-    def forward(self, x: "N,C,L") -> "N,C,L":
-        qkv: "3,N,h_dim,L" = self.to_qkv(x).chunk(3, dim=1)
-        out = self.attn(*( t.unflatten(1, (self.heads, -1)) for t in qkv ))
-        return self.to_out(out)
+#     def forward(self, x: "N,C,L") -> "N,C,L":
+#         qkv: "3,N,h_dim,L" = self.to_qkv(x).chunk(3, dim=1)
+#         out = self.attn(*( t.unflatten(1, (self.heads, -1)) for t in qkv ))
+#         return self.to_out(out)
         
-    def attn(self, q: "N,h,d,L", k: "N,h,d,L", v: "N,h,d,L"):
-        q = q * self.scale
+#     def attn(self, q: "N,h,d,L", k: "N,h,d,L", v: "N,h,d,L"):
+#         q = q * self.scale
 
-        sim: "N,h,L,L" = torch.einsum("b h d i, b h d j -> b h i j", q, k)
-        sim = sim - sim.amax(dim=-1, keepdim=True).detach()
-        attn = sim.softmax(dim=-1)
+#         sim: "N,h,L,L" = torch.einsum("b h d i, b h d j -> b h i j", q, k)
+#         sim = sim - sim.amax(dim=-1, keepdim=True).detach()
+#         attn = sim.softmax(dim=-1)
 
-        out:"N,h,L,d" = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
-        out = rearrange(out, "b h l c -> b (h c) l")
-        return out
+#         out:"N,h,L,d" = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
+#         out = rearrange(out, "b h l c -> b (h c) l")
+#         return out
 
-class LinearAttention(Attention):
-    """https://arxiv.org/abs/1812.01243"""
+# class LinearAttention(Attention):
+#     """https://arxiv.org/abs/1812.01243"""
     
-    def attn(self, q: "N,h,d,L", k: "N,h,d,L", v: "N,h,d,L"):
-        q = q.softmax(dim=-2) * self.scale
-        k = k.softmax(dim=-1)
+#     def attn(self, q: "N,h,d,L", k: "N,h,d,L", v: "N,h,d,L"):
+#         q = q.softmax(dim=-2) * self.scale
+#         k = k.softmax(dim=-1)
 
-        ctx: "N,h,d,d" = torch.einsum("b h d n, b h e n -> b h d e", k, v)
-        out: "N,h,d,l" = torch.einsum("b h d e, b h d n -> b h e n", ctx, q)
-        out = rearrange(out, "b h c l -> b (h c) l")
-        return out
+#         ctx: "N,h,d,d" = torch.einsum("b h d n, b h e n -> b h d e", k, v)
+#         out: "N,h,d,l" = torch.einsum("b h d e, b h d n -> b h e n", ctx, q)
+#         out = rearrange(out, "b h c l -> b (h c) l")
+#         return out
 
 class WaveBlock(nn.Module):
     """context is acquired from num_stacks*2**stack_depth neighborhood"""
@@ -142,7 +143,7 @@ class ConvNextBlock(nn.Module):
             else None
         )
 
-        self.ds_conv = nn.Conv1d(dim, dim, 7, padding=3, groups=dim, padding_mode='reflect')
+        self.ds_conv = nn.Conv1d(dim, dim, 7, padding=3, padding_mode='reflect')
 
         self.net = nn.Sequential(
             nn.GroupNorm(1, dim) if norm else nn.Identity(),
@@ -210,7 +211,12 @@ class UNet(nn.Module):
                     for i in range(blocks_per_depth)
                 ]),
                 nn.ModuleList([
-                    Residual(PreNorm(dim_out, LinearAttention(dim_out, heads=attn_heads, dim_head=attn_dim)))
+                    # Residual(PreNorm(dim_out, LinearAttention(dim_out, heads=attn_heads, dim_head=attn_dim)))
+                    Residual(PreNorm(dim_out, nn.Sequential(
+                        Rearrange('b d l -> b l d'),
+                        SelfAttention(dim_out, heads=attn_heads, dim_head=attn_dim),
+                        Rearrange('b l d -> b d l'),
+                    )))
                     for _ in range(blocks_per_depth)
                 ]),
                 Downsample(dim_out) if ind < (num_layers - 1) else nn.Identity(),
@@ -225,17 +231,22 @@ class UNet(nn.Module):
         # self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim, heads=attn_heads, dim_head=attn_dim)))
         self.mid_attn = Residual(PreNorm(mid_dim, nn.Sequential(
             Rearrange('b d l -> b l d'),
-            # SelfAttention(mid_dim, heads=attn_heads, dim_head=attn_dim),
-            Encoder(
-                dim=mid_dim,
-                heads=attn_heads,
-                rotary_xpos = True,
-                rel_pos_bias = True,
-                dynamic_pos_bias = True,
-                dynamic_pos_bias_log_distance = True,
-            ),
+            SelfAttention(mid_dim, heads=attn_heads, dim_head=attn_dim),
             Rearrange('b l d -> b d l'),
         )))
+        # self.mid_attn = Residual(PreNorm(mid_dim, nn.Sequential(
+        #     Rearrange('b d l -> b l d'),
+        #     # SelfAttention(mid_dim, heads=attn_heads, dim_head=attn_dim),
+        #     Encoder(
+        #         dim=mid_dim,
+        #         heads=attn_heads,
+        #         depth=2,
+        #         rel_pos_bias = True,
+        #         dynamic_pos_bias = True,
+        #         dynamic_pos_bias_log_distance = True,
+        #     ),
+        #     Rearrange('b l d -> b d l'),
+        # )))
         self.mid_block2 = block(mid_dim, mid_dim, emb_dim=emb_dim)
         
         self.ups = nn.ModuleList([
@@ -245,7 +256,12 @@ class UNet(nn.Module):
                     for i in range(blocks_per_depth)
                 ]),
                 nn.ModuleList([
-                    Residual(PreNorm(dim_in, LinearAttention(dim_in, heads=attn_heads, dim_head=attn_dim)))
+                    # Residual(PreNorm(dim_in, LinearAttention(dim_in, heads=attn_heads, dim_head=attn_dim)))
+                    Residual(PreNorm(dim_in, nn.Sequential(
+                        Rearrange('b d l -> b l d'),
+                        SelfAttention(dim_in, heads=attn_heads, dim_head=attn_dim),
+                        Rearrange('b l d -> b d l'),
+                    )))
                     for _ in range(blocks_per_depth)
                 ]),
                 Upsample(dim_in) if ind < (num_layers - 1) else nn.Identity(),

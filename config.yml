@@ -9,7 +9,7 @@ trainer:
     max_epochs: -1
     
     # number of training steps per model update. 
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 3
     
     callbacks:
         - class_path: pytorch_lightning.callbacks.LearningRateMonitor
@@ -20,7 +20,7 @@ trainer:
     logger: true
     enable_checkpointing: true
     enable_progress_bar: true
-    log_every_n_steps: 10
+    log_every_n_steps: 1
     enable_model_summary: true
     
 data:
@@ -33,10 +33,10 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .6
+    subseq_density: .1
     
     # size of training batch
-    batch_size: 16
+    batch_size: 8
     
     # number of workers to use for data loading
     num_workers: 6
