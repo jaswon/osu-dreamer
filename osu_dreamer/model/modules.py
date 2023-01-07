@@ -174,12 +174,12 @@ class UNet(nn.Module):
         h_dims,
         h_dim_groups,
         convnext_mult,
-        wave_stack_depth,
-        wave_num_stacks,
+        # wave_stack_depth,
+        # wave_num_stacks,
         blocks_per_depth,
         attn_heads,
         attn_dim,
-        rel_attn_radius,
+        # rel_attn_radius,
     ):
         super().__init__()
         
@@ -190,7 +190,7 @@ class UNet(nn.Module):
         
         self.init_conv = nn.Sequential(
             nn.Conv1d(in_dim, h_dims[0], 7, padding=3),
-            WaveBlock(h_dims[0], wave_stack_depth, wave_num_stacks),
+            # WaveBlock(h_dims[0], wave_stack_depth, wave_num_stacks),
         )
         
         # time embeddings
@@ -227,26 +227,11 @@ class UNet(nn.Module):
         mid_dim = h_dims[-1]
         self.mid_block1 = block(mid_dim, mid_dim, emb_dim=emb_dim)
 
-        # self.mid_attn = Residual(PreNorm(mid_dim, RelativeAttention(mid_dim, radius=rel_attn_radius, heads=attn_heads, dim_head=attn_dim)))
-        # self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim, heads=attn_heads, dim_head=attn_dim)))
         self.mid_attn = Residual(PreNorm(mid_dim, nn.Sequential(
             Rearrange('b d l -> b l d'),
             SelfAttention(mid_dim, heads=attn_heads, dim_head=attn_dim),
             Rearrange('b l d -> b d l'),
         )))
-        # self.mid_attn = Residual(PreNorm(mid_dim, nn.Sequential(
-        #     Rearrange('b d l -> b l d'),
-        #     # SelfAttention(mid_dim, heads=attn_heads, dim_head=attn_dim),
-        #     Encoder(
-        #         dim=mid_dim,
-        #         heads=attn_heads,
-        #         depth=2,
-        #         rel_pos_bias = True,
-        #         dynamic_pos_bias = True,
-        #         dynamic_pos_bias_log_distance = True,
-        #     ),
-        #     Rearrange('b l d -> b d l'),
-        # )))
         self.mid_block2 = block(mid_dim, mid_dim, emb_dim=emb_dim)
         
         self.ups = nn.ModuleList([

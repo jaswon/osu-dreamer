@@ -33,7 +33,7 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .1
+    subseq_density: .2
     
     # size of training batch
     batch_size: 8

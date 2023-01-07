@@ -30,12 +30,12 @@ class Model(pl.LightningModule):
         h_dims: List[int],
         h_dim_groups: int,
         convnext_mult: int,
-        wave_stack_depth: int,
-        wave_num_stacks: int,
+        # wave_stack_depth: int,
+        # wave_num_stacks: int,
         blocks_per_depth: int,
         attn_heads: int,
         attn_dim: int,
-        rel_attn_radius: int,
+        # rel_attn_radius: int,
         
         timesteps: int,
         sample_steps: int,
@@ -54,12 +54,12 @@ class Model(pl.LightningModule):
             A_DIM+X_DIM, X_DIM,
             h_dims, h_dim_groups,
             convnext_mult,
-            wave_stack_depth,
-            wave_num_stacks,
+            # wave_stack_depth,
+            # wave_num_stacks,
             blocks_per_depth,
             attn_heads,
             attn_dim,
-            rel_attn_radius,
+            # rel_attn_radius,
         )
         
         self.schedule = CosineBetaSchedule(timesteps, self.net)

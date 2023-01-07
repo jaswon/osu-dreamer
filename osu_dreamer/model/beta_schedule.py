@@ -112,7 +112,7 @@ class CosineBetaSchedule(BetaSchedule):
     
 class StridedBetaSchedule(BetaSchedule):
     def __init__(self, schedule, steps, ddim, *args, **kwargs):
-        use_timesteps = set(range(0, schedule.timesteps, int(schedule.timesteps/steps)+1))
+        use_timesteps = set([schedule.timesteps, *range(0, schedule.timesteps, int(schedule.timesteps/steps)+1)])
         self.ts_map = []
         self.ddim = ddim
 
@@ -125,7 +125,7 @@ class StridedBetaSchedule(BetaSchedule):
                 last_alpha_cumprod = alpha_cumprod
                 
         super().__init__(torch.tensor(new_betas), *args, **kwargs)
-                
+
             
     def net(self, x,a,ts):
         ts = torch.tensor(self.ts_map, device=ts.device, dtype=ts.dtype)[ts]
@@ -137,7 +137,7 @@ class StridedBetaSchedule(BetaSchedule):
         if self.ddim:
             eta = 0 # TODO: configuration
             alpha_cumprod_prev_t = extract(self.alphas_cumprod_prev, ts, x.shape)
-            model_var = eta ** 2 * model_var
+            model_var = eta * model_var
             model_mean = (
                 model_x0 * torch.sqrt(alpha_cumprod_prev_t)
                 + model_eps * torch.sqrt(1 - alpha_cumprod_prev_t - model_var)

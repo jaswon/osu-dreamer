@@ -5,18 +5,18 @@ model:
 
     # model hyperparameters
     h_dims: [256,256,256,256,256,256]
-    h_dim_groups: 4
+    h_dim_groups: 8
     convnext_mult: 2
-    wave_stack_depth: 4
-    wave_num_stacks: 4
+    # wave_stack_depth: 4
+    # wave_num_stacks: 4
     blocks_per_depth: 2
     attn_heads: 16
     attn_dim: 16
-    rel_attn_radius: 128
+    # rel_attn_radius: 128
     timesteps: 1000
     
     # number of steps to use for sampling during validation
-    sample_steps: 16
+    sample_steps: 32
     ddim: true
 
     # loss function - can be one of {huber, l1, l2}
