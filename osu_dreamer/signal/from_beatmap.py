@@ -75,13 +75,18 @@ def slider_signal(beatmap, frame_times: "L,") -> "SLIDER_DIM,L":
         if not isinstance(ho, Slider):
             continue
         
-        # only render intermediate slides (ie. exclude start and end)
+        # # only render intermediate slides (ie. exclude start and end)
+        # if ho.slides > 1:
+        #     single_slide = ho.slide_duration / ho.slides
+        #     for i in range(1, ho.slides):
+        #         sig[0] += smooth_hit(frame_times, ho.t + single_slide * i)
+
+        # only render first repeat slide
         if ho.slides > 1:
-            single_slide = ho.slide_duration / ho.slides
-            for i in range(1, ho.slides):
-                sig[0] += smooth_hit(frame_times, ho.t + single_slide * i)
+            sig[0] += smooth_hit(frame_times, ho.t + ho.slide_duration)
                 
         if isinstance(ho, Bezier):
+            # render segment boundaries along the first slide only
             seg_len_t = np.cumsum([0] + [ c.length for c in ho.path_segments ])
             seg_boundaries = seg_len_t / ho.length * ho.slide_duration + ho.t
             for boundary in seg_boundaries[1:-1]:

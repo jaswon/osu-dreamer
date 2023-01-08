@@ -96,7 +96,7 @@ def to_playfield_coordinates(cursor_signal):
     return cursor_signal * np.array([[512],[384]])
       
 
-def to_slider_decoder(frame_times, cursor_signal, slider_signal):
+def to_slider_decoder(cursor_signal, slider_signal):
     """
     returns a function that takes a start and end frame index and returns:
     - slider length
@@ -105,16 +105,49 @@ def to_slider_decoder(frame_times, cursor_signal, slider_signal):
     """
     repeat_sig, seg_boundary_sig = slider_signal
     
-    repeat_idxs: "L," = np.zeros_like(frame_times)
-    repeat_idxs[decode_hit(repeat_sig)] = 1
+    # repeat_idxs: "L," = np.zeros_like(frame_times)
+    # repeat_idxs[decode_hit(repeat_sig)] = 1
+    repeat_idxs = decode_hit(repeat_sig)
     seg_boundary_idxs = decode_hit(seg_boundary_sig)
+
+    def cursor_dist(i,j):
+        if i == j:
+            return 0
+
+        if j < i:
+            i,j = j,i
+        
+        return np.linalg.norm(
+            cursor_signal[:,i+1:j+1] - cursor_signal[:,i:j],
+            axis=0,
+        ).sum()
+
     
     def decoder(a, b):
-        slides = int(sum(repeat_idxs[a:b+1]) + 1)
+        # slides = int(sum(repeat_idxs[a:b+1]) + 1)
+        repeat_idx_in_range = [r for r in repeat_idxs if a < r < b]
+        if len(repeat_idx_in_range) == 0:
+            slides = 1
+        else:
+            r = repeat_idx_in_range[0]
+            slides = (b-a) / (r-a) # (1,inf)
+            dist_to_start, dist_to_end = cursor_dist(a,r), cursor_dist(r,b)
+
+            should_be_odd = dist_to_end < dist_to_start
+            rounds_to_odd = round(slides) % 2 == 1
+            rounds_upward = round(slides) > slides
+
+            slides = round(slides)
+            if should_be_odd != rounds_to_odd:
+                slides += -1 if rounds_upward else 1
+
+        # idx of first slide (or end if only one slide)
+        r = a + (b-a) / slides
+
         ctrl_pts = []
         length = 0
-        sb_idxs = [s for s in seg_boundary_idxs if a < s < b]
-        for seg_start, seg_end in zip([a] + sb_idxs, sb_idxs + [b]):
+        sb_idxs = [s for s in seg_boundary_idxs if a < s < r]
+        for seg_start, seg_end in zip([a] + sb_idxs, sb_idxs + [r]):
             for b in fit_bezier(cursor_signal.T[seg_start:seg_end+1], max_err=100):
                 b = np.array(b).round().astype(int)
                 ctrl_pts.extend(b)
@@ -145,7 +178,7 @@ def to_beatmap(metadata, sig, frame_times, timing):
     cursor_signal = to_playfield_coordinates(cursor_signal)
     
     # process slider signal
-    slider_decoder = to_slider_decoder(frame_times, cursor_signal, slider_signal)
+    slider_decoder = to_slider_decoder(cursor_signal, slider_signal)
 
     # `timing` can be one of:
     # - List[TimingPoint] : timed according to timing points
