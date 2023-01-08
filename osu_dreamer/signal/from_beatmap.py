@@ -114,8 +114,7 @@ def cursor_signal(beatmap, frame_times: "L,") -> "CURSOR_DIM,L":
             if isinstance(a, Spinner):
                 pos.append(a.start_pos())
             else: # is a slider
-                single_slide = a.slide_duration / a.slides
-                ts = (t - a.t) % (single_slide * 2) / single_slide
+                ts = (t - a.t) % (a.slide_duration * 2) / a.slide_duration
                 if ts < 1:  # start -> end
                     pos.append(a.lerp(ts))
                 else:  # end -> start

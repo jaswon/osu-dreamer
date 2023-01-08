@@ -104,9 +104,6 @@ def to_slider_decoder(cursor_signal, slider_signal):
     - slider control points
     """
     repeat_sig, seg_boundary_sig = slider_signal
-    
-    # repeat_idxs: "L," = np.zeros_like(frame_times)
-    # repeat_idxs[decode_hit(repeat_sig)] = 1
     repeat_idxs = decode_hit(repeat_sig)
     seg_boundary_idxs = decode_hit(seg_boundary_sig)
 
@@ -124,25 +121,39 @@ def to_slider_decoder(cursor_signal, slider_signal):
 
     
     def decoder(a, b):
-        # slides = int(sum(repeat_idxs[a:b+1]) + 1)
         repeat_idx_in_range = [r for r in repeat_idxs if a < r < b]
         if len(repeat_idx_in_range) == 0:
             slides = 1
         else:
             r = repeat_idx_in_range[0]
-            slides = (b-a) / (r-a) # (1,inf)
-            dist_to_start, dist_to_end = cursor_dist(a,r), cursor_dist(r,b)
+            slides = round((b-a) / (r-a)) # (1,inf)
 
-            should_be_odd = dist_to_end < dist_to_start
-            rounds_to_odd = round(slides) % 2 == 1
-            rounds_upward = round(slides) > slides
+            # TODO: logic for determining parity of `slides``
+            # for sliders whose start and end are far apart, the cursor will
+            # land at very different locations depending on the parity.
+            # when the number of slides is large, the margin of error for
+            # determining the exact location of the first slide decreases, 
+            # increasing the chance of incorrectly decoding the number of slides
+            # and therefore the parity.
 
-            slides = round(slides)
-            if should_be_odd != rounds_to_odd:
-                slides += -1 if rounds_upward else 1
+            # # dist_to_start, dist_to_end = cursor_dist(a,r), cursor_dist(r,b)
+            # # if DEBUG: print(r, slides, dist_to_start, dist_to_end)
+            # r_pos, a_pos, b_pos = cursor_signal.T[[r,a,b]]
+            # ab_dist = np.linalg.norm(b_pos - a_pos)
+            # ra_dist = np.linalg.norm(r_pos - a_pos)
+
+            # should_be_odd = dist_to_end < dist_to_start
+            # rounds_to_odd = round(slides) % 2 == 1
+            # rounds_upward = round(slides) > slides
+
+            # if DEBUG: print(should_be_odd, rounds_to_odd, rounds_upward)
+
+            # slides = round(slides)
+            # if should_be_odd != rounds_to_odd:
+            #     slides += -1 if rounds_upward else 1
 
         # idx of first slide (or end if only one slide)
-        r = a + (b-a) / slides
+        r = round(a + (b-a) / slides)
 
         ctrl_pts = []
         length = 0
