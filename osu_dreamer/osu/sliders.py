@@ -108,7 +108,7 @@ class Line(Slider):
         return ret.round(0).astype(np.integer)
 
     def vel(self, t: float) -> NDIntArray:
-        return (self.end - self.start) / (self.slide_duration / self.slides)
+        return (self.end - self.start) / self.slide_duration
 
 
 class Perfect(Slider):
@@ -142,7 +142,7 @@ class Perfect(Slider):
 
     def vel(self, t: float) ->  NDIntArray:
         angle = (1 - t) * self.start + t * self.end
-        return self.radius * np.array([-np.sin(angle), np.cos(angle)]) / (self.slide_duration / self.slides)
+        return self.radius * np.array([-np.sin(angle), np.cos(angle)]) / self.slide_duration
 
 
 
@@ -227,4 +227,4 @@ class Bezier(Slider):
 
     def vel(self, t: float) -> NDIntArray:
         idx, t = self.curve_reparameterize(t)
-        return self.path_segments[idx].evaluate_hodograph(t)[:,0].round(0).astype(np.integer) / (self.slide_duration / self.slides)
+        return self.path_segments[idx].evaluate_hodograph(t)[:,0].round(0).astype(np.integer) / self.slide_duration

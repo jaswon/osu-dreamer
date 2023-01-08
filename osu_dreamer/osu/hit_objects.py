@@ -106,10 +106,10 @@ class Slider(HitObject):
         self.beat_length = beat_length
         self.slider_mult = slider_mult
         
-        self.slide_duration = length / (slider_mult * 100) * beat_length * slides
+        self.slide_duration = length / (slider_mult * 100) * beat_length
         
     def end_time(self) -> int:
-        return self.t + self.slide_duration
+        return self.t + self.slide_duration * self.slides
 
     def lerp(self, _: float) -> NDIntArray:
         """

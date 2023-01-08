@@ -94,7 +94,7 @@ def from_beatmap(bm):
             sentence.extend(['SLIDE'] * (ho.slides - 1))
 
             # followed by the end timestamp
-            sentence.extend([int(ho.t + ho.slide_duration), 'END'])
+            sentence.extend([int(ho.end_time()), 'END'])
 
         sentences.append(sentence)
 

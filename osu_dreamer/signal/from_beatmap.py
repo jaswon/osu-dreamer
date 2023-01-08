@@ -163,8 +163,7 @@ def motion_signal(beatmap, frame_times: "L,") -> "3,L":
             if isinstance(a, Spinner):
                 vel = np.array([0,0])
             elif isinstance(a, Slider):
-                single_slide = a.slide_duration / a.slides
-                ts = (t - a.t) % (single_slide * 2) / single_slide
+                ts = (t - a.t) % (a.slide_duration * 2) / a.slide_duration
                 if ts < 1:  # start -> end
                     vel_dir = 1
                 else:  # end -> start
