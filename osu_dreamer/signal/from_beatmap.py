@@ -3,7 +3,7 @@ import numpy as np
 from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner
 from osu_dreamer.osu.sliders import Line, Perfect, Bezier
 
-from .smooth_hit import smooth_hit
+from .smooth_hit import encode_hit, encode_hold
 
 # helpers
 
@@ -49,14 +49,14 @@ def hit_signal(beatmap, frame_times: "L,") -> "HIT_DIM,L":
     sig = np.zeros((4, len(frame_times)))
     for ho in beatmap.hit_objects:
         if isinstance(ho, Circle):
-            sig[0] += smooth_hit(frame_times, ho.t)
+            encode_hit(sig[0], frame_times, ho.t)
         elif isinstance(ho, Slider):
-            sig[1] += smooth_hit(frame_times, (ho.t, ho.end_time()))
+            encode_hold(sig[1], frame_times, ho.t, ho.end_time())
         elif isinstance(ho, Spinner):
-            sig[2] += smooth_hit(frame_times, (ho.t, ho.end_time()))
+            encode_hold(sig[2], frame_times, ho.t, ho.end_time())
 
         if ho.new_combo:
-            sig[3] += smooth_hit(frame_times, ho.t)
+            encode_hit(sig[3], frame_times, ho.t)
 
     assert sig.shape[0] == HIT_DIM
     return sig
@@ -74,23 +74,17 @@ def slider_signal(beatmap, frame_times: "L,") -> "SLIDER_DIM,L":
     for ho in beatmap.hit_objects:
         if not isinstance(ho, Slider):
             continue
-        
-        # # only render intermediate slides (ie. exclude start and end)
-        # if ho.slides > 1:
-        #     single_slide = ho.slide_duration / ho.slides
-        #     for i in range(1, ho.slides):
-        #         sig[0] += smooth_hit(frame_times, ho.t + single_slide * i)
 
         # only render first repeat slide
         if ho.slides > 1:
-            sig[0] += smooth_hit(frame_times, ho.t + ho.slide_duration)
+            encode_hit(sig[0], frame_times, ho.t + ho.slide_duration)
                 
         if isinstance(ho, Bezier):
             # render segment boundaries along the first slide only
             seg_len_t = np.cumsum([0] + [ c.length for c in ho.path_segments ])
             seg_boundaries = seg_len_t / ho.length * ho.slide_duration + ho.t
             for boundary in seg_boundaries[1:-1]:
-                sig[1] += smooth_hit(frame_times, boundary)
+                encode_hit(sig[1], frame_times, boundary)
             
     assert sig.shape[0] == SLIDER_DIM
     return sig

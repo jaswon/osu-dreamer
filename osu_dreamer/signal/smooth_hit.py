@@ -4,6 +4,12 @@ import scipy
 # std dev of impulse indicating a hit
 HIT_SD = 5
 
+def encode_hit(sig, frame_times, i):
+    sig += smooth_hit(frame_times, i)
+
+def encode_hold(sig, frame_times, i, j):
+    sig += smooth_hit(frame_times, (i,j))
+
 def smooth_hit(x: np.ndarray, mu: "float | [float, float]", sigma: float = HIT_SD):
     """
     a smoothed impulse
@@ -30,6 +36,9 @@ def _decode(sig, peak_h, hit_offset):
     hit_peaks = scipy.signal.find_peaks(corr, height=peak_h)[0] + hit_offset
     return hit_peaks.astype(int).tolist()
     
+def decode_flip(sig):
+    sig_grad = np.gradient(sig)
+
 
 def decode_hit(sig):
     return _decode(sig, peak_h = .5, hit_offset = 0)
