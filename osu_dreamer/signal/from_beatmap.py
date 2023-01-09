@@ -46,7 +46,7 @@ def hit_signal(beatmap, frame_times: "L,") -> "HIT_DIM,L":
     - `frame_times`: array of times at each frame in ms
     """
 
-    sig = np.zeros((4, len(frame_times)))
+    sig = np.full((4, len(frame_times)), -1.)
     for ho in beatmap.hit_objects:
         if isinstance(ho, Circle):
             encode_hit(sig[0], frame_times, ho.t)
@@ -69,7 +69,7 @@ def slider_signal(beatmap, frame_times: "L,") -> "SLIDER_DIM,L":
     - [0] represents a slider repeat
     - [1] represents a bezier slider segment boundary
     """
-    sig = np.zeros((2, len(frame_times)))
+    sig = np.full((2, len(frame_times)), -1.)
 
     for ho in beatmap.hit_objects:
         if not isinstance(ho, Slider):
@@ -123,7 +123,7 @@ def cursor_signal(beatmap, frame_times: "L,") -> "CURSOR_DIM,L":
             
     sig = (np.array(pos) / np.array([512,384])).T
     assert sig.shape[0] == CURSOR_DIM
-    return sig
+    return sig * 2 - 1
 
 # auxiliary signal
 
@@ -228,7 +228,7 @@ X_DIM = MAP_SIGNAL_DIM + AUX_DIM
 
 def from_beatmap(beatmap, frame_times: "L,") -> "X_DIM,L":
     """
-    returns a [X_DIM,L] scaled to [-1,1]
+    returns `X_DIM` signals of length `L`
     the first `AUX_DIM` signals are auxiliary and should be ignored during map generation
 
     - `frame_times`: array of times at each frame in ms
@@ -248,6 +248,6 @@ def from_beatmap(beatmap, frame_times: "L,") -> "X_DIM,L":
         hit_signal(beatmap, frame_times),
         slider_signal(beatmap, frame_times),
         cursor_signal(beatmap, frame_times),
-    ], axis=0) * 2 - 1
+    ], axis=0)
     assert sig.shape[0] == MAP_SIGNAL_DIM
     return sig

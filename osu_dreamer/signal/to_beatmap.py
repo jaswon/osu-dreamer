@@ -30,7 +30,7 @@ Tags: osu_dreamer
 
 [Difficulty]
 HPDrainRate: 0
-CircleSize: 3
+CircleSize: 4.1
 OverallDifficulty: 0
 ApproachRate: 9.5
 SliderMultiplier: 1
@@ -93,7 +93,7 @@ def to_playfield_coordinates(cursor_signal):
     # pad so that the cursor isn't too close to the edges of the screen
     # padding = 0.
     # cursor_signal = padding + cursor_signal * (1 - 2*padding)
-    return cursor_signal * np.array([[512],[384]])
+    return (cursor_signal+1)/2 * np.array([[512],[384]])
       
 
 def to_slider_decoder(cursor_signal, slider_signal):
@@ -107,19 +107,6 @@ def to_slider_decoder(cursor_signal, slider_signal):
     repeat_idxs = decode_hit(repeat_sig)
     seg_boundary_idxs = decode_hit(seg_boundary_sig)
 
-    def cursor_dist(i,j):
-        if i == j:
-            return 0
-
-        if j < i:
-            i,j = j,i
-        
-        return np.linalg.norm(
-            cursor_signal[:,i+1:j+1] - cursor_signal[:,i:j],
-            axis=0,
-        ).sum()
-
-    
     def decoder(a, b):
         repeat_idx_in_range = [r for r in repeat_idxs if a < r < b]
         if len(repeat_idx_in_range) == 0:
@@ -175,7 +162,6 @@ def to_beatmap(metadata, sig, frame_times, timing):
     """
     
     sig = sig[AUX_DIM:] # ignore auxiliary signals
-    sig = (sig+1)/2 # [-1, 1] => [0, 1]
     
     hit_signal, sig = np.split(sig, (HIT_DIM,))
     slider_signal, sig = np.split(sig, (SLIDER_DIM,))
@@ -241,6 +227,7 @@ def to_beatmap(metadata, sig, frame_times, timing):
         hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
 
     def add_slider(i,j,t,u, new_combo):
+        DEBUG = i > 5159 and j < 5221
         if t == u:
             # start and end time are the same, add a hit circle instead
             return add_hit_circle(i,j,t,u, new_combo)
@@ -252,6 +239,7 @@ def to_beatmap(metadata, sig, frame_times, timing):
             return add_hit_circle(i,j,t,u, new_combo)
         
         SV = length * slides / (u-t) / base_slider_vel
+        if DEBUG: print(SV)
 
         x1,y1 = ctrl_pts[0]
         curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
