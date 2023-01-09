@@ -5,43 +5,33 @@ import scipy
 HIT_SD = 5
 
 def encode_hit(sig, frame_times, i):
-    sig += smooth_hit(frame_times, i)
+    z = (frame_times-i)/HIT_SD
+
+    # hits are impulses
+    # sig += np.exp(-.5 * z**2)
+
+    # hits are flips
+    sig *= 1 - 2 * np.exp(-np.logaddexp(-z, 0))
 
 def encode_hold(sig, frame_times, i, j):
-    sig += smooth_hit(frame_times, (i,j))
+    z = np.where(frame_times<i,frame_times-i,np.where(frame_times<j,0,frame_times-j)) / HIT_SD
+    sig += np.exp(-.5 * z**2)  
 
-def smooth_hit(x: np.ndarray, mu: "float | [float, float]", sigma: float = HIT_SD):
-    """
-    a smoothed impulse
-    modelled using a normal distribution with mean `mu` and std. dev `sigma`
-    evaluated at values in `x`
-    """
-    
-    if isinstance(mu, (float, int)):
-        z = (x-mu)/sigma
-    elif isinstance(mu, tuple):
-        a,b = mu
-        z = np.where(x<a,x-a,np.where(x<b,0,x-b)) / sigma
-    else:
-        raise NotImplementedError(f"`mu` must be float or tuple, got {type(mu)}")
-        
-    return np.exp(-.5 * z**2)      
-
-    
 f_b = max(2, HIT_SD*6)
-feat = smooth_hit(np.arange(-f_b, f_b+1), 0)    
+feat = np.exp(-.5 * (np.arange(-f_b, f_b+1)/HIT_SD)**2)
 
 def _decode(sig, peak_h, hit_offset):
     corr = scipy.signal.correlate(sig, feat, mode='same')
     hit_peaks = scipy.signal.find_peaks(corr, height=peak_h)[0] + hit_offset
     return hit_peaks.astype(int).tolist()
-    
-def decode_flip(sig):
-    sig_grad = np.gradient(sig)
-
 
 def decode_hit(sig):
-    return _decode(sig, peak_h = .5, hit_offset = 0)
+    # return _decode(sig, peak_h = .5, hit_offset = 0)
+    sig_grad = np.gradient(sig)
+    return sorted([
+        *(scipy.signal.find_peaks(sig_grad)[0].astype(int)),
+        *(scipy.signal.find_peaks(-sig_grad)[0].astype(int)),
+    ])
 
 def decode_hold(sig):
     sig_grad = np.gradient(sig)
