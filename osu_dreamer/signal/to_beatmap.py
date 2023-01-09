@@ -10,22 +10,23 @@ from .fit_bezier import fit_bezier
 from .from_beatmap import AUX_DIM, HIT_DIM, SLIDER_DIM, CURSOR_DIM
 
 BEAT_DIVISOR = 4
+SLIDER_MULT = 1.
 
 map_template = \
-"""osu file format v14
+f"""osu file format v14
 
 [General]
-AudioFilename: {audio_filename}
+AudioFilename: {{audio_filename}}
 AudioLeadIn: 0
 Mode: 0
 
 [Metadata]
-Title: {title}
-TitleUnicode: {title}
-Artist: {artist}
-ArtistUnicode: {artist}
+Title: {{title}}
+TitleUnicode: {{title}}
+Artist: {{artist}}
+ArtistUnicode: {{artist}}
 Creator: osu!dreamer
-Version: {version}
+Version: {{version}}
 Tags: osu_dreamer
 
 [Difficulty]
@@ -33,14 +34,14 @@ HPDrainRate: 0
 CircleSize: 4.1
 OverallDifficulty: 0
 ApproachRate: 9.5
-SliderMultiplier: 1
+SliderMultiplier: {SLIDER_MULT}
 SliderTickRate: 1
 
 [TimingPoints]
-{timing_points}
+{{timing_points}}
 
 [HitObjects]
-{hit_objects}
+{{hit_objects}}
 """
 
 def to_sorted_hits(hit_signal):
@@ -195,7 +196,7 @@ def to_beatmap(metadata, sig, frame_times, timing):
         # x = np.linspace(0,20,1000)
         # timing_beat_len = np.exp(x[diff_dist(x).argmax()])
         
-        beat_snap, timing_points = False, [TimingPoint(0, 1000, None, 4, None)]
+        beat_snap, timing_points = False, [TimingPoint(0, 60000/200, None, 4, None)]
     elif isinstance(timing, (int, float)):
         timing_beat_len = 60. * 1000. / float(timing)
         # compute timing offset
@@ -213,7 +214,7 @@ def to_beatmap(metadata, sig, frame_times, timing):
     # SV  = length / dur / (slider_mult * 100 / beat_length)
     # => base_slider_vel = slider_mult * 100 / beat_length
     beat_length = timing_points[0].beat_length
-    base_slider_vel = 100 / beat_length
+    base_slider_vel = SLIDER_MULT * 100 / beat_length
     beat_offset = timing_points[0].t
 
     def add_hit_circle(i,j,t,u, new_combo):
@@ -227,7 +228,6 @@ def to_beatmap(metadata, sig, frame_times, timing):
         hos.append(f"256,192,{t},{8 + new_combo},0,{u}")
 
     def add_slider(i,j,t,u, new_combo):
-        DEBUG = i > 5159 and j < 5221
         if t == u:
             # start and end time are the same, add a hit circle instead
             return add_hit_circle(i,j,t,u, new_combo)
@@ -239,7 +239,8 @@ def to_beatmap(metadata, sig, frame_times, timing):
             return add_hit_circle(i,j,t,u, new_combo)
         
         SV = length * slides / (u-t) / base_slider_vel
-        if DEBUG: print(SV)
+        if SV > 10 or SV < .1:
+            print('warning: SV > 10 or SV < .1 not supported, will result in bad sliders:', SV)
 
         x1,y1 = ctrl_pts[0]
         curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
@@ -264,7 +265,7 @@ def to_beatmap(metadata, sig, frame_times, timing):
             tp = timing_points.pop(0)
             tps.append(f"{tp.t},{tp.beat_length},{tp.meter},0,0,50,1,0")
             beat_length = tp.beat_length
-            base_slider_vel = 100 / beat_length
+            base_slider_vel = SLIDER_MULT * 100 / beat_length
             beat_offset = tp.t
             
         # ignore objects that start before the previous one ends
