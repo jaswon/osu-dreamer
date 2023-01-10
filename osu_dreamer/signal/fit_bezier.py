@@ -34,7 +34,8 @@ def compute_error(p: "N,2", points: "L,2", u: "L,"):
 def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent: "2," = None):
     """fit one (or more) Bezier curves to a set of points"""
 
-    assert points.shape[0] > 0
+    if len(points) < 2:
+        return []
     
     weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(5, len(points)-2))
     

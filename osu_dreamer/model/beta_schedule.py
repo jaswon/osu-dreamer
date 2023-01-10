@@ -16,6 +16,7 @@ class BetaSchedule:
         
         # define beta schedule
         self.betas = betas
+        assert (betas > 0).all() and (betas <= 1).all()
         self.timesteps = len(betas)
 
         # define alphas 
@@ -112,7 +113,7 @@ class CosineBetaSchedule(BetaSchedule):
     
 class StridedBetaSchedule(BetaSchedule):
     def __init__(self, schedule, steps, ddim, *args, **kwargs):
-        use_timesteps = set([schedule.timesteps, *range(0, schedule.timesteps, int(schedule.timesteps/steps)+1)])
+        use_timesteps = torch.arange(steps) * int(schedule.timesteps / steps)
         self.ts_map = []
         self.ddim = ddim
 

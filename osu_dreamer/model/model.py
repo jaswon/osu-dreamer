@@ -28,8 +28,8 @@ class Model(pl.LightningModule):
     def __init__(
         self,
         h_dims: List[int],
-        h_dim_groups: int,
-        convnext_mult: int,
+        # h_dim_groups: int,
+        # convnext_mult: int,
         # wave_stack_depth: int,
         # wave_num_stacks: int,
         blocks_per_depth: int,
@@ -52,8 +52,9 @@ class Model(pl.LightningModule):
         # model
         self.net = UNet(
             A_DIM+X_DIM, X_DIM,
-            h_dims, h_dim_groups,
-            convnext_mult,
+            h_dims,
+            # h_dim_groups,
+            # convnext_mult,
             # wave_stack_depth,
             # wave_num_stacks,
             blocks_per_depth,

@@ -165,6 +165,25 @@ class ConvNextBlock(nn.Module):
 
         h: "N,D,L" = self.net(h)
         return h + self.res_conv(x)
+
+class ContextBlock(nn.Module):
+    def __init__(self, dim, dim_out, emb_dim):
+        super().__init__()
+
+        self.norm = nn.GroupNorm(1, dim)
+        self.emb_mlp = nn.Sequential(nn.SiLU(), nn.Linear(emb_dim, dim))
+        self.net = nn.Sequential(
+            nn.GroupNorm(1, dim),
+            nn.Conv1d(dim, dim, 7,1,3),
+            nn.SiLU(),
+            nn.GroupNorm(1, dim),
+            nn.Conv1d(dim, dim, 7,1,3)
+        )
+        self.out = nn.Conv1d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
+
+    def forward(self, x: 'B,D,L', emb: 'B,E') -> 'B,D,L':
+        h = x + self.emb_mlp(emb).unsqueeze(2)
+        return self.out(x + self.net(h))
     
 class UNet(nn.Module):
     def __init__(
@@ -172,8 +191,8 @@ class UNet(nn.Module):
         in_dim,
         out_dim,
         h_dims,
-        h_dim_groups,
-        convnext_mult,
+        # h_dim_groups,
+        # convnext_mult,
         # wave_stack_depth,
         # wave_num_stacks,
         blocks_per_depth,
@@ -183,13 +202,25 @@ class UNet(nn.Module):
     ):
         super().__init__()
         
-        block = partial(ConvNextBlock, mult=convnext_mult, groups=h_dim_groups)
+        ctx_block = ContextBlock
+        # block = partial(ConvNextBlock, mult=convnext_mult, groups=h_dim_groups)
+        res_attn = lambda dim, depth: nn.Sequential(*(
+            Residual(nn.Sequential(
+                nn.GroupNorm(1, dim),
+                Rearrange('b d l -> b l d'),
+                SelfAttention(dim, heads=attn_heads, dim_head=attn_dim),
+                Rearrange('b l d -> b d l'),
+            ))
+            for _ in range(depth)
+        ))
 
         in_out = list(zip(h_dims[:-1], h_dims[1:]))
         num_layers = len(in_out)
         
         self.init_conv = nn.Sequential(
             nn.Conv1d(in_dim, h_dims[0], 7, padding=3),
+            nn.Conv1d(h_dims[0], h_dims[0], 7, padding=3),
+            nn.Conv1d(h_dims[0], h_dims[0], 7, padding=3),
             # WaveBlock(h_dims[0], wave_stack_depth, wave_num_stacks),
         )
         
@@ -207,17 +238,11 @@ class UNet(nn.Module):
         self.downs = nn.ModuleList([
             nn.ModuleList([
                 nn.ModuleList([
-                    block(dim_in if i==0 else dim_out, dim_out, emb_dim=emb_dim)
+                    nn.ModuleList([
+                        ctx_block(dim_in if i==0 else dim_out, dim_out, emb_dim=emb_dim),
+                        res_attn(dim_out, 2),
+                    ])
                     for i in range(blocks_per_depth)
-                ]),
-                nn.ModuleList([
-                    # Residual(PreNorm(dim_out, LinearAttention(dim_out, heads=attn_heads, dim_head=attn_dim)))
-                    Residual(PreNorm(dim_out, nn.Sequential(
-                        Rearrange('b d l -> b l d'),
-                        SelfAttention(dim_out, heads=attn_heads, dim_head=attn_dim),
-                        Rearrange('b l d -> b d l'),
-                    )))
-                    for _ in range(blocks_per_depth)
                 ]),
                 Downsample(dim_out) if ind < (num_layers - 1) else nn.Identity(),
             ])
@@ -225,42 +250,25 @@ class UNet(nn.Module):
         ])
 
         mid_dim = h_dims[-1]
-        self.mid_block1 = block(mid_dim, mid_dim, emb_dim=emb_dim)
-
-        self.mid_attn = Residual(PreNorm(mid_dim, nn.Sequential(
-            Rearrange('b d l -> b l d'),
-            SelfAttention(mid_dim, heads=attn_heads, dim_head=attn_dim),
-            Rearrange('b l d -> b d l'),
-        )))
-        self.mid_block2 = block(mid_dim, mid_dim, emb_dim=emb_dim)
+        self.mid_block1 = ctx_block(mid_dim, mid_dim, emb_dim=emb_dim)
+        self.mid_attn = res_attn(mid_dim, 2)
+        # self.mid_block2 = ctx_block(mid_dim, mid_dim, emb_dim=emb_dim)
         
         self.ups = nn.ModuleList([
             nn.ModuleList([
                 nn.ModuleList([
-                    block(dim_out * 2 if i==0 else dim_in, dim_in, emb_dim=emb_dim)
+                    nn.ModuleList([
+                        ctx_block(dim_out * 2 if i==0 else dim_in, dim_in, emb_dim=emb_dim),
+                        res_attn(dim_in, 2),
+                    ])
                     for i in range(blocks_per_depth)
-                ]),
-                nn.ModuleList([
-                    # Residual(PreNorm(dim_in, LinearAttention(dim_in, heads=attn_heads, dim_head=attn_dim)))
-                    Residual(PreNorm(dim_in, nn.Sequential(
-                        Rearrange('b d l -> b l d'),
-                        SelfAttention(dim_in, heads=attn_heads, dim_head=attn_dim),
-                        Rearrange('b l d -> b d l'),
-                    )))
-                    for _ in range(blocks_per_depth)
                 ]),
                 Upsample(dim_in) if ind < (num_layers - 1) else nn.Identity(),
             ])
             for ind, (dim_in, dim_out) in enumerate(in_out[::-1])
         ])
 
-        self.final_conv = nn.Sequential(
-            *(
-                block(h_dims[0], h_dims[0])
-                for _ in range(blocks_per_depth)
-            ),
-            zero_module(nn.Conv1d(h_dims[0], out_dim, 1)),
-        )
+        self.final_conv = zero_module(nn.Conv1d(h_dims[0], out_dim, 1))
         
 
     def forward(self, x: "N,X,L", a: "N,A,L", ts: "N,") -> "N,X,L":
@@ -273,8 +281,8 @@ class UNet(nn.Module):
         emb: "N,T" = self.time_mlp(ts)
 
         # downsample
-        for blocks, attns, downsample in self.downs:
-            for block, attn in zip(blocks, attns):
+        for blocks, downsample in self.downs:
+            for block, attn in blocks:
                 x = attn(block(x, emb))
             h.append(x)
             x = downsample(x)
@@ -282,12 +290,12 @@ class UNet(nn.Module):
         # bottleneck
         x = self.mid_block1(x, emb)
         x = self.mid_attn(x)
-        x = self.mid_block2(x, emb)
+        # x = self.mid_block2(x, emb)
 
         # upsample
-        for blocks, attns, upsample in self.ups:
+        for blocks, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim=1)
-            for block, attn in zip(blocks, attns):
+            for block, attn in blocks:
                 x = attn(block(x, emb))
             x = upsample(x)
 

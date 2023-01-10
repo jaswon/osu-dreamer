@@ -18,27 +18,26 @@ def encode_hit(sig, frame_times, i):
     sig *= 1 - 2 * sigmoid(z)
 
 def encode_hold(sig, frame_times, i, j):
+    m = 2*sigmoid((j-i)/2/HIT_SD)-1 # maximum value at (j-i)/2
     sig += 2 * (
         sigmoid((frame_times - i) / HIT_SD)
         - sigmoid((frame_times - j) / HIT_SD)
+    ) / m
+
+def flips(sig):
+    sig_grad = np.gradient(sig)
+    return (
+        scipy.signal.find_peaks(sig_grad, height=.5)[0].astype(int),
+        scipy.signal.find_peaks(-sig_grad, height=.5)[0].astype(int),
     )
 
-def _decode(sig):
-    return scipy.signal.find_peaks(sig)[0].astype(int).tolist()
-
 def decode_hit(sig):
-    # return _decode(sig)
-    sig_grad = np.gradient(sig)
-    return sorted([
-        *(scipy.signal.find_peaks(sig_grad)[0].astype(int)),
-        *(scipy.signal.find_peaks(-sig_grad)[0].astype(int)),
-    ])
+    rising, falling = flips(sig)
+    return sorted([ *rising, *falling ])
 
 def decode_hold(sig):
-    sig_grad = np.gradient(sig)
-
-    start_idxs = _decode(sig_grad)
-    end_idxs = _decode(-sig_grad)
+    rising, falling = flips(sig)
+    start_idxs, end_idxs = list(rising), list(falling)
 
     # ensure that first start is before first end
     while len(start_idxs) and len(end_idxs) and start_idxs[0] >= end_idxs[0]:
