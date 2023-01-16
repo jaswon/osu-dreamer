@@ -5,7 +5,7 @@ import torch
 import random
 import requests
 import mutagen
-from flask import Flask, request, Response
+from flask import Flask, request, Response, abort
 from flask_cors import CORS, cross_origin
 from unidecode import unidecode
 from fake_useragent import UserAgent
@@ -29,7 +29,7 @@ def generate():
     # get args
     args = request.args.to_dict()
     audio_url = args.get("audio")
-    bpm = int(args.get("bpm", 60))
+    bpm = int(args.get("bpm", 110))
     title = args.get("title")
     artist = args.get("artist")
     samples = int(args.get("samples", 1))
@@ -59,30 +59,36 @@ def generate():
             artist = "unkown"
 
     # generate & write beatmapset
-    mapset = generate_mapset(
-        model,  # model
-        audio_path,  # audio
-        bpm,  # bpm
-        samples,  # samples (how many to generate)
-        unidecode(title),  # title
-        unidecode(artist),  # artist
-        16,  # sample steps
-        True,  # ddim
-    )
-    mapset_path = mapset.resolve()
-    file_handle = open(mapset_path, "rb")
+    try:
+        mapset = generate_mapset(
+            model,  # model
+            audio_path,  # audio
+            bpm,  # timing
+            samples,  # samples (how many to generate)
+            unidecode(title),  # title
+            unidecode(artist),  # artist
+            16,  # sample steps
+            True,  # ddim
+            "./generated_beatmaps" # download directory
+        )
+    except:
+        audio_handle.close()
+        os.remove(audio_path)
+        abort(404)
+    
+    file_handle = open(mapset, "rb")
 
     # stream files and cleanup
     def stream_and_remove_file():
         yield from file_handle
         file_handle.close()
         audio_handle.close()
-        os.remove(mapset_path)
+        os.remove(mapset)
         os.remove(audio_path)
 
     return Response(
         stream_and_remove_file(),
-        headers={'Content-Disposition': (f'attachment; filename="f{mapset}"')},
+        headers={'Content-Disposition': (f'attachment; filename="{Path(mapset).stem}.osz"')},
         mimetype="application/x-osu-archive",
     )
 
