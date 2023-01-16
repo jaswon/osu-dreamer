@@ -7,6 +7,7 @@ import bezier
 from osu_dreamer.osu.hit_objects import TimingPoint
 from .smooth_hit import decode_hit, decode_hold
 from .fit_bezier import fit_bezier
+from .from_beatmap import AUX_DIM, HIT_DIM, SLIDER_DIM, CURSOR_DIM
 
 BEAT_DIVISOR = 4
 
@@ -102,7 +103,7 @@ def to_slider_decoder(frame_times, cursor_signal, slider_signal):
     - number of slides
     - slider control points
     """
-    repeat_sig, seg_boundary_sig, seg_type_sig = slider_signal
+    repeat_sig, seg_boundary_sig = slider_signal
     
     repeat_idxs: "L," = np.zeros_like(frame_times)
     repeat_idxs[decode_hit(repeat_sig)] = 1
@@ -114,18 +115,10 @@ def to_slider_decoder(frame_times, cursor_signal, slider_signal):
         length = 0
         sb_idxs = [s for s in seg_boundary_idxs if a < s < b]
         for seg_start, seg_end in zip([a] + sb_idxs, sb_idxs + [b]):
-            seg_type = np.mean(seg_type_sig[seg_start:seg_end+1])
-            if seg_type > 0:
-                # bezier
-                for b in fit_bezier(cursor_signal.T[seg_start:seg_end+1], max_err=100):
-                    b = np.array(b).round().astype(int)
-                    ctrl_pts.extend(b)
-                    length += bezier.Curve.from_nodes(b.T).length
-            else:
-                # line
-                seg: "2,2" = cursor_signal.T[[seg_start,seg_end]].round().astype(int)
-                ctrl_pts.extend(seg)
-                length += np.linalg.norm(seg[0] - seg[1])
+            for b in fit_bezier(cursor_signal.T[seg_start:seg_end+1], max_err=100):
+                b = np.array(b).round().astype(int)
+                ctrl_pts.extend(b)
+                length += bezier.Curve.from_nodes(b.T).length
         
         return length, slides, ctrl_pts
 
@@ -137,8 +130,13 @@ def to_beatmap(metadata, sig, frame_times, timing):
     returns the beatmap as the string contents of the beatmap file
     """
     
+    sig = sig[AUX_DIM:] # ignore auxiliary signals
     sig = (sig+1)/2 # [-1, 1] => [0, 1]
-    hit_signal, slider_signal, cursor_signal = sig[:4], sig[4:7], sig[7:]
+    
+    hit_signal, sig = np.split(sig, (HIT_DIM,))
+    slider_signal, sig = np.split(sig, (SLIDER_DIM,))
+    cursor_signal, sig = np.split(sig, (CURSOR_DIM,))
+    assert sig.shape[0] == 0
     
     # process hit signal
     sorted_hits = to_sorted_hits(hit_signal)
@@ -167,14 +165,14 @@ def to_beatmap(metadata, sig, frame_times, timing):
         # x = np.linspace(0,20,1000)
         # timing_beat_len = np.exp(x[diff_dist(x).argmax()])
         
-        beat_snap, timing_points = False, [TimingPoint(0, 1000, None, 4)]
+        beat_snap, timing_points = False, [TimingPoint(0, 1000, None, 4, None)]
     elif isinstance(timing, (int, float)):
         timing_beat_len = 60. * 1000. / float(timing)
         # compute timing offset
         offset_dist = scipy.stats.gaussian_kde([ frame_times[i] % timing_beat_len for i,_,_,_ in sorted_hits])
         offset = offset_dist.pdf(np.linspace(0, timing_beat_len, 1000)).argmax() / 1000. * timing_beat_len
 
-        beat_snap, timing_points = True, [TimingPoint(offset, timing_beat_len, None, 4)]
+        beat_snap, timing_points = True, [TimingPoint(offset, timing_beat_len, None, 4, None)]
 
     hos = [] # hit objects
     tps = [] # timing points

@@ -178,6 +178,7 @@ class Beatmap:
         for l in lines:
             vals = [ float(x) for x in l.strip().split(",") ]
             t, x, meter = vals[:3]
+            kiai = int(vals[7] if len(vals) >= 8 else 0) % 2 == 1
             
             if vals[6] == 0:
                 # inherited timing point - controls slider multiplier
@@ -195,11 +196,11 @@ class Beatmap:
                 cur_slider_mult = 1.
                 cur_meter = meter
                 
-            tp = TimingPoint(int(t), cur_beat_length, cur_slider_mult, cur_meter)
+            tp = TimingPoint(int(t), cur_beat_length, cur_slider_mult, cur_meter, kiai)
             if len(self.timing_points) == 0 or tp != self.timing_points[-1]:
                 self.timing_points.append(tp)
             
-            utp = TimingPoint(int(t), cur_beat_length, None, cur_meter)
+            utp = TimingPoint(int(t), cur_beat_length, None, cur_meter, None)
             if len(self.uninherited_timing_points) == 0 or utp != self.uninherited_timing_points[-1]:
                 self.uninherited_timing_points.append(utp)
             

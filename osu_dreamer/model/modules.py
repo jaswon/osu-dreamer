@@ -65,8 +65,6 @@ class Attention(nn.Module):
         self.to_out = nn.Conv1d(h_dim, dim, 1)
 
     def forward(self, x: "N,C,L") -> "N,C,L":
-        n, c, l = x.shape
-        
         qkv: "3,N,h_dim,L" = self.to_qkv(x).chunk(3, dim=1)
         out = self.attn(*( t.unflatten(1, (self.heads, -1)) for t in qkv ))
         return self.to_out(out)
@@ -177,6 +175,8 @@ class UNet(nn.Module):
         wave_stack_depth,
         wave_num_stacks,
         blocks_per_depth,
+        attn_heads,
+        attn_dim,
     ):
         super().__init__()
         
@@ -208,7 +208,7 @@ class UNet(nn.Module):
                     for i in range(blocks_per_depth)
                 ]),
                 nn.ModuleList([
-                    Residual(PreNorm(dim_out, LinearAttention(dim_out)))
+                    Residual(PreNorm(dim_out, LinearAttention(dim_out, heads=attn_heads, dim_head=attn_dim)))
                     for _ in range(blocks_per_depth)
                 ]),
                 Downsample(dim_out) if ind < (num_layers - 1) else nn.Identity(),
@@ -218,7 +218,7 @@ class UNet(nn.Module):
 
         mid_dim = h_dims[-1]
         self.mid_block1 = block(mid_dim, mid_dim, emb_dim=emb_dim)
-        self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
+        self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim, heads=attn_heads, dim_head=attn_dim)))
         self.mid_block2 = block(mid_dim, mid_dim, emb_dim=emb_dim)
         
         self.ups = nn.ModuleList([
@@ -228,7 +228,7 @@ class UNet(nn.Module):
                     for i in range(blocks_per_depth)
                 ]),
                 nn.ModuleList([
-                    Residual(PreNorm(dim_in, LinearAttention(dim_in)))
+                    Residual(PreNorm(dim_in, LinearAttention(dim_in, heads=attn_heads, dim_head=attn_dim)))
                     for _ in range(blocks_per_depth)
                 ]),
                 Upsample(dim_in) if ind < (num_layers - 1) else nn.Identity(),

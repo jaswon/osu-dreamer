@@ -3,7 +3,7 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 
-from osu_dreamer.signal import MAP_SIGNAL_DIM as X_DIM
+from osu_dreamer.signal import X_DIM
 
 def extract(a, ts, x_shape):
     batch_size = ts.shape[0]

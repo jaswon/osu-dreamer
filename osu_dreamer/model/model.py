@@ -20,7 +20,7 @@ from .beta_schedule import CosineBetaSchedule, StridedBetaSchedule
 from .modules import UNet
 
 from osu_dreamer.data import A_DIM
-from osu_dreamer.signal import MAP_SIGNAL_DIM as X_DIM
+from osu_dreamer.signal import X_DIM
 
 VALID_PAD = 1024
 
@@ -33,6 +33,8 @@ class Model(pl.LightningModule):
         wave_stack_depth: int,
         wave_num_stacks: int,
         blocks_per_depth: int,
+        attn_heads: int,
+        attn_dim: int,
         
         timesteps: int,
         sample_steps: int,
@@ -54,6 +56,8 @@ class Model(pl.LightningModule):
             wave_stack_depth,
             wave_num_stacks,
             blocks_per_depth,
+            attn_heads,
+            attn_dim,
         )
         
         self.schedule = CosineBetaSchedule(timesteps, self.net)

@@ -7,16 +7,16 @@ import bezier
 def hodo(p: "N,2"):
     return p.shape[0] * (p[1:] - p[:-1])
 
-def q(p: "4,2", t: "L,") -> "L,2":
-    """evaluates cubic bezier at t"""
+def q(p: "N,2", t: "L,") -> "L,2":
+    """evaluates bezier at t"""
     return bezier.Curve.from_nodes(p.T).evaluate_multi(t).T
 
-def qprime(p: "4,2", t: "L,") -> "L,2":
-    """evaluates cubic bezier first derivative at t"""
+def qprime(p: "N,2", t: "L,") -> "L,2":
+    """evaluates bezier first derivative at t"""
     return bezier.Curve.from_nodes(hodo(p).T).evaluate_multi(t).T
 
-def qprimeprime(p: "4,2", t: "L,") -> "L,2":
-    """evaluates cubic bezier second derivative at t"""
+def qprimeprime(p: "N,2", t: "L,") -> "L,2":
+    """evaluates bezier second derivative at t"""
     return bezier.Curve.from_nodes(hodo(hodo(p)).T).evaluate_multi(t).T
 
 def normalize(v):
@@ -25,10 +25,18 @@ def normalize(v):
         return v
     return v / magnitude
 
+def compute_error(p: "N,2", points: "L,2", u: "L,"):
+    errs = ((q(p, u) - points) ** 2).sum(-1)
+    split_point = errs.argmax()
+    return errs[split_point], split_point
+
+
 def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent: "2," = None):
-    """fit one (ore more) Bezier curves to a set of points"""
+    """fit one (or more) Bezier curves to a set of points"""
+
+    assert points.shape[0] > 0
     
-    weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(10, len(points)-2))
+    weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(5, len(points)-2))
     
     if left_tangent is None:
         # points[1] - points[0]
@@ -40,15 +48,8 @@ def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent:
         r_vecs: "N,2" = points[-3:-3-len(weights):-1] - points[-2]
         right_tangent = normalize(np.einsum('np,n->p', r_vecs, weights))
     
-    # use heuristic if region only has two points in it
     if len(points) == 2:
-        dist = np.linalg.norm(points[0] - points[1]) / 3.0
-        return [[
-            points[0],
-            points[0] + left_tangent * dist,
-            points[1] + right_tangent * dist,
-            points[1],
-        ]]
+        return [points]
     
     u = None
     for _ in range(32):
@@ -62,18 +63,15 @@ def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent:
             u = newton_raphson_root_find(bez_curve, points, u)
             
         bez_curve = generate_bezier(points, u, left_tangent, right_tangent)
-        
-        # compute error
-        errs = ((q(bez_curve, u) - points) ** 2).sum(-1)
-        split_point = errs.argmax()
-        err = errs[split_point]
+        err, split_point = compute_error(bez_curve, points, u)
             
         if err < max_err:
+            # check if line is a good fit
+            line_err, _ = compute_error(bez_curve[[0,-1]], points, u)
+            if line_err < max_err:
+                return [bez_curve[[0,-1]]]
+
             return [bez_curve]
-        
-        if err > max_err ** 2:
-            # error too large
-            break
 
     # Fitting failed -- split at max error point and fit recursively
     center_tangent = normalize(points[split_point-1] - points[split_point+1])
@@ -82,7 +80,7 @@ def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent:
         *fit_bezier(points[split_point:], max_err, -center_tangent, right_tangent),
     ]
 
-def generate_bezier(points: "L,2", u: "L,", left_tangent: "2,", right_tangent: "2,"):
+def generate_bezier(points: "L,2", u: "L,", left_tangent: "2,", right_tangent: "2,") -> "4,2":
     bez_curve: "4,2" = np.array([points[0], points[0], points[-1], points[-1]])
 
     # compute the A's
@@ -142,4 +140,4 @@ def newton_raphson_root_find(bez: "4,2", points: "L,2", u: "L,"):
     num = (d * qp).sum(-1)
     den = (qp**2 + d*qprimeprime(bez, u)).sum(-1)
     
-    return u + np.where(den==0, 0, num/den)
+    return u - np.divide(num, den, out=np.zeros_like(num), where=den!=0)

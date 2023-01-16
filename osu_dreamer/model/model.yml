@@ -10,7 +10,9 @@ model:
     wave_stack_depth: 5
     wave_num_stacks: 5
     blocks_per_depth: 2
-    timesteps: 1024
+    attn_heads: 8
+    attn_dim: 8
+    timesteps: 500
     
     # number of steps to use for sampling during validation
     sample_steps: 32

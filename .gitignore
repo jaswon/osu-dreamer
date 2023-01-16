@@ -8,3 +8,4 @@ lightning_logs*/
 *.ipynb
 .vscode
 generated_beatmaps/*
+build/
