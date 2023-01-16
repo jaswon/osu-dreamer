@@ -57,8 +57,7 @@ def generate_mapset(
     def random_hex_string(num): return hex(random.randrange(16**num))[2:]
 
     while True:
-        mapset = Path(os.path.join(
-            directory, f"_{random_hex_string(7)} {artist} - {title}.osz"))
+        mapset = os.path.join(directory, f"_{random_hex_string(7)} {artist} - {title}.osz")
         if not mapset.exists():
             break
 
