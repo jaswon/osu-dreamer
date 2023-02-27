@@ -4,8 +4,8 @@
 
 osu!dreamer is a generative model for osu! beatmaps based on diffusion
 
-- [sample generated mapset](https://osu.ppy.sh/beatmapsets/1888586#osu/3889513)
-- [video of a generated map](https://streamable.com/ijp1jj)
+-   [sample generated mapset](https://osu.ppy.sh/beatmapsets/1888586#osu/3889513)
+-   [video of a generated map](https://streamable.com/ijp1jj)
 
 ## Quick start
 
@@ -80,24 +80,25 @@ run `tensorboard --logdir=lightning_logs/` in a new window to track training pro
 ![image](https://user-images.githubusercontent.com/943003/203165744-68da33fa-967f-45a7-956e-f0fe0114f9cc.png)
 
 The training process will generate one plot at the end of every epoch, using a sample from the validation set
-- the first row is the spectrogram of the audio file
-- the second row is the actual map associated with the audio file in its signal representation
-- the third and fourth rows are signal representations of the maps produced by the model
+
+-   the first row is the spectrogram of the audio file
+-   the second row is the actual map associated with the audio file in its signal representation
+-   the third and fourth rows are signal representations of the maps produced by the model
 
 ## 💻 Windows Batch Setup
 
-- **Requirements**
- - 🐍 Python 3.8 (via Microsoft Store, or python.org)
- 
+-   **Requirements**
+    -   🐍 Python 3.8 (via Microsoft Store, or python.org)
+
 #### Installation
 
 Install the source code directly through github, or with the git clone command:
-  
+
 `git clone https://github.com/jaswon/osu-dreamer`
 
 #### Usage
 
-** INSTALL ALL REQUIREMENTS BY THIS POINT **
+**INSTALL ALL REQUIREMENTS BY THIS POINT**
 
 Setup from this point is pretty simple, navigate into the osu-dreamer directory and then into the **shell_scripts** folder, this is where all the batch scripts are stored.
 
@@ -105,13 +106,13 @@ First, you will need to run "! Install.bat", this will install osu-dreamer and a
 
 Now you're ready to begin training your own model! Here is a list of all the scripts and their functionality
 
-- Install
- - Installs osu-dreamer and all of its dependencies.
-- Run Training
- - Compiles the given songs directory and begins training a model
-- Resume Training
- - Resumes training the given checkpoint
-- Generate Beatmap
- - Generates a beatmap with the given information (requires a trained model and song)
-- Tensorboard
- - Hosts tensorboard for tracking training statistics
+-   Install
+    -   Installs osu-dreamer and all of its dependencies.
+-   Run Training
+    -   Compiles the given songs directory and begins training a model
+-   Resume Training
+    -   Resumes training the given checkpoint
+-   Generate Beatmap
+    -   Generates a beatmap with the given information (requires a trained model and song)
+-   Tensorboard
+    -   Hosts tensorboard for tracking training statistics
