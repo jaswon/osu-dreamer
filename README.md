@@ -83,3 +83,35 @@ The training process will generate one plot at the end of every epoch, using a s
 - the first row is the spectrogram of the audio file
 - the second row is the actual map associated with the audio file in its signal representation
 - the third and fourth rows are signal representations of the maps produced by the model
+
+## 💻 Windows Batch Setup
+
+- **Requirements**
+ - 🐍 Python 3.8 (via Microsoft Store, or python.org)
+ 
+#### Installation
+
+Install the source code directly through github, or with the git clone command:
+  
+`git clone https://github.com/jaswon/osu-dreamer`
+
+#### Usage
+
+** INSTALL ALL REQUIREMENTS BY THIS POINT **
+
+Setup from this point is pretty simple, navigate into the osu-dreamer directory and then into the **shell_scripts** folder, this is where all the batch scripts are stored.
+
+First, you will need to run "! Install.bat", this will install osu-dreamer and all of its dependencies. Optionally you can install tensorboard and mathplotlib to view training statistics.
+
+Now you're ready to begin training your own model! Here is a list of all the scripts and their functionality
+
+- Install
+ - Installs osu-dreamer and all of its dependencies.
+- Run Training
+ - Compiles the given songs directory and begins training a model
+- Resume Training
+ - Resumes training the given checkpoint
+- Generate Beatmap
+ - Generates a beatmap with the given information (requires a trained model and song)
+- Tensorboard
+ - Hosts tensorboard for tracking training statistics
