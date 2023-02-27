@@ -26,12 +26,12 @@
 	
 :GenerateBeatmap
 	setlocal
-	python %ParentDirectory%\scripts\pred.py --num_samples %Samples% --sample_steps %Steps% --bpm %BPM% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
+	python "%ParentDirectory%\scripts\pred.py" --num_samples %Samples% --sample_steps %Steps% --bpm %BPM% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
 	endlocal
 	goto :eof
 	
 :GenerateBeatmapFromTimingPoints
 	setlocal
-	python %ParentDirectory%\scripts\pred.py --timing_points_from %TimingPointsBeatmapPath% --num_samples %Samples% --sample_steps %Steps% --bpm %BPM% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
+	python "%ParentDirectory%\scripts\pred.py" --timing_points_from "%TimingPointsBeatmapPath%" --num_samples %Samples% --sample_steps %Steps% --bpm %BPM% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
 	endlocal
 	goto :eof

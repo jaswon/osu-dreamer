@@ -7,7 +7,7 @@
 	SET /P INSTALLMATHPLOTLIB="Install mathplotlib & tensorboard for stats (Y/[N])?: "
 	IF /I "%INSTALLMATHPLOTLIB%" == "Y" call :InstallMathPlotLib
 	
-	pip install %ParentDirectory%
+	pip install "%ParentDirectory%"
 	
 	pause
 	

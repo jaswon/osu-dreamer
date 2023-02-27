@@ -7,7 +7,7 @@
 	
 	set /p SongsDir="Songs Directory: "
 
-	python %ParentDirectory%\scripts\cli.py fit -c %ParentDirectory%\config.yml -c %ParentDirectory%\osu_dreamer\model\model.yml --data.src_path "%SongsDir%"
+	python "%ParentDirectory%\scripts\cli.py" fit -c "%ParentDirectory%\config.yml" -c "%ParentDirectory%\osu_dreamer\model\model.yml" --data.src_path "%SongsDir%"
 
 	pause
 
