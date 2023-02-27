@@ -3,7 +3,7 @@
     @echo off
 	
 	for %%d in (%~dp0..) do set ParentDirectory=%%~fd
-	cd %ParentDirectory%
+	cd "%ParentDirectory%"
 	
 	SET /P USE_TIMING_POINTS="Use timing points from a beatmap (Y/[N])?: "
 

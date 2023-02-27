@@ -3,7 +3,7 @@
     @echo off
 	
 	for %%d in (%~dp0..) do set ParentDirectory=%%~fd
-	cd %ParentDirectory%
+	cd "%ParentDirectory%"
 	
 	set /p CheckpointPath="Checkpoint Path: "
 
