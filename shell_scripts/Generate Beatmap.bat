@@ -8,14 +8,14 @@
 
 	set /p ModelCheckpointPath="Model Checkpoint Path: "
 	set /p SongPath="Song Path: "
-	IF /I "%USE_TIMING_POINTS%" == "Y" set /p TimingPointsBeatmapPath="Beatmap to take timing points from: "
+	IF /I "%USE_TIMING_POINTS%" == "Y" set /p TimingPointsBeatmapPath="Beatmap path to take timing points from: "
 	set /p Artist="Artist: "
 	set /p Title="Title: "
-	set /p BPM="BPM: "
+	IF /I not "%USE_TIMING_POINTS%" == "Y" set /p BPM="BPM: "
 	set /p Samples="Number of samples to generate: "
 	set /p Steps="Sample steps: "
 	
-	IF /I "%USE_TIMING_POINTS%" == "N" call :GenerateBeatmap
+	IF /I not "%USE_TIMING_POINTS%" == "Y" call :GenerateBeatmap
 	IF /I "%USE_TIMING_POINTS%" == "Y" call :GenerateBeatmapFromTimingPoints
 	
 	pause
@@ -27,5 +27,5 @@
 	goto :eof
 	
 :GenerateBeatmapFromTimingPoints
-	python "%ParentDirectory%\scripts\pred.py" --timing_points_from "%TimingPointsBeatmapPath%" --num_samples %Samples% --sample_steps %Steps% --bpm %BPM% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
+	python "%ParentDirectory%\scripts\pred.py" --timing_points_from "%TimingPointsBeatmapPath%" --num_samples %Samples% --sample_steps %Steps% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
 	goto :eof

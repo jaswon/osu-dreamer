@@ -4,7 +4,7 @@
 	for %%d in (%~dp0..) do set ParentDirectory=%%~fd
 	
 	SET /P INSTALLMATHPLOTLIB="Install mathplotlib & tensorboard for stats (Y/[N])?: "
-	IF /I "%INSTALLMATHPLOTLIB%" == "Y" call :InstallMathPlotLib
+	IF /I "%INSTALLMATHPLOTLIB%" == "Y" call :InstallMathPlotLibTensorflow
 	
 	pip install "%ParentDirectory%"
 	
@@ -12,6 +12,6 @@
 	
 	goto :eof
 
-:InstallMathPlotLib
+:InstallMathPlotLibTensorflow
 	pip install tensorflow tensorboard matplotlib
 	goto :eof
