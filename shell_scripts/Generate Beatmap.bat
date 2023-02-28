@@ -1,5 +1,4 @@
 :main
-	@setlocal enableextensions enabledelayedexpansion
     @echo off
 	
 	for %%d in (%~dp0..) do set ParentDirectory=%%~fd
@@ -21,17 +20,12 @@
 	
 	pause
 
-	endlocal
 	goto :eof
 	
 :GenerateBeatmap
-	setlocal
 	python "%ParentDirectory%\scripts\pred.py" --num_samples %Samples% --sample_steps %Steps% --bpm %BPM% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
-	endlocal
 	goto :eof
 	
 :GenerateBeatmapFromTimingPoints
-	setlocal
 	python "%ParentDirectory%\scripts\pred.py" --timing_points_from "%TimingPointsBeatmapPath%" --num_samples %Samples% --sample_steps %Steps% --bpm %BPM% --title "%Title%" --artist "%Artist%" "%ModelCheckpointPath%" "%SongPath%"
-	endlocal
 	goto :eof

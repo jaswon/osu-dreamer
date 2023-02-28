@@ -1,5 +1,4 @@
 :main
-	@setlocal enableextensions enabledelayedexpansion
     @echo off
 	
 	for %%d in (%~dp0..) do set ParentDirectory=%%~fd
@@ -11,5 +10,4 @@
 
 	pause
 
-	endlocal
 	goto :eof

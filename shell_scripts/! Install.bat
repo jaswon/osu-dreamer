@@ -1,5 +1,4 @@
 :main
-    @setlocal enableextensions enabledelayedexpansion
     @echo off
 	
 	for %%d in (%~dp0..) do set ParentDirectory=%%~fd
@@ -11,13 +10,8 @@
 	
 	pause
 	
-	endlocal
 	goto :eof
 
 :InstallMathPlotLib
-	setlocal
-	pip install tensorflow
-	pip install tensorboard
-	pip install matplotlib
-	endlocal
+	pip install tensorflow tensorboard matplotlib
 	goto :eof
