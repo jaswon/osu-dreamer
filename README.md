@@ -102,7 +102,7 @@ Install the source code directly through github, or with the git clone command:
 
 Setup from this point is pretty simple, navigate into the osu-dreamer directory and then into the **shell_scripts** folder, this is where all the batch scripts are stored.
 
-First, you will need to run "! Install.bat", this will install osu-dreamer and all of its dependencies. Optionally you can install tensorboard and mathplotlib to view training statistics.
+First, you will need to run `! Install.bat`, this will install osu-dreamer and all of its dependencies. Optionally you can install tensorboard and mathplotlib to view training statistics.
 
 Now you're ready to begin training your own model! Here is a list of all the scripts and their functionality
 
