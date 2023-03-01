@@ -87,8 +87,8 @@ The training process will generate one plot at the end of every epoch, using a s
 
 ## 💻 Windows Batch Setup
 
--   **Requirements**
-    -   🐍 Python 3.8 (via Microsoft Store, or python.org)
+#### Requirements
+-   🐍 Python 3.8 (via Microsoft Store, or python.org)
 
 #### Installation
 
@@ -100,7 +100,7 @@ Install the source code directly through github, or with the git clone command:
 
 **INSTALL ALL REQUIREMENTS BY THIS POINT**
 
-Setup from this point is pretty simple, navigate into the osu-dreamer directory and then into the **shell_scripts** folder, this is where all the batch scripts are stored.
+Setup from this point is pretty simple, navigate into the osu-dreamer directory and then into the `windows_scripts`folder, this is where all the batch scripts are stored.
 
 First, you will need to run `! Install.bat`, this will install osu-dreamer and all of its dependencies. Optionally you can install tensorboard and mathplotlib to view training statistics.
 
