@@ -87,6 +87,8 @@ The training process will generate one plot at the end of every epoch, using a s
 
 ## 💻 Windows Batch Setup
 
+> ⚠️ Support for training/evaluating the model locally on Windows is highly experimental and provided as-is
+
 ### Requirements
 -   🐍 Python 3.8 (via Microsoft Store, or python.org)
 
