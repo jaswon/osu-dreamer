@@ -1,22 +1,80 @@
+# pytorch_lightning==1.7.6
+seed_everything: true
+trainer:
+
+    # comment this line out if you're training without a gpu
+    accelerator: 'gpu'
+    
+    # number of epochs to run for. `-1` means run forever (until you interrupt manually)
+    max_epochs: -1
+    
+    # number of training steps per model update. 
+    accumulate_grad_batches: 4
+    
+    callbacks:
+        - 
+            class_path: pytorch_lightning.callbacks.EarlyStopping
+            init_args:
+                monitor: val/loss
+                mode: min
+                patience: 50
+
+        - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+    
+    devices: 1
+    precision: 16-mixed
+    
+    logger: true
+    enable_checkpointing: true
+    enable_progress_bar: true
+    log_every_n_steps: 1
+    enable_model_summary: true
+    
+data:
+    # length of each training subsequence
+    seq_len: 8192 # ~33s @ 4ms/frame
+    
+    # what fraction of the full dataset to use per epoch (must be between 0 and 1)
+    sample_density: 1
+    
+    # affects how many samples are generated from a single beatmap (per epoch)
+    # higher number means more samples from the same beatmap
+    subseq_density: 4.
+    
+    # size of training batch
+    batch_size: 8
+    
+    # number of workers to use for data loading
+    num_workers: 6
+    
+    # number of samples to hold out for validation
+    # must be at least one in order to render validation plots
+    val_size: 64
+    # val_split: .1
+    
 model:
-    learning_rate: .001
-    learning_rate_schedule_factor: .5
-    learning_rate_patience: 5
+    # validation parameters
+    val_steps: 32
+
+    # training parameters
+    optimizer: RAdam
+    optimizer_args: {}
+    lr: .0001
+    s4_lr: .00007
 
     # model hyperparameters
-    h_dims: [128,128,128,128,128]
-    h_dim_groups: 1
-    convnext_mult: 2
-    wave_stack_depth: 5
-    wave_num_stacks: 5
-    blocks_per_depth: 2
-    attn_heads: 8
-    attn_dim: 8
-    timesteps: 500
-    
-    # number of steps to use for sampling during validation
-    sample_steps: 32
-    ddim: true
+    P_mean: -1.2
+    P_std: 1.4
 
-    # loss function - can be one of {huber, l1, l2}
-    loss_type: "huber"
+    encoder_args:
+        h_dim: 32
+        num_layers: 4
+        expand: 1
+
+    denoiser_args:
+        t_dim: 64
+        proj_dim: 1024
+        h_dim: 64
+
+        num_layers: 6
+        expand: 1

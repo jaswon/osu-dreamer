@@ -1,0 +1,30 @@
+{
+	"scaffold nn.Module": {
+		"scope": "python",
+		"prefix": "nnm",
+		"body": [
+			"class $1(nn.Module):",
+			"	def __init__(",
+			"		self,",
+			"		$2,",
+			"	):",
+			"		super().__init__()",
+			"",
+			"	def forward(",
+			"		self,",
+			"		x: Float[Tensor, \"\"],",
+			"	) -> Float[Tensor, \"\"]:",
+			"		return x"
+		]
+	},
+	"scaffold .py": {
+		"scope": "python",
+		"prefix": "new",
+		"body": [
+			"from jaxtyping import Float",
+			"",
+			"import torch as th",
+			"from torch import nn, Tensor"
+		]
+	}
+}

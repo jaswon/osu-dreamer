@@ -13,69 +13,67 @@ osu!dreamer is a generative model for osu! beatmaps based on diffusion
 
 ## Installation for development
 
-FFmpeg is a required dependency
+### Required dependencies
+- FFmpeg
+- python 3.9
+- [poetry](https://python-poetry.org/docs/#installation) 
 
 Clone this repo, then run:
 
 ```
-pip install ./osu-dreamer
+poetry install
 ```
 
-This will install `osu-dreamer` as well as all dependencies
+This will install `osu-dreamer`'s dependencies
 
 ## Generate your own maps locally
 
 ```
-$ python scripts/pred.py -h
-usage: pred.py [-h] [--sample_steps SAMPLE_STEPS] [--num_samples NUM_SAMPLES] [--bpm BPM]
-               [--timing_points_from TIMING_POINTS_FROM] [--timing_points TIMING_POINTS] [--title TITLE]
-               [--artist ARTIST]
-               MODEL_PATH AUDIO_FILE
+$ poetry run python -m osu_dreamer.model predict --help
+Usage: python -m osu_dreamer.model predict [OPTIONS]
 
-generate osu!std maps from raw audio
+  generate osu!std maps from raw audio
 
-positional arguments:
-  MODEL_PATH            trained model (.ckpt)
-  AUDIO_FILE            audio file to map
-
-optional arguments:
-  -h, --help            show this help message and exit
-
-model arguments:
-  --sample_steps SAMPLE_STEPS
-                        number of steps to sample
-  --num_samples NUM_SAMPLES
-                        number of maps to generate
-
-timing arguments:
-  --bpm BPM             tempo of the whole song in BPM (optional)
-  --timing_points_from TIMING_POINTS_FROM
-                        beatmap file to take timing points from (optional)
-  --timing_points TIMING_POINTS
-                        list of pipe-separated timing points in `OFFSET:BEAT_LENGTH:METER` format
-                        (optional)
-
-metadata arguments:
-  --title TITLE         Song title - required if it cannot be determined from the audio metadata
-  --artist ARTIST       Song artsit - required if it cannot be determined from the audio metadata
+Options:
+  --model_path FILE       trained model (.ckpt)
+  --audio_file FILE       audio file to map
+  --sample-steps INTEGER  number of diffusion steps to sample
+  --num_samples INTEGER   number of maps to generate
+  --title TEXT            Song title - required if it cannot be determined
+                          from the audio metadata
+  --artist TEXT           Song artist - required if it cannot be determined
+                          from the audio metadata
+  --help                  Show this message and exit.
 ```
 
 ## Model training
 
+### Generate dataset
+
+first you must generate a dataset, using eg. your `osu!/Songs` directory.
+This step only needs to be done once (unless you delete the generated dataset directory).
+
 ```
-python scripts/cli.py fit -c config.yml -c osu_dreamer/model/model.yml --data.src_path [SONGS_DIR]
+$ poetry run python -m osu_dreamer.model generate-data [MAPS_DIR]
 ```
 
-Replace `SONGS_DIR` with the path to the osu! Songs directory (or a directory with the same structure).
-other model parameters are in `osu_dreamer/model/model.yml`, while data and training parameters are in `config.yml`
+where `[MAPS_DIR]` is the path to eg. your `osu!/Songs` directory
 
-At the end of every epoch, the model parameters will be checkpointed to `lightning_logs/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt_path [PATH TO CHECKPOINT]` to the above command.
+### Training
+
+after the dataset generation completes, you can start training
+
+```
+$ poetry run python -m osu_dreamer.model fit
+```
+
+See `osu_dreamer/model/model.yml` for all training parameters.
+
+At the end of every epoch, the model parameters will be checkpointed to `lightning_logs/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt-path [PATH TO CHECKPOINT]` to the `fit` command.
 
 run `tensorboard --logdir=lightning_logs/` in a new window to track training progress in Tensorboard
 
 ### visual validation
-
-`pip install matplotlib` to enable rendering of validation plots as shown below:
 
 ![image](https://user-images.githubusercontent.com/943003/203165744-68da33fa-967f-45a7-956e-f0fe0114f9cc.png)
 
@@ -90,7 +88,7 @@ The training process will generate one plot at the end of every epoch, using a s
 > ⚠️ Support for training/evaluating the model locally on Windows is highly experimental and provided as-is
 
 ### Requirements
--   🐍 Python 3.8 (via Microsoft Store, or python.org)
+-   🐍 Python 3.9 (via Microsoft Store, or python.org)
 
 ### Installation
 

@@ -6,7 +6,7 @@
 	
 	set /p CheckpointPath="Checkpoint Path: "
 
-	python "%ParentDirectory%/scripts/cli.py" fit -c "%ParentDirectory%/config.yml" -c "%ParentDirectory%/osu_dreamer/model/model.yml" --ckpt_path "%CheckpointPath%"
+	python -m model fit -c "%ParentDirectory%/model/config.yml" --ckpt_path "%CheckpointPath%"
 
 	pause
 

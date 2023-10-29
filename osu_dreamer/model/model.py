@@ -1,12 +1,15 @@
-from typing import List, Tuple
 
-import copy
+from functools import partial
+
+from jaxtyping import Float, Int
 
 import numpy as np
 import librosa
 
-import torch
-import torch.nn.functional as F
+import torch as th
+from torch import Tensor
+
+from einops import repeat
 
 try:
     import matplotlib.pyplot as plt
@@ -16,84 +19,83 @@ except:
 
 import pytorch_lightning as pl
 
-from .beta_schedule import CosineBetaSchedule, StridedBetaSchedule
-from .modules import UNet
+from .data.dataset import Batch
+from .data.load_audio import A_DIM
+from .data.beatmap.encode import X_DIM
 
-from osu_dreamer.data import A_DIM
-from osu_dreamer.signal import X_DIM
+from .diffusion import Diffusion
 
-VALID_PAD = 1024
-
+from .modules.denoiser import Denoiser, DenoiserArgs, Encoder, EncoderArgs
+    
+    
 class Model(pl.LightningModule):
     def __init__(
         self,
-        h_dims: List[int],
-        h_dim_groups: int,
-        convnext_mult: int,
-        wave_stack_depth: int,
-        wave_num_stacks: int,
-        blocks_per_depth: int,
-        attn_heads: int,
-        attn_dim: int,
-        
-        timesteps: int,
-        sample_steps: int,
-        ddim: bool,
-    
-        loss_type: str,
-        learning_rate: float = 0.,
-        learning_rate_schedule_factor: float = 0.,
-        learning_rate_patience: int = 0,
+
+        # validation parameters
+        val_steps: int,
+
+        # training parameters
+        optimizer: str,            # optimizer
+        optimizer_args: dict,      # optimizer args
+        lr: float,
+        s4_lr: float,
+
+        # model hparams
+        P_mean: float,
+        P_std: float,
+        encoder_args: EncoderArgs,
+        denoiser_args: DenoiserArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
-        
+
         # model
-        self.net = UNet(
-            A_DIM+X_DIM, X_DIM,
-            h_dims, h_dim_groups,
-            convnext_mult,
-            wave_stack_depth,
-            wave_num_stacks,
-            blocks_per_depth,
-            attn_heads,
-            attn_dim,
-        )
-        
-        self.schedule = CosineBetaSchedule(timesteps, self.net)
-        self.sampling_schedule = StridedBetaSchedule(self.schedule, sample_steps, ddim, self.net)
-        
+        self.diffusion = Diffusion(P_mean, P_std)
+        self.enc_a = Encoder(A_DIM, encoder_args)
+        self.denoiser = Denoiser(X_DIM, encoder_args.h_dim, denoiser_args)
+
+        # validation params
+        self.val_steps = val_steps
+
         # training params
-        try:
-            self.loss_fn = dict(
-                l1 = F.l1_loss,
-                l2 = F.mse_loss,
-                huber = F.smooth_l1_loss,
-            )[loss_type]
-        except KeyError:
-            raise NotImplementedError(loss_type)
+        self.optimizer = getattr(th.optim, optimizer)
+        self.optimizer_args = optimizer_args
+        self.lr = lr
+        self.s4_lr = s4_lr
 
-        self.learning_rate = learning_rate
-        self.learning_rate_schedule_factor = learning_rate_schedule_factor
-        self.learning_rate_patience = learning_rate_patience
-        self.depth = len(h_dims)-1
-        
-    def inference_pad(self, x):
-        x = F.pad(x, (VALID_PAD, VALID_PAD), mode='replicate')
-        pad = (1 + x.size(-1) // 2 ** self.depth) * 2 ** self.depth - x.size(-1)
-        x = F.pad(x, (0, pad), mode='replicate')
-        return x, (..., slice(VALID_PAD,-(VALID_PAD+pad)))
-        
-    def forward(self, a: "N,A,L", x: "N,X,L" = None, *, sample_steps=None, ddim=None):
-        if sample_steps is not None and ddim is not None:
-            sch = StridedBetaSchedule(self.schedule, sample_steps, ddim, self.net)
-        else:
-            sch = self.sampling_schedule
+    def forward(
+        self, 
+        a: Float[Tensor, str(f"B {A_DIM} L")],
+        x: Float[Tensor, str(f"B {X_DIM} L")],
+        p: Int[Tensor, "B L"],
+    ) -> tuple[
+        dict[str, Tensor], # log dict
+        Float[Tensor, ""], # loss
+    ]:
+        model = partial(self.denoiser, self.enc_a(a), p)
+        loss = self.diffusion.loss(model, x)
+        return { 'loss': loss.detach() }, loss
+    
+    @th.no_grad()
+    def sample(
+        self, 
+        a: Float[Tensor, str(f"{A_DIM} L")],
+        num_samples: int = 1,
+        num_steps: int = 0,
+        **kwargs,
+    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+        l = a.size(-1)
+        a = repeat(a, 'a l -> b a l', b=num_samples)
+        p = repeat(th.arange(l), 'l -> b l', b=num_samples).to(a.device)
 
-        a, sl = self.inference_pad(a)
-        return sch.sample(a, x)[sl]
-    
-    
+        num_steps = num_steps if num_steps > 0 else self.val_steps
+
+        z = th.randn(num_samples, X_DIM, l, device=a.device)
+        model = partial(self.denoiser, self.enc_a(a), p)
+        return self.diffusion.sample(model, num_steps, z, **kwargs)
+
+
 #
 #
 # =============================================================================
@@ -102,79 +104,59 @@ class Model(pl.LightningModule):
 #
 #
 
-    def compute_loss(self, a, x, pad=False):
-        ts = torch.randint(0, self.schedule.timesteps, (x.size(0),), device=x.device).long()
-        
-        if pad:
-            a, _ = self.inference_pad(a)
-            x, _ = self.inference_pad(x)
-        
-        true_eps: "N,X,L" = torch.randn_like(x)
-
-        x_t: "N,X,L" = self.schedule.q_sample(x, ts, true_eps)
-        
-        pred_eps = self.net(x_t, a, ts)
-        
-        return self.loss_fn(pred_eps, true_eps).mean()
-
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.net.parameters(), lr=self.learning_rate)
-        
-        return dict(
-            optimizer=opt,
-            lr_scheduler=dict(
-                scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    opt, 
-                    factor=self.learning_rate_schedule_factor,
-                    patience=self.learning_rate_patience,
-                ),
-                monitor="val/loss",
-            ),
-        )
-    
-    def training_step(self, batch: Tuple["N,A,L", "N,X,L"], batch_idx):
-        torch.cuda.empty_cache()
-        a,x = copy.deepcopy(batch)
-        
-        loss = self.compute_loss(a,x)
-        
-        self.log(
-            "train/loss", loss.detach(),
-            logger=True, on_step=True, on_epoch=False,
-        )
-        
+
+        s4_params = []
+        rest_params = []
+        for p in self.parameters():
+            (s4_params if hasattr(p, '_optim') else rest_params).append(p)
+
+        opt = self.optimizer([
+            { 'params': rest_params, 'lr': self.lr},
+            { 'params': s4_params, 'lr': self.s4_lr },
+        ], **self.optimizer_args)
+
+        return opt
+
+    def training_step(self, batch: Batch, batch_idx):
+        log_dict, loss = self(*batch)
+        self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
 
-    def validation_step(self, batch: Tuple["1,A,L","1,X,L"], batch_idx, *args, **kwargs):
-        torch.cuda.empty_cache()
-        a,x = copy.deepcopy(batch)
+    def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
+        log_dict, _ = self(*batch)
+        self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
+
+        if batch_idx == 0 and USE_MATPLOTLIB:
+            self.plot_sample(batch)
+
+    def plot_sample(self, b: Batch):
+        a_tensor, x_tensor, _ = b
         
-        loss = self.compute_loss(a,x, pad=True)
+        a: Float[np.ndarray, "A L"] = a_tensor.squeeze(0).cpu().numpy()
+
+        with th.no_grad():
+            plots = [
+                x.squeeze(0).cpu().numpy()
+                for x in [
+                    x_tensor, 
+                    self.sample(a_tensor.squeeze(0)),
+                ]
+            ]
         
-        self.log(
-            "val/loss", loss.detach(),
-            logger=True, on_step=False, on_epoch=True,
-        )
-        
-        return a,x
-        
-    def validation_epoch_end(self, val_outs: "List[(1,A,L),(1,X,L)]"):
-        if not USE_MATPLOTLIB or len(val_outs) == 0:
-            return
-        
-        torch.cuda.empty_cache()
-        a,x = copy.deepcopy(val_outs[0])
-        
-        samples = self(a.repeat(2,1,1)).cpu().numpy()
-        
-        a: "A,L" = a.squeeze(0).cpu().numpy()
-        x: "X,L" = x.squeeze(0).cpu().numpy()
-        
-        height_ratios = [1.5] + [1] * (1+len(samples))
-        w, h = a.shape[-1]/150, sum(height_ratios)/2
         margin, margin_left = .1, .5
+        height_ratios = [.8] + [.6] * len(plots)
+        plots_per_row = len(height_ratios)
+        w, h = a.shape[-1] * .01, sum(height_ratios) * .4
+
+        # split plot across multiple rows
+        split = ((w/h)/(3/5)) ** .5 # 3 wide by 5 tall aspect ratio
+        split = int(split + 1)
+        w = w // split
+        h = h * split
+        height_ratios = height_ratios * split
         
-        fig, (ax1, *axs) = plt.subplots(
+        fig, all_axs = plt.subplots(
             len(height_ratios), 1,
             figsize=(w, h),
             sharex=True,
@@ -187,17 +169,18 @@ class Model(pl.LightningModule):
                 bottom=margin/h,
             )
         )
-        
-        ax1.imshow(librosa.power_to_db(a), origin="lower", aspect='auto')
-        
-        for sample, ax in zip((x, *samples), axs):
-            mu = np.mean(sample)
-            sig = np.std(sample)
 
-            ax.set_ylim((mu-3*sig, mu+3*sig))
+        win_len = a.shape[-1] // split
+        for i in range(split):
+            ax1, *axs = all_axs[i * plots_per_row: (i+1) * plots_per_row]
+            sl = (..., slice(i * win_len, (i+1) * win_len))
+
+            ax1.imshow(librosa.power_to_db(a[sl]), origin="lower", aspect='auto')
             
-            for v in sample:
-                ax.plot(v)
+            for (i, sample), ax in zip(enumerate(plots), axs):
+                ax.margins(x=0)
+                for ch in sample[sl]:
+                    ax.plot(ch)
 
-        self.logger.experiment.add_figure("samples", fig, global_step=self.global_step)
+        self.logger.experiment.add_figure("samples", fig, global_step=self.global_step) # type: ignore
         plt.close(fig)

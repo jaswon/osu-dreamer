@@ -1,10 +1,10 @@
-from __future__ import annotations
-from typing import Tuple
+
+from jaxtyping import Float
 
 import numpy as np
-import numpy.typing as npt
+from numpy import ndarray
 
-NDIntArray = npt.NDArray[np.integer]
+Vec2 = Float[ndarray, "2"]
 
 class Timed:
     def __init__(self, t: int):
@@ -34,7 +34,7 @@ class TimingPoint(Timed):
             f"kiai={self.kiai}",
         ])
     
-    def __eq__(self, other):
+    def __eq__(self, other: "TimingPoint"):
         return all([
             self.beat_length == other.beat_length,
             self.slider_mult == other.slider_mult,
@@ -53,10 +53,10 @@ class HitObject(Timed):
     def end_time(self) -> int:
         raise NotImplementedError
     
-    def start_pos(self) -> NDIntArray:
+    def start_pos(self) -> Vec2:
         raise NotImplementedError
         
-    def end_pos(self) -> NDIntArray:
+    def end_pos(self) -> Vec2:
         return self.start_pos()
 
 
@@ -72,7 +72,7 @@ class Circle(HitObject):
     def end_time(self) -> int:
         return self.t
     
-    def start_pos(self) -> NDIntArray:
+    def start_pos(self) -> Vec2:
         return np.array([ self.x, self.y ])
 
 class Spinner(HitObject):
@@ -86,7 +86,7 @@ class Spinner(HitObject):
     def end_time(self) -> int:
         return self.u
     
-    def start_pos(self) -> NDIntArray:
+    def start_pos(self) -> Vec2:
         return np.array([ 256, 192 ])
 
 
@@ -106,19 +106,26 @@ class Slider(HitObject):
         self.beat_length = beat_length
         self.slider_mult = slider_mult
         
-        self.slide_duration = length / (slider_mult * 100) * beat_length * slides
+        # the duration of a single slide (no repeats)
+        self.slide_duration = length / (slider_mult * 100) * beat_length
         
     def end_time(self) -> int:
-        return self.t + self.slide_duration
+        return int(self.t + self.slide_duration * self.slides)
 
-    def lerp(self, _: float) -> NDIntArray:
+    def lerp(self, _: float) -> Vec2:
         """
         return cursor pos given fraction of one slide (t=1 means end of slider)
         """
         raise NotImplementedError
     
-    def start_pos(self) -> NDIntArray:
+    def vel(self, _:float) -> Vec2:
+        """
+        return cursor vel given fraction of one slide (t=1 means end of slider)
+        """
+        raise NotImplementedError
+    
+    def start_pos(self) -> Vec2:
         return self.lerp(0)
     
-    def end_pos(self) -> NDIntArray:
+    def end_pos(self) -> Vec2:
         return self.lerp(self.slides % 2)

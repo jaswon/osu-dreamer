@@ -1,13 +1,8 @@
-from __future__ import annotations
-from typing import List, Union
-
-import copy
 
 import numpy as np
-import numpy.typing as npt
 import bezier
 
-from .hit_objects import Slider, NDIntArray
+from .hit_objects import Slider, Vec2
 
 def approx_eq(a,b):
     return abs(a-b) < 1e-8
@@ -28,7 +23,7 @@ def from_control_points(
     new_combo: bool,
     slides: int,
     length: float,
-    ctrl_pts: List[NDIntArray],
+    ctrl_pts: list[Vec2],
 ) -> Slider:
     if len(ctrl_pts) < 2:
         raise Exception(f"bad slider: {ctrl_pts}")
@@ -89,8 +84,8 @@ class Line(Slider):
         new_combo: bool,
         slides: int,
         length: float,
-        start: NDIntArray,
-        end: NDIntArray,
+        start: Vec2,
+        end: Vec2,
     ):
         super().__init__(t, beat_length, slider_mult, new_combo, slides, length)
 
@@ -103,12 +98,12 @@ class Line(Slider):
     def __repr__(self):
         return f"{super().__repr__()} Line[*{self.slides}]({self.start} -> {self.end})"
 
-    def lerp(self, t: float) -> NDIntArray:
+    def lerp(self, t: float) -> Vec2:
         ret = (1 - t) * self.start + t * self.end
         return ret.round(0).astype(np.integer)
 
-    def vel(self, t: float) -> NDIntArray:
-        return (self.end - self.start) / (self.slide_duration / self.slides)
+    def vel(self, t: float) -> Vec2:
+        return (self.end - self.start) / self.slide_duration
 
 
 class Perfect(Slider):
@@ -120,7 +115,7 @@ class Perfect(Slider):
         new_combo: bool,
         slides: int,
         length: float,
-        center: NDIntArray,
+        center: Vec2,
         radius: float,
         start: float,
         end: float,
@@ -135,14 +130,14 @@ class Perfect(Slider):
     def __repr__(self):
         return f"{super().__repr__()} Perfect[*{self.slides}](O:{self.center} R:{self.radius} {self.start} -> {self.end})"
 
-    def lerp(self, t: float) -> NDIntArray:
+    def lerp(self, t: float) -> Vec2:
         angle = (1 - t) * self.start + t * self.end
         ret = self.center + self.radius * np.array([np.cos(angle), np.sin(angle)])
         return ret.round(0).astype(np.integer)
 
-    def vel(self, t: float) ->  NDIntArray:
+    def vel(self, t: float) ->  Vec2:
         angle = (1 - t) * self.start + t * self.end
-        return self.radius * np.array([-np.sin(angle), np.cos(angle)]) / (self.slide_duration / self.slides)
+        return self.radius * np.array([-np.sin(angle), np.cos(angle)]) * (self.end - self.start) / self.slide_duration
 
 
 
@@ -167,7 +162,7 @@ class Bezier(Slider):
         self.ctrl_pts = ctrl_pts
 
         # split control points at repeat points
-        ctrl_curves: List[List[NDIntArray]] = []
+        ctrl_curves: list[list[Vec2]] = []
         last_idx = 0
         for i,p in enumerate(ctrl_pts[1:]):
             if (ctrl_pts[i] == p).all():
@@ -176,7 +171,7 @@ class Bezier(Slider):
         ctrl_curves.append(ctrl_pts[last_idx:])
 
         total_len = 0
-        curves = []
+        curves: list[bezier.Curve] = []
         for c in ctrl_curves:
             if len(c) < 2:
                 # invalid bezier curve spec
@@ -208,11 +203,11 @@ class Bezier(Slider):
         self.cum_t = np.cumsum([ c.length for c in curves ]) / self.length
         self.cum_t[-1] = 1.
 
-    def curve_reparameterize(self, t: float) -> "(int, float)":
+    def curve_reparameterize(self, t: float) -> tuple[int, float]:
         """
         converts the parameter to an index into the sequence of curves and a new parameter localized to that curve
         """
-        idx = np.searchsorted(self.cum_t, min(1, max(0, t)))
+        idx = int(np.searchsorted(self.cum_t, min(1, max(0, t))))
         assert idx < len(self.cum_t), (idx, t, self.cum_t)
 
         range_start = np.insert(self.cum_t, 0, 0)[idx]
@@ -225,6 +220,6 @@ class Bezier(Slider):
         idx, t = self.curve_reparameterize(t)
         return self.path_segments[idx].evaluate(t)[:,0].round(0).astype(np.integer)
 
-    def vel(self, t: float) -> NDIntArray:
+    def vel(self, t: float) -> Vec2:
         idx, t = self.curve_reparameterize(t)
-        return self.path_segments[idx].evaluate_hodograph(t)[:,0].round(0).astype(np.integer) / (self.slide_duration / self.slides)
+        return self.path_segments[idx].evaluate_hodograph(t)[:,0].round(0).astype(np.integer) / self.slide_duration

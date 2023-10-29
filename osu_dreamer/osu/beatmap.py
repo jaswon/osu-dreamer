@@ -1,5 +1,5 @@
-from __future__ import annotations
-from typing import Iterable, Tuple
+
+from typing import Iterable, Union
 
 import re
 from pathlib import Path
@@ -15,7 +15,7 @@ class Beatmap:
     SONGS_PATH = "./osu!/Songs" # replace with path to `osu!/Songs` directory
 
     @classmethod
-    def all_maps(cls, src_path: str = None) -> Iterable[Beatmap]:
+    def all_maps(cls, src_path: str = "") -> Iterable["Beatmap"]:
         for p in Path(src_path or cls.SONGS_PATH).glob("*/*.osu"):
             try:
                 bm = Beatmap(p)
@@ -30,7 +30,7 @@ class Beatmap:
             yield bm
             
     @classmethod
-    def all_mapsets(cls, src_path: str = None) -> Iterable[Tuple[Path, Iterable[Beatmap]]]:
+    def all_mapsets(cls, src_path: str = "") -> Iterable[tuple[Path, Iterable["Beatmap"]]]:
         for mapset_dir in Path(src_path or cls.SONGS_PATH).iterdir():
             if not mapset_dir.is_dir():
                 continue
@@ -168,8 +168,8 @@ class Beatmap:
                 self.events.append(ev)
 
     def parse_timing_points(self, lines):
-        self.timing_points = []
-        self.uninherited_timing_points = []
+        self.timing_points: list[TimingPoint] = []
+        self.uninherited_timing_points: list[TimingPoint] = []
         
         cur_beat_length = None
         cur_slider_mult = 1.
@@ -180,7 +180,7 @@ class Beatmap:
             t, x, meter = vals[:3]
             kiai = int(vals[7] if len(vals) >= 8 else 0) % 2 == 1
             
-            if vals[6] == 0:
+            if x < 0:
                 # inherited timing point - controls slider multiplier
                 if len(self.timing_points) == 0:
                     continue
@@ -215,7 +215,7 @@ class Beatmap:
         return self.timing_points[idx]
 
     def parse_hit_objects(self, lines):
-        self.hit_objects = []
+        self.hit_objects: list[Union[Circle, Slider, Spinner]] = []
         for l in lines:
             spl = l.strip().split(",")
             x, y, t, k = [int(x) for x in spl[:4]]
@@ -242,6 +242,8 @@ class Beatmap:
                 )
             elif k & (1 << 3):  # spinner
                 ho = Spinner(t, new_combo, int(spl[5]))
+            else:
+                raise ValueError(f"invalid hit object type: {k}")
                 
             if len(self.hit_objects) and ho.t < self.hit_objects[-1].end_time():
                 raise ValueError(f"hit object starts before previous hit object ends: {t}")
@@ -250,81 +252,3 @@ class Beatmap:
             
         if len(self.hit_objects) == 0:
             raise ValueError("no hit objects")
-    
-    def cursor(self, t):
-        """
-        return cursor position + time since last click at time t (ms)
-        """
-        
-        cx,cy = 256,192
-
-        # before first hit object
-        if t < self.hit_objects[0].t:
-            ho = self.hit_objects[0]
-            if isinstance(ho, Circle):
-                return (ho.x, ho.y), np.inf
-            elif isinstance(ho, Spinner):
-                return (cx, cy), np.inf
-            elif isinstance(ho, Slider):
-                return ho.lerp(0), np.inf
-
-        for ho, nho in zip(self.hit_objects, self.hit_objects[1:]):
-            if ho.t <= t < nho.t:
-                break
-        else:  # after last hit object
-            ho = self.hit_objects[-1]
-            nho = None
-
-        t -= ho.t
-
-        # next hit object
-        if isinstance(nho, Circle):
-            nx, ny = nho.x, nho.y
-        elif isinstance(nho, Spinner):
-            nx, ny = (cx, cy)  # spin starting point
-        elif isinstance(nho, Slider):
-            nx, ny = nho.lerp(0)
-
-        if isinstance(ho, Spinner):
-            spin_duration = ho.u - ho.t
-            if t < spin_duration:  # spinning
-                return (cx, cy), 0
-            else:  # moving
-                t -= spin_duration
-                if nho:  # to next hit object
-
-                    f = t / (nho.t - ho.t - spin_duration)  # interpolation factor
-
-                    return ((1 - f) * cx + f * nx, (1 - f) * cy + f * ny), t
-                else:  # last object
-                    return (cx, cy), t
-
-        elif isinstance(ho, Circle):
-            if nho:  # moving to next hit object
-                f = t / (nho.t - ho.t)  # interpolation factor
-
-                return ((1 - f) * ho.x + f * nx, (1 - f) * ho.y + f * ny), t
-            else:
-                return (ho.x, ho.y), t
-        elif isinstance(ho, Slider):
-            slide_duration = self.slider_duration(ho)
-
-            if t < slide_duration:  # sliding
-                single_slide = slide_duration / ho.slides
-
-                ts = t % (single_slide * 2)
-                if ts < single_slide:  # start -> end
-                    return ho.lerp(ts / single_slide), 0
-                else:  # end -> start
-                    return ho.lerp(2 - ts / single_slide), 0
-            else:  # moving
-                t -= slide_duration
-                end = ho.lerp(ho.slides % 2)
-
-                if nho:  # to next hit object
-                    f = t / (nho.t - ho.t - slide_duration)  # interpolation factor
-
-                    return ((1 - f) * end[0] + f * nx, (1 - f) * end[1] + f * ny), t
-                else:
-                    return (end[0], end[1]), t
-                

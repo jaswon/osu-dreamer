@@ -2,8 +2,12 @@ venv/
 __pycache__/
 .ipynb_checkpoints/
 *.egg-info/
-data*/
+/data*/
 lightning_logs*/
 *.ckpt
 *.ipynb
 build/
+osu_dreamer/models
+/audio/
+.vscode/settings.json
+.env

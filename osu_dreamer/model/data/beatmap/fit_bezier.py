@@ -1,67 +1,84 @@
 # https://github.com/volkerp/fitCurves
 
+from jaxtyping import Float
+
+from typing import Optional, Union
 import numpy as np
+from numpy import ndarray
 
 import bezier
 
-def hodo(p: "N,2"):
+def hodo(p: Float[ndarray, "N 2"]):
     return p.shape[0] * (p[1:] - p[:-1])
 
-def q(p: "N,2", t: "L,") -> "L,2":
+def q(p: Float[ndarray, "N 2"], t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
     """evaluates bezier at t"""
     return bezier.Curve.from_nodes(p.T).evaluate_multi(t).T
 
-def qprime(p: "N,2", t: "L,") -> "L,2":
+def qprime(p: Float[ndarray, "N 2"], t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
     """evaluates bezier first derivative at t"""
     return bezier.Curve.from_nodes(hodo(p).T).evaluate_multi(t).T
 
-def qprimeprime(p: "N,2", t: "L,") -> "L,2":
+def qprimeprime(p: Float[ndarray, "N 2"], t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
     """evaluates bezier second derivative at t"""
     return bezier.Curve.from_nodes(hodo(hodo(p)).T).evaluate_multi(t).T
 
-def normalize(v):
+def normalize(v: Float[ndarray, "..."]) -> Float[ndarray, "..."]:
     magnitude = np.sqrt(np.dot(v,v))
     if magnitude < np.finfo(float).eps:
         return v
     return v / magnitude
 
-def compute_error(p: "N,2", points: "L,2", u: "L,"):
-    errs = ((q(p, u) - points) ** 2).sum(-1)
+def compute_error(
+    p: Float[ndarray, "N 2"], 
+    points: Float[ndarray, "L 2"], 
+    u: Float[ndarray, "L"],
+) -> tuple[float, int]:
+    errs = ((q(p, u) - points) ** 2).sum(-1) # L
     split_point = errs.argmax()
-    return errs[split_point], split_point
+    return float(errs[split_point]), int(split_point)
 
+Point = Float[ndarray, "2"]
+Cubic = Float[ndarray, "4 2"]
+Line = Float[ndarray, "2 2"]
+Segment = Union[Cubic, Line]
 
-def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent: "2," = None):
+def segment_length(p: Segment) -> float:
+    return float(bezier.Curve.from_nodes(p.T).length)
+
+def fit_bezier(
+    points: Float[ndarray, "L 2"],
+    max_err: float, 
+    left_tangent: Optional[Point] = None, # [2]
+    right_tangent: Optional[Point] = None, # [2]
+) -> list[Segment]:
     """fit one (or more) Bezier curves to a set of points"""
 
-    assert points.shape[0] > 0
+    if points.shape[0] < 2:
+        # cannot fit bezier to a single point
+        return []
     
-    weights: "N" = (lambda x,n: (float(x)**-np.arange(1,n+1)) / (1 - float(x)**-n) * (x-1))(2, min(5, len(points)-2))
+    weights = (lambda x,n: (x**-np.arange(1,n+1)) / (1 - x**-n) * (x-1))(2., min(5, len(points)-2)) # N
     
     if left_tangent is None:
         # points[1] - points[0]
-        l_vecs: "N,2" = points[2:2+len(weights)] - points[1]
+        l_vecs = points[2:2+len(weights)] - points[1] # N 2
         left_tangent = normalize(np.einsum('np,n->p', l_vecs, weights))
         
     if right_tangent is None:
         # points[-2] - points[-1]
-        r_vecs: "N,2" = points[-3:-3-len(weights):-1] - points[-2]
+        r_vecs = points[-3:-3-len(weights):-1] - points[-2] # N 2
         right_tangent = normalize(np.einsum('np,n->p', r_vecs, weights))
     
-    if len(points) == 2:
+    if points.shape[0] == 2:
         return [points]
     
-    u = None
+    # parameterize points, assuming constant speed
+    u = np.cumsum(np.linalg.norm(points[1:] - points[:-1], axis=1))
+    u = np.pad(u, (1,0)) / u[-1]
+
+    split_point = points.shape[0] // 2 # makes type checker happy
     for _ in range(32):
-        if u is None:
-            # parameterize points
-            u = [0]
-            u[1:] = np.cumsum(np.linalg.norm(points[1:] - points[:-1], axis=1))
-            u /= u[-1]
-        else:
-            # iterate parameterization
-            u = newton_raphson_root_find(bez_curve, points, u)
-            
         bez_curve = generate_bezier(points, u, left_tangent, right_tangent)
         err, split_point = compute_error(bez_curve, points, u)
             
@@ -72,6 +89,9 @@ def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent:
                 return [bez_curve[[0,-1]]]
 
             return [bez_curve]
+        
+        # iterate parameterization
+        u = newton_raphson_root_find(bez_curve, points, u)
 
     # Fitting failed -- split at max error point and fit recursively
     center_tangent = normalize(points[split_point-1] - points[split_point+1])
@@ -80,8 +100,13 @@ def fit_bezier(points: "L,2", max_err, left_tangent: "2," = None, right_tangent:
         *fit_bezier(points[split_point:], max_err, -center_tangent, right_tangent),
     ]
 
-def generate_bezier(points: "L,2", u: "L,", left_tangent: "2,", right_tangent: "2,") -> "4,2":
-    bez_curve: "4,2" = np.array([points[0], points[0], points[-1], points[-1]])
+def generate_bezier(
+    points: Float[ndarray, "L 2"],      # [L,2]
+    u: Float[ndarray, "L"],             # [L]
+    left_tangent: Point,  # [2]
+    right_tangent: Point, # [2]
+) -> Cubic:
+    bez_curve = np.array([points[0], points[0], points[-1], points[-1]]) # 4 2
 
     # compute the A's
     A = (3 * (1-u) * u * np.array([1-u,u])).T[..., None] * np.array([left_tangent, right_tangent])
@@ -120,7 +145,11 @@ def generate_bezier(points: "L,2", u: "L,", left_tangent: "2,", right_tangent: "
     return bez_curve
 
 
-def newton_raphson_root_find(bez: "4,2", points: "L,2", u: "L,"):
+def newton_raphson_root_find(
+    bez: Float[ndarray, "N 2"], 
+    points: Float[ndarray, "L 2"], 
+    u: Float[ndarray, "L"],
+) -> Float[ndarray, "L"]:
     """
     Newton's root finding algorithm calculates f(x)=0 by reiterating
     x_n+1 = x_n - f(x_n)/f'(x_n)
@@ -135,9 +164,9 @@ def newton_raphson_root_find(bez: "4,2", points: "L,2", u: "L,"):
     u_n+1 = u_n - |q(u_n)-p * q'(u_n)| / |q'(u_n)**2 + q(u_n)-p * q''(u_n)|
     """
     
-    d = q(bez, u) - points
-    qp = qprime(bez, u)
-    num = (d * qp).sum(-1)
-    den = (qp**2 + d*qprimeprime(bez, u)).sum(-1)
+    d = q(bez, u) - points # L 2
+    qp = qprime(bez, u) # L 2
+    num = (d * qp).sum(-1) # L
+    den = (qp**2 + d*qprimeprime(bez, u)).sum(-1) # L
     
     return u - np.divide(num, den, out=np.zeros_like(num), where=den!=0)
