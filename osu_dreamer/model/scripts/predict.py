@@ -1,4 +1,6 @@
 
+from typing import Optional
+
 from pathlib import Path
 import random
 from zipfile import ZipFile
@@ -16,10 +18,10 @@ from ..model import Model
 file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 
 @click.command()
-@click.option('--model_path',   type=file_option_type, required=True, help='trained model (.ckpt)')
-@click.option('--audio_file',   type=file_option_type, required=True, help='audio file to map')
-@click.option('--sample-steps', type=int, default=64, help='number of diffusion steps to sample')
-@click.option('--num_samples',  type=int, default=2 , help='number of maps to generate')
+@click.option('--model-path',   type=file_option_type, required=True, help='trained model (.ckpt)')
+@click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
+@click.option('--sample-steps', type=int, default=32, help='number of diffusion steps to sample')
+@click.option('--num-samples',  type=int, default=1 , help='number of maps to generate')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
 @click.option('--artist',       type=str, help='Song artist - required if it cannot be determined from the audio metadata')
 def predict(
@@ -27,8 +29,8 @@ def predict(
     audio_file: Path,
     sample_steps: int,
     num_samples: int,
-    title: str,
-    artist: str,
+    title: Optional[str],
+    artist: Optional[str],
 ):
     """generate osu!std maps from raw audio."""
     

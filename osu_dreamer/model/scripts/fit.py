@@ -1,5 +1,5 @@
 
-from typing import Union
+from typing import Union, Optional
 
 import warnings
 
@@ -18,7 +18,7 @@ default_config_path = './osu_dreamer/model/model.yml'
 @click.command()
 @click.option('-c', '--config', type=file_option_type, default=default_config_path, help='config file')
 @click.option(   '--ckpt-path', type=file_option_type, help='if provided, checkpoint from which to resume training')
-def fit(config: str, ckpt_path):
+def fit(config: str, ckpt_path: Optional[str]):
     """begin a training run."""
 
     parser = LightningArgumentParser()

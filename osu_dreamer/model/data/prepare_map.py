@@ -1,29 +1,14 @@
 
 import time
-from functools import partial
 from pathlib import Path
-from multiprocessing import Pool
 
 import numpy as np
-from tqdm import tqdm
 
 from osu_dreamer.osu.beatmap import Beatmap
 
 from .beatmap.encode import encode_beatmap
 from .load_audio import load_audio, get_frame_times
-from .reclaim_memory import reclaim_memory
 
-
-def generate_dataset(maps_path: Path, dataset_path: Path, num_workers: int):
-    src_maps = list(maps_path.rglob("*.osu"))
-    num_src_maps = len(src_maps)
-    if num_src_maps == 0:
-        raise RuntimeError(f"no osu! beatmaps found in {maps_path}")
-    
-    print(f"{num_src_maps} osu! beatmaps found, processing...")
-    with Pool(processes=num_workers) as p:
-        for _ in tqdm(p.imap_unordered(partial(prepare_map, dataset_path), src_maps), total=num_src_maps):
-            reclaim_memory()
 
 def prepare_map(data_dir: Path, map_file: Path):
     try:

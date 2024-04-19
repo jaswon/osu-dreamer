@@ -31,7 +31,7 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "4 L"]:
 def onsets(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "L"]:
     """returns time (in log ms) since last onset, scaled+shifted to [0,1]"""
     MIN_TIME = 4    # intervals shorter than 2^MIN_TIME milliseconds get aliased to 0
-    MAX_TIME = 10   # intervals longer  than 2^MAX_TIME milliseconds get aliased to 1
+    MAX_TIME = 11   # intervals longer  than 2^MAX_TIME milliseconds get aliased to 1
 
     onsets = np.full_like(frame_times, 2**MAX_TIME)
     for ho in bm.hit_objects:
