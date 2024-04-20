@@ -1165,6 +1165,16 @@ docs = ["myst-parser", "pydata-sphinx-theme", "sphinx-autodoc-typehints", "sphin
 test = ["ipykernel", "pre-commit", "pytest (<8)", "pytest-cov", "pytest-timeout"]
 
 [[package]]
+name = "keopscore"
+version = "2.2.3"
+description = "keopscore is the KeOps meta programming engine. This python module should be used through a binder (e.g. pykeops or rkeops)"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "keopscore-2.2.3.tar.gz", hash = "sha256:64d5dad1e8c806d7070cdc60e48fd5bbf006f2bf1afd39ad3fa5e9fb213517d2"},
+]
+
+[[package]]
 name = "kiwisolver"
 version = "1.4.5"
 description = "A fast implementation of the Cassowary constraint solver"
@@ -2219,6 +2229,20 @@ files = [
 tests = ["pytest"]
 
 [[package]]
+name = "pybind11"
+version = "2.12.0"
+description = "Seamless operability between C++11 and Python"
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "pybind11-2.12.0-py3-none-any.whl", hash = "sha256:df8d60b94f9e714d81013db233393d430ebf9f3551642b82291cf1b14d1afdbd"},
+    {file = "pybind11-2.12.0.tar.gz", hash = "sha256:5e3c557a84b06b969247630407fc4d985bed157b4253b13153b8e8e165e0c3dc"},
+]
+
+[package.extras]
+global = ["pybind11-global (==2.12.0)"]
+
+[[package]]
 name = "pycparser"
 version = "2.22"
 description = "C parser in Python"
@@ -2243,6 +2267,25 @@ files = [
 [package.extras]
 plugins = ["importlib-metadata"]
 windows-terminal = ["colorama (>=0.4.6)"]
+
+[[package]]
+name = "pykeops"
+version = "2.2.3"
+description = "Python bindings of KeOps: KErnel OPerationS, on CPUs and GPUs, with autodiff and without memory overflows"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "pykeops-2.2.3.tar.gz", hash = "sha256:2e2cba1de5e05c35559957a14f41cb5165dc667cc51b3b2118d7e0027eb435a1"},
+]
+
+[package.dependencies]
+keopscore = "2.2.3"
+numpy = "*"
+pybind11 = "*"
+
+[package.extras]
+full = ["breathe", "faiss", "gpytorch", "h5py", "imageio", "jax", "jaxlib", "matplotlib", "multiprocess", "recommonmark", "scikit-learn", "sphinx", "sphinx-gallery", "sphinx-prompt", "sphinx_rtd_theme", "sphinxcontrib-httpdomain", "torch"]
+test = ["numpy", "pytest", "torch"]
 
 [[package]]
 name = "pyparsing"
@@ -3135,4 +3178,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "ed0fd7dbd12da83e6f95f24466b95905b43dbc3ec221d65caa4ee84626dab56b"
+content-hash = "6abb268c8f70e199774fe1b31d8493f925ddfc8fc14d59ac453084b8e04edae3"

@@ -20,6 +20,7 @@ matplotlib = "^3.8.4"
 ipykernel = "^6.29.4"
 mutagen = "^1.47.0"
 click = "^8.1.7"
+pykeops = "^2.2.3"
 
 [build-system]
 requires = ["poetry-core"]

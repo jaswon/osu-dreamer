@@ -109,11 +109,11 @@ class Model(pl.LightningModule):
         s4_params = []
         rest_params = []
         for p in self.parameters():
-            (s4_params if hasattr(p, '_optim') else rest_params).append(p)
+            (s4_params if hasattr(p, '_s4_optim') else rest_params).append(p)
 
         opt = self.optimizer([
             { 'params': rest_params, 'lr': self.lr},
-            { 'params': s4_params, 'lr': self.s4_lr },
+            { 'params': s4_params, 'lr': self.s4_lr, 'weight_decay': 0. },
         ], **self.optimizer_args)
 
         return opt

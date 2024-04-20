@@ -7,7 +7,7 @@ import torch as th
 from torch import nn, Tensor
 
 from .residual import ResiDual
-from .mamba import MambaBlock
+from .s4d import S4Block
 from .scaleshift import ScaleShift
     
 class GaussianFourierProjection(nn.Module):
@@ -33,7 +33,7 @@ class Encoder(nn.Sequential):
         super().__init__(
             nn.Conv1d(a_dim, args.h_dim, 1),
             ResiDual(args.h_dim, [
-                MambaBlock(args.h_dim, args.expand)
+                S4Block(args.h_dim, args.expand)
                 for _ in range(args.num_layers)
             ]),
         )
@@ -74,7 +74,7 @@ class Denoiser(nn.Module):
         )
 
         self.net = ResiDual(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, MambaBlock(args.h_dim, args.expand))
+            ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.expand))
             for _ in range(args.num_layers)
         ])
         

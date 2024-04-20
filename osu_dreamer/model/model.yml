@@ -57,7 +57,7 @@ model:
     optimizer: RAdam
     optimizer_args: {}
     lr: .0001
-    s4_lr: .00007
+    s4_lr: .00001
     P_mean: -1.2
     P_std: 1.4
 
@@ -74,4 +74,4 @@ model:
         h_dim: 64
 
         num_layers: 6
-        expand: 1
+        expand: 2
