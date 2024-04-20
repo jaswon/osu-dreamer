@@ -26,10 +26,6 @@ class FullSequenceDataset(IterableDataset):
     def __init__(self, **kwargs):
         super().__init__()
         self.dataset = kwargs.pop("dataset")
-        self.sample_density = kwargs.pop("sample_density", 1.)
-        
-        if not 0 < self.sample_density <= 1:
-            raise ValueError("sample density must be in (0, 1]:", self.sample_density)
             
         if len(kwargs):
             raise ValueError(f"unexpected kwargs: {kwargs}")
@@ -50,7 +46,7 @@ class FullSequenceDataset(IterableDataset):
         random.seed(seed)
         
         dataset = sorted(self.dataset)
-        for i, sample in random.sample(list(enumerate(dataset)), int(len(dataset) * self.sample_density)):
+        for i, sample in random.sample(list(enumerate(dataset)), int(len(dataset))):
             if i % num_workers != worker_id:
                 continue
                 
@@ -82,7 +78,7 @@ class SubsequenceDataset(FullSequenceDataset):
                 shape = read_header(f, max_header_size=100000)[0] # type: ignore
                 num_samples += int(shape[-1] / self.seq_len * self.subseq_density)
         
-        self.approx_dataset_size = num_samples * self.sample_density
+        self.approx_dataset_size = num_samples
 
 
     def sample_stream(self, map_file, map_idx):

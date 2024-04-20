@@ -40,10 +40,10 @@ class Model(pl.LightningModule):
         optimizer_args: dict,      # optimizer args
         lr: float,
         s4_lr: float,
-
-        # model hparams
         P_mean: float,
         P_std: float,
+
+        # model hparams
         encoder_args: EncoderArgs,
         denoiser_args: DenoiserArgs,
     ):

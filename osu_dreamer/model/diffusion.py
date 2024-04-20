@@ -57,7 +57,7 @@ class Diffusion:
 
         return loss
     
-    @th.no_grad
+    @th.no_grad()
     def sample(
         self, 
         model: Model, 
