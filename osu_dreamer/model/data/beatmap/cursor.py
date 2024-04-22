@@ -16,9 +16,9 @@ def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "2 L"]
     """
     encodes the position of the cursor at `frame_times` (ms)
 
-    (-1, 1) --- ( 1, 1)
-       |   (0,0)   |
-    (-1,-1) --- ( 1,-1)
+    (0,1) -- (1,1)
+      |        |
+    (0,0) -- (1,0)
     """
     hos = iter(bm.hit_objects)
     cur: Optional[HitObject] = None
