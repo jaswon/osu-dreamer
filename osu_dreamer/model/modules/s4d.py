@@ -115,8 +115,9 @@ class S4D(nn.Module):
         else:
             raise NotImplementedError(f'unknown initialization `{initialization}`')
 
-        self.A_re = nn.Parameter(repeat(A_re, 'n -> h n', h=H).clone())
-        setattr(self.A_re, '_s4_optim', True)
+        assert (A_re<0).all(), '`A_re` should be negative'
+        self.log_neg_A_re = nn.Parameter(repeat(th.log(-A_re), 'n -> h n', h=H).clone())
+        setattr(self.log_neg_A_re, '_s4_optim', True)
         self.A_im = nn.Parameter(repeat(A_im, 'n -> h n', h=H).clone())
         setattr(self.A_im, '_s4_optim', True)
 
@@ -132,7 +133,7 @@ class S4D(nn.Module):
 
         dt = th.exp(self.log_dt)
         C = th.view_as_complex(self.C) * th.view_as_complex(self.B)
-        A = th.clamp(self.A_re, max=-1e-4) + 1j * self.A_im
+        A = -th.exp(self.log_neg_A_re) + 1j * self.A_im
 
         dtA = dt[...,None] * A # H N
         C = C * th.expm1(dtA) / A
