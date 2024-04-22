@@ -9,6 +9,10 @@ from torch import nn, Tensor
 from .residual import ResiDual
 from .s4d import S4Block
 from .scaleshift import ScaleShift
+from .unet import UNet
+
+class ResBlock(nn.Sequential):
+    def forward(self, x): return super().forward(x) + x
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
@@ -43,7 +47,8 @@ class DenoiserArgs:
     t_dim: int
     proj_dim: int
     h_dim: int
-    num_layers: int
+    unet_scales: list[int]
+    seq_depth: int
     expand: int
 
 class Denoiser(nn.Module):
@@ -66,17 +71,23 @@ class Denoiser(nn.Module):
         )
 
         in_dim = a_dim + x_dim + x_dim
-        self.proj_in = nn.Sequential(
-            nn.Conv1d(in_dim, args.proj_dim, 1),
-            nn.GroupNorm(1, args.proj_dim),
-            nn.SiLU(),
-            nn.Conv1d(args.proj_dim, args.h_dim, 1),
-        )
+        self.proj_in = nn.Conv1d(in_dim, args.h_dim, 1)
 
-        self.net = ResiDual(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.expand))
-            for _ in range(args.num_layers)
-        ])
+        self.net = UNet(
+            args.h_dim,
+            args.unet_scales,
+            proj = lambda dim: ScaleShift(dim, args.t_dim, ResBlock(
+                nn.Conv1d(dim, args.proj_dim, 1),
+                nn.GroupNorm(1, args.proj_dim),
+                nn.SiLU(),
+                nn.Conv1d(args.proj_dim, args.proj_dim, 3,1,1, groups=args.proj_dim),
+                nn.Conv1d(args.proj_dim, dim, 1),
+            )),
+            middle = lambda dim: ResiDual(dim, [
+                ScaleShift(dim, args.t_dim, S4Block(dim, args.expand))
+                for _ in range(args.seq_depth)
+            ])
+        )
         
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
         self.proj_out.weight.data.fill_(0.)

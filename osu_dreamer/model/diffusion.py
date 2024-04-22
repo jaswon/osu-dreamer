@@ -66,7 +66,7 @@ class Diffusion:
 
         t_min: float = .002,
         t_max: float = 80.,
-        rho: float = 7.,
+        rho: float = 8.,
         S_churn: float = 10.,
         S_min: float = 0,
         S_max: float = float('inf'),
