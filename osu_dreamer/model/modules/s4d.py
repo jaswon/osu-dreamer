@@ -87,7 +87,7 @@ class S4D(nn.Module):
         dt_min: float = .001, 
         dt_max: float = .1,
         bidirectional: bool = True,
-        initialization: str = 'lin',
+        initialization: str = 'inv',
     ):
         super().__init__()
 
@@ -108,6 +108,10 @@ class S4D(nn.Module):
         elif initialization == 'lin':
             A_re = th.ones(N) * -.5
             A_im = th.arange(N) * th.pi
+        elif initialization == 'inv':
+            A_re = th.ones(N) * -.5
+            n2p1 = th.arange(N) * 2 + 1
+            A_im = N / th.pi * (N/n2p1 - 1)
         else:
             raise NotImplementedError(f'unknown initialization `{initialization}`')
 
