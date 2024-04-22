@@ -163,7 +163,7 @@ def decode_beatmap(metadata: Metadata, enc: EncodedBeatmap, frame_times: FrameTi
     # SV  = length / dur / (slider_mult * 100 / beat_length)
     # => base_slider_vel = slider_mult * 100 / beat_length
     # => beat_length = slider_mult * 100 / base_slider_vel
-    base_slider_vel = (min(slider_vels) * max(slider_vels)) ** .5
+    base_slider_vel = 1 if len(slider_vels) == 0 else (min(slider_vels) * max(slider_vels)) ** .5 
     beat_len = 100 / base_slider_vel # set `slider_mult` to 1 (.4 <= `slider_mult` <= 3.6)
     print(f'`beat_len` set to {beat_len}')
 
