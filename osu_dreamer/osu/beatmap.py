@@ -1,5 +1,5 @@
 
-from typing import Iterable, Union
+from typing import Union
 
 import re
 from pathlib import Path
@@ -12,60 +12,6 @@ from .sliders import from_control_points
 
 
 class Beatmap:
-    SONGS_PATH = "./osu!/Songs" # replace with path to `osu!/Songs` directory
-
-    @classmethod
-    def all_maps(cls, src_path: str = "") -> Iterable["Beatmap"]:
-        for p in Path(src_path or cls.SONGS_PATH).glob("*/*.osu"):
-            try:
-                bm = Beatmap(p)
-            except Exception as e:
-                print(f"{p}: {e}")
-                continue
-
-            # only osu!standard
-            if bm.mode != 0:
-                continue
-
-            yield bm
-            
-    @classmethod
-    def all_mapsets(cls, src_path: str = "") -> Iterable[tuple[Path, Iterable["Beatmap"]]]:
-        for mapset_dir in Path(src_path or cls.SONGS_PATH).iterdir():
-            if not mapset_dir.is_dir():
-                continue
-                
-            maps = []
-            mapset_id = None
-            audio_file = None
-            for map_file in mapset_dir.glob("*.osu"):
-                try:
-                    bm = Beatmap(map_file)
-                except Exception as e:
-                    print(f"{map_file}: {e}")
-                    continue
-
-                # only osu!standard
-                if bm.mode != 0:
-                    continue
-                    
-                maps.append(bm)
-                    
-                if audio_file is None:
-                    audio_file = bm.audio_filename
-                elif audio_file != bm.audio_filename:
-                    break
-                    
-                if mapset_id is None:
-                    mapset_id = bm.mapset_id
-                elif mapset_id != bm.mapset_id:
-                    break
-            else:
-                if audio_file is None or mapset_id is None or len(maps) == 0:
-                    continue
-                yield (mapset_id, audio_file, maps)
-        
-        return
 
     @staticmethod
     def parse_map_file(bmlines):
