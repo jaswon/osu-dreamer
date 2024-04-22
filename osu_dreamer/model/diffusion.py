@@ -10,7 +10,7 @@ from torch import Tensor
 from einops import repeat
 
 
-T = Float[Tensor, "B"]              # diffusion step
+T = Float[Tensor, "B 1 1"]          # diffusion step
 X = Float[Tensor, "B C L"]          # sequence
 Model = Callable[[ X, X, T ], X]    # p(x0 | p(x0 | xu, u), xt, t)
 
@@ -31,7 +31,6 @@ class Diffusion:
     def pred_x0(self, model: Model, y: X, x_t: X, std: T) -> X:
         """https://arxiv.org/pdf/2206.00364.pdf#section.5"""
 
-        std = std[:,None,None]
         sq_sum = std ** 2 + self.std_data ** 2
         hyp = sq_sum.sqrt()
         c_skip = self.std_data ** 2 / sq_sum
@@ -45,15 +44,15 @@ class Diffusion:
     def loss(self, model: Model, x0: X) -> Float[Tensor, ""]:
         """denoising score matching objective"""
 
-        t = self.sample_t(x0.size(0)).to(x0.device)
+        t = self.sample_t(x0.size(0),1,1).to(x0.device)
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
-        x_t = x0 + th.randn_like(x0) * t[:, None, None]
+        x_t = x0 + th.randn_like(x0) * t
 
         x0_hat_uncond = self.pred_x0(model, th.zeros_like(x0), x_t, t)
         x0_hat_cond = self.pred_x0(model, x0_hat_uncond.detach(), x_t, t)
         x0_hat = th.cat([x0_hat_uncond, x0_hat_cond], dim=0)
         loss = (x0_hat - x0.repeat(2,1,1)) ** 2
-        loss = (loss * loss_weight.repeat(2)[:,None,None]).mean()
+        loss = (loss * loss_weight.repeat(2,1,1)).mean()
 
         return loss
     
@@ -78,7 +77,7 @@ class Diffusion:
         t = th.linspace(1, 0, num_steps)
         sigmas = ( t_min ** (1/rho) + t * (t_max ** (1/rho) - t_min ** (1/rho)) ) ** rho
         sigmas = th.tensor([*sigmas.tolist(), 0], device=z.device)
-        sigmas = repeat(sigmas, 's -> s b', b = z.size(0))
+        sigmas = repeat(sigmas, 's -> s b 1 1', b = z.size(0))
 
         x_t = z * t_max
 
@@ -91,7 +90,7 @@ class Diffusion:
         for i, (t_cur, t_nxt) in loop:
 
             # increase noise temporarily
-            gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur <= S_max else 0
+            gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur[0,0,0] <= S_max else 0
             t_hat = t_cur + gamma * t_cur
             x_hat = x_t + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * th.randn_like(x_t)
 
