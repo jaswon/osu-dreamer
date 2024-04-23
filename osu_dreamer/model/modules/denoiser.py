@@ -76,6 +76,7 @@ class Denoiser(nn.Module):
             args.h_dim,
             args.unet_scales,
             proj = lambda dim: ScaleShift(dim, args.t_dim, ResBlock(
+                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
                 nn.Conv1d(dim, dim, 1),
                 nn.GroupNorm(1, dim),
                 nn.SiLU(),
