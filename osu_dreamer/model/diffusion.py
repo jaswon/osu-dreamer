@@ -81,13 +81,13 @@ class Diffusion:
 
         x_t = z * t_max
 
-        loop = enumerate(zip(sigmas[:-1], sigmas[1:]))
+        loop = zip(sigmas[:-1], sigmas[1:])
         if show_progress:
             from tqdm import tqdm
             loop = tqdm(loop, total=num_steps)
 
         pred_x0 = th.zeros_like(x_t)
-        for i, (t_cur, t_nxt) in loop:
+        for t_cur, t_nxt in loop:
 
             # increase noise temporarily
             gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur[0,0,0] <= S_max else 0
@@ -102,8 +102,8 @@ class Diffusion:
             d_cur = -t_hat * score
             x_t = x_hat + (t_nxt - t_hat) * d_cur
 
-            # 2nd order correction
-            if i < num_steps - 1:
+            # 2nd order correction (Huen's method)
+            if t_nxt > 0:
                 pred_x0 = self.pred_x0(model, pred_x0, x_t, t_nxt)
                 d_prime = (x_t - pred_x0) / t_nxt
                 x_t = x_hat + (t_nxt - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
