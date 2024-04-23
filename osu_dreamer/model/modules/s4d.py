@@ -1,12 +1,3 @@
-"""
-reimplementation of S4D (https://arxiv.org/abs/2206.11893)
-
-sources:
-- https://srush.github.io/annotated-s4/s4d
-- https://srush.github.io/annotated-s4/
-- https://github.com/state-spaces/s4/blob/main/models/s4/s4d.py
-- https://github.com/state-spaces/s4/blob/main/models/s4/s4.py
-"""
 
 from typing import Sequence
 from jaxtyping import Float, Complex
@@ -80,6 +71,16 @@ def make_DPLR_HiPPO(N: int) -> tuple[
 
 
 class S4D(nn.Module):
+    """
+    reimplementation of S4D (https://arxiv.org/abs/2206.11893)
+
+    sources:
+    - https://srush.github.io/annotated-s4/s4d
+    - https://srush.github.io/annotated-s4/
+    - https://github.com/state-spaces/s4/blob/main/models/s4/s4d.py
+    - https://github.com/state-spaces/s4/blob/main/models/s4/s4.py
+    """
+        
     def __init__(
         self, 
         H: int, 
@@ -103,15 +104,15 @@ class S4D(nn.Module):
         setattr(self.log_dt, '_s4_optim', True)
 
         if initialization == 'legs':
-            # TODO: deduplicate conjugate pairs
-            A_re, A_im = make_DPLR_HiPPO(N)
+            A_re, A_im = make_DPLR_HiPPO(N*2)
+            A_re, A_im = A_re[A_im < 0], -A_im[A_im < 0]
         elif initialization == 'lin':
             A_re = th.ones(N) * -.5
-            A_im = th.arange(N) * th.pi
+            A_im = th.arange(N,-1,-1) * th.pi
         elif initialization == 'inv':
             A_re = th.ones(N) * -.5
             n2p1 = th.arange(N) * 2 + 1
-            A_im = N / th.pi * (N/n2p1 - 1)
+            A_im = N*2/th.pi * (N*2/n2p1 - 1)
         else:
             raise NotImplementedError(f'unknown initialization `{initialization}`')
 
