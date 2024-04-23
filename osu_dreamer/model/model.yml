@@ -64,15 +64,14 @@ model:
     # model hyperparameters
 
     encoder_args:
-        h_dim: 32
+        h_dim: 64
         num_layers: 4
         expand: 1
 
     denoiser_args:
         t_dim: 64
-        h_dim: 64
+        h_dim: 128
 
         unet_scales: [2,2,2,2]
-        proj_dim: 128
         seq_depth: 6
         expand: 1

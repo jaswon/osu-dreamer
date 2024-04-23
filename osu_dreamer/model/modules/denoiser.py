@@ -45,7 +45,6 @@ class Encoder(nn.Sequential):
 @dataclass
 class DenoiserArgs:
     t_dim: int
-    proj_dim: int
     h_dim: int
     unet_scales: list[int]
     seq_depth: int
@@ -77,11 +76,11 @@ class Denoiser(nn.Module):
             args.h_dim,
             args.unet_scales,
             proj = lambda dim: ScaleShift(dim, args.t_dim, ResBlock(
-                nn.Conv1d(dim, args.proj_dim, 1),
-                nn.GroupNorm(1, args.proj_dim),
+                nn.Conv1d(dim, dim, 1),
+                nn.GroupNorm(1, dim),
                 nn.SiLU(),
-                nn.Conv1d(args.proj_dim, args.proj_dim, 3,1,1, groups=args.proj_dim),
-                nn.Conv1d(args.proj_dim, dim, 1),
+                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
+                nn.Conv1d(dim, dim, 1),
             )),
             middle = lambda dim: ResiDual(dim, [
                 ScaleShift(dim, args.t_dim, S4Block(dim, args.expand))
