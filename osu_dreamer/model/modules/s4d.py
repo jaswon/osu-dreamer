@@ -1,4 +1,5 @@
 
+from dataclasses import dataclass
 from typing import Sequence
 from jaxtyping import Float, Complex
 
@@ -154,16 +155,21 @@ class S4D(nn.Module):
         y = y + u * self.D[:,None]
 
         return y.type_as(u)
-    
+
+
+@dataclass
+class SSMArgs:
+    expand: int = 1
+    state_size: int = 64
 
 class S4Block(nn.Module):
-    def __init__(self, dim: int, expand: int = 1):
+    def __init__(self, dim: int, args: SSMArgs):
         super().__init__()
 
-        h_dim = dim * expand if expand > 0 else dim
+        h_dim = dim * args.expand if args.expand > 0 else dim
 
         self.proj_in = nn.Conv1d(dim, h_dim*2, 1)
-        self.seq = S4D(h_dim)
+        self.seq = S4D(h_dim, args.state_size)
         self.proj_out = nn.Sequential(
             nn.GroupNorm(1, h_dim),
             nn.Conv1d(h_dim, dim, 1),

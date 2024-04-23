@@ -65,8 +65,7 @@ model:
 
     encoder_args:
         h_dim: 64
-        num_layers: 4
-        expand: 1
+        num_layers: 6
 
     denoiser_args:
         t_dim: 64
@@ -74,4 +73,3 @@ model:
 
         unet_scales: [2,2,2,2]
         seq_depth: 6
-        expand: 1
