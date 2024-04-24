@@ -69,7 +69,7 @@ model:
 
     denoiser_args:
         t_dim: 64
-        h_dim: 128
+        h_dim: 64
 
-        unet_scales: [2,2,2,2]
-        seq_depth: 6
+        unet_scales: [2,2,2]
+        seq_depth: 8

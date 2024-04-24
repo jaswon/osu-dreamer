@@ -71,6 +71,14 @@ def make_DPLR_HiPPO(N: int) -> tuple[
     return Lambda_real, Lambda_imag
 
 
+@dataclass
+class S4Args:
+    state_size: int = 64
+    dt_min: float = .001
+    dt_max: float = .1
+    bidirectional: bool = True
+    initialization: str = 'inv'
+
 class S4D(nn.Module):
     """
     reimplementation of S4D (https://arxiv.org/abs/2206.11893)
@@ -85,37 +93,30 @@ class S4D(nn.Module):
     def __init__(
         self, 
         H: int, 
-        N: int = 64, 
-        dt_min: float = .001, 
-        dt_max: float = .1,
-        bidirectional: bool = True,
-        initialization: str = 'inv',
+        args: S4Args,
     ):
         super().__init__()
 
         # diagonalizing real SSM results in conjugate pair parameters -
         # state size can be halved if taken into account (see `log_vandermonde` return) 
-        N = N // 2
+        N = args.state_size // 2
 
-        self.bidirectional = bidirectional
-        C = 2 if bidirectional else 1
-
-        log_dt = np.log(dt_min) + th.rand(H) * (np.log(dt_max) - np.log(dt_min))
+        log_dt = np.log(args.dt_min) + th.rand(H) * (np.log(args.dt_max) - np.log(args.dt_min))
         self.log_dt = nn.Parameter(log_dt)
         setattr(self.log_dt, '_s4_optim', True)
 
-        if initialization == 'legs':
+        if args.initialization == 'legs':
             A_re, A_im = make_DPLR_HiPPO(N*2)
             A_re, A_im = A_re[A_im < 0], -A_im[A_im < 0]
-        elif initialization == 'lin':
+        elif args.initialization == 'lin':
             A_re = th.ones(N) * -.5
             A_im = th.arange(N,-1,-1) * th.pi
-        elif initialization == 'inv':
+        elif args.initialization == 'inv':
             A_re = th.ones(N) * -.5
             n2p1 = th.arange(N) * 2 + 1
             A_im = N*2/th.pi * (N*2/n2p1 - 1)
         else:
-            raise NotImplementedError(f'unknown initialization `{initialization}`')
+            raise NotImplementedError(f'unknown initialization `{args.initialization}`')
 
         assert (A_re<0).all(), '`A_re` should be negative'
         self.log_neg_A_re = nn.Parameter(repeat(th.log(-A_re), 'n -> h n', h=H).clone())
@@ -126,7 +127,9 @@ class S4D(nn.Module):
         self.B = nn.Parameter(th.view_as_real(th.ones(H, N, dtype=th.cfloat)))
         setattr(self.B, '_s4_optim', True)
 
+        C = 2 if args.bidirectional else 1
         self.C = nn.Parameter(th.view_as_real(th.randn(C, H, N, dtype=th.cfloat)))
+
         self.D = nn.Parameter(th.randn(H))
         
 
@@ -141,7 +144,8 @@ class S4D(nn.Module):
         C = C * th.expm1(dtA) / A
         K = log_vandermonde(C, dtA, L) # C * exp(dtA) ^ [0..L-1]
 
-        if self.bidirectional:
+        if K.size(0) == 2:
+            # bidirectional
             k0, k1 = K
             K = F.pad(k0, (0, L)) + F.pad(k1.flip(-1), (L, 0))
         else:
@@ -157,24 +161,25 @@ class S4D(nn.Module):
         return y.type_as(u)
 
 
-@dataclass
-class SSMArgs:
-    expand: int = 1
-    state_size: int = 64
-
 class S4Block(nn.Module):
-    def __init__(self, dim: int, args: SSMArgs):
+    """Gated State Space layer"""
+
+    def __init__(self, dim: int, args: S4Args):
         super().__init__()
 
-        h_dim = dim * args.expand if args.expand > 0 else dim
-
-        self.proj_in = nn.Conv1d(dim, h_dim*2, 1)
-        self.seq = S4D(h_dim, args.state_size)
-        self.proj_out = nn.Sequential(
-            nn.GroupNorm(1, h_dim),
-            nn.Conv1d(h_dim, dim, 1),
+        self.proj_in = nn.Sequential(
+            nn.Conv1d(dim, 2*dim, 1),
+            nn.GroupNorm(2, 2*dim),
+            nn.SiLU(),
         )
+
+        self.seq = nn.Sequential(
+            S4D(dim, args),
+            nn.Conv1d(dim, dim, 1),
+        )
+
+        self.proj_out = nn.Conv1d(dim, dim, 1)
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
         gate, h = self.proj_in(x).chunk(2, dim=1)
-        return self.proj_out(F.silu(gate) * self.seq(h))
+        return self.proj_out(gate * self.seq(h))

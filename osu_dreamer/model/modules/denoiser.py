@@ -7,7 +7,7 @@ import torch as th
 from torch import nn, Tensor
 
 from .residual import ResiDual
-from .s4d import S4Block, SSMArgs
+from .s4d import S4Block, S4Args
 from .scaleshift import ScaleShift
 from .unet import UNet
 
@@ -30,15 +30,18 @@ class GaussianFourierProjection(nn.Module):
 class EncoderArgs:
     h_dim: int
     num_layers: int
-    s4_args: SSMArgs
+    ssm_args: S4Args
 
 class Encoder(nn.Sequential):
     def __init__(self, a_dim: int, args: EncoderArgs):
         super().__init__(
             nn.Conv1d(a_dim, args.h_dim, 1),
             ResiDual(args.h_dim, [
-                S4Block(args.h_dim, args.s4_args)
-                for _ in range(args.num_layers)
+                layer for _ in range(args.num_layers)
+                for layer in [
+                    S4Block(args.h_dim, args.ssm_args),
+                    nn.Conv1d(args.h_dim, args.h_dim, 1),
+                ]
             ]),
         )
 
@@ -48,7 +51,7 @@ class DenoiserArgs:
     h_dim: int
     unet_scales: list[int]
     seq_depth: int
-    s4_args: SSMArgs
+    ssm_args: S4Args
 
 class Denoiser(nn.Module):
     def __init__(
@@ -80,12 +83,15 @@ class Denoiser(nn.Module):
                 nn.Conv1d(dim, dim, 1),
                 nn.GroupNorm(1, dim),
                 nn.SiLU(),
-                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
                 nn.Conv1d(dim, dim, 1),
             )),
             middle = lambda dim: ResiDual(dim, [
-                ScaleShift(dim, args.t_dim, S4Block(dim, args.s4_args))
+                ScaleShift(dim, args.t_dim, layer)
                 for _ in range(args.seq_depth)
+                for layer in [
+                    S4Block(dim, args.ssm_args),
+                    nn.Conv1d(dim, dim, 1),
+                ]
             ])
         )
         
