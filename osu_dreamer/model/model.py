@@ -124,7 +124,8 @@ class Model(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
-        log_dict, _ = self(*batch)
+        with th.no_grad():
+            log_dict, _ = self(*batch)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0 and USE_MATPLOTLIB:
