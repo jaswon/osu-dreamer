@@ -103,7 +103,7 @@ class S4D(nn.Module):
 
         log_dt = np.log(args.dt_min) + th.rand(H) * (np.log(args.dt_max) - np.log(args.dt_min))
         self.log_dt = nn.Parameter(log_dt)
-        setattr(self.log_dt, '_s4_optim', True)
+        setattr(self.log_dt, 'opt_adj', 's4')
 
         if args.initialization == 'legs':
             A_re, A_im = make_DPLR_HiPPO(N*2)
@@ -120,12 +120,12 @@ class S4D(nn.Module):
 
         assert (A_re<0).all(), '`A_re` should be negative'
         self.log_neg_A_re = nn.Parameter(repeat(th.log(-A_re), 'n -> h n', h=H).clone())
-        setattr(self.log_neg_A_re, '_s4_optim', True)
+        setattr(self.log_neg_A_re, 'opt_adj', 's4')
         self.A_im = nn.Parameter(repeat(A_im, 'n -> h n', h=H).clone())
-        setattr(self.A_im, '_s4_optim', True)
+        setattr(self.A_im, 'opt_adj', 's4')
 
         self.B = nn.Parameter(th.view_as_real(th.ones(H, N, dtype=th.cfloat)))
-        setattr(self.B, '_s4_optim', True)
+        setattr(self.B, 'opt_adj', 's4')
 
         C = 2 if args.bidirectional else 1
         self.C = nn.Parameter(th.view_as_real(th.randn(C, H, N, dtype=th.cfloat)))

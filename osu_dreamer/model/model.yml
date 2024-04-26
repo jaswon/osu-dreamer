@@ -55,9 +55,14 @@ model:
 
     # training parameters
     optimizer: RAdam
-    optimizer_args: {}
-    lr: .00007
-    s4_lr: .00001
+    optimizer_args:
+        default:
+            lr: .0001
+        s4:
+            lr: .00001
+            weight_decay: 0.
+        filter:
+            lr: .00002
     P_mean: -1.2
     P_std: 1.4
 

@@ -36,10 +36,8 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
-        optimizer: str,            # optimizer
-        optimizer_args: dict,      # optimizer args
-        lr: float,
-        s4_lr: float,
+        optimizer: str,                     # optimizer
+        optimizer_args: dict[str, dict],    # optimizer args
         P_mean: float,
         P_std: float,
 
@@ -61,8 +59,6 @@ class Model(pl.LightningModule):
         # training params
         self.optimizer = getattr(th.optim, optimizer)
         self.optimizer_args = optimizer_args
-        self.lr = lr
-        self.s4_lr = s4_lr
 
     def forward(
         self, 
@@ -106,15 +102,14 @@ class Model(pl.LightningModule):
 
     def configure_optimizers(self):
 
-        s4_params = []
-        rest_params = []
+        params = { lr: [] for lr in self.optimizer_args }
         for p in self.parameters():
-            (s4_params if hasattr(p, '_s4_optim') else rest_params).append(p)
+            params[getattr(p, 'opt_adj', 'default')].append(p)
 
         opt = self.optimizer([
-            { 'params': rest_params, 'lr': self.lr},
-            { 'params': s4_params, 'lr': self.s4_lr, 'weight_decay': 0. },
-        ], **self.optimizer_args)
+            { 'params': params[lr], **args }
+            for lr, args in self.optimizer_args.items()
+        ])
 
         return opt
 
