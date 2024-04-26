@@ -77,20 +77,14 @@ class Denoiser(nn.Module):
 
         self.net = UNet(
             args.h_dim,
+            args.t_dim,
             args.unet_scales,
-            proj = lambda dim: ScaleShift(dim, args.t_dim, ResBlock(
-                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
-                nn.Conv1d(dim, dim, 1),
-                nn.GroupNorm(1, dim),
-                nn.SiLU(),
-                nn.Conv1d(dim, dim, 1),
-            )),
-            middle = lambda dim: ResiDual(dim, [
-                ScaleShift(dim, args.t_dim, layer)
+            ResiDual(args.h_dim, [
+                ScaleShift(args.h_dim, args.t_dim, layer)
                 for _ in range(args.seq_depth)
                 for layer in [
-                    S4Block(dim, args.ssm_args),
-                    nn.Conv1d(dim, dim, 1),
+                    S4Block(args.h_dim, args.ssm_args),
+                    nn.Conv1d(args.h_dim, args.h_dim, 1),
                 ]
             ])
         )

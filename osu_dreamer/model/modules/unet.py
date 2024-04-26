@@ -1,78 +1,85 @@
 
-from collections.abc import Callable
 from jaxtyping import Float
 
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-def get_padding(L: int, size: int) -> int:
-    """returns padding to add to `L` to be a multiple of `size`"""
-    return (size-L%size)%size
+from .filter import Filter1D
+from .scaleshift import ScaleShift
+
+def pad(x: Float[Tensor, "... L"], size: int) -> tuple[Float[Tensor, "... Lp"], int]:
+    padding = (size-x.size(-1)%size)%size
+    if padding > 0:
+        x = F.pad(x, (0, padding))
+    return x, padding
+
+def unpad(x: Float[Tensor, "... Lp"], padding: int) -> Float[Tensor, "... L"]:
+    if padding > 0:
+        x = x[...,:-padding]
+    return x
+
 
 class UNet(nn.Module):
     def __init__(
         self,
         dim: int,
+        t_dim: int,
         scales: list[int],
-        proj: Callable[[int], nn.Module],
-        middle: Callable[[int], nn.Module],
+        middle: nn.Module,
     ):
         super().__init__()
 
-        self.middle = middle(dim)
+        self.middle = middle
 
         self.chunk_size = 1
 
-        self.pre = nn.ModuleList()
+        conv = lambda dim: nn.Sequential(
+            nn.Conv1d(dim, dim, 5,1,2, groups=dim),
+            nn.Conv1d(dim, dim, 1),
+            nn.GroupNorm(1, dim),
+            nn.SiLU(),
+        )
+
+        self.pre_split = nn.ModuleList()
+        self.post_split = nn.ModuleList()
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
-        self.post = nn.ModuleList()
+        self.pre_join = nn.ModuleList()
+        self.post_join = nn.ModuleList()
 
         for scale in scales:
             self.chunk_size *= scale
 
-            self.pre.append(proj(dim))
-            self.down.append(nn.Sequential(
-                nn.Conv1d(dim, dim, scale, scale, groups=dim),
-                nn.Conv1d(dim ,dim, 1),
-                nn.GroupNorm(1, dim),
-                nn.SiLU(),
-            ))
+            self.pre_split.append(ScaleShift(dim, t_dim, conv(dim)))
+            self.post_split.append(ScaleShift(dim, t_dim, conv(dim)))
+            self.down.append(Filter1D(dim, scale, transpose=False))
 
-            self.up.insert(0, nn.Sequential(
-                nn.GroupNorm(1, dim),
-                nn.SiLU(),
-                nn.ConvTranspose1d(dim, dim, scale, scale, groups=dim),
-                nn.Conv1d(dim ,dim, 1),
-            ))
-            self.post.insert(0, proj(dim))
+            self.up.insert(0, Filter1D(dim, scale, transpose=True))
+            self.pre_join.insert(0, ScaleShift(dim, t_dim, conv(dim)))
+            self.post_join.insert(0, ScaleShift(dim, t_dim, conv(dim)))
 
     def forward(
         self,
         x: Float[Tensor, "B D L"],
-        *args, **kwargs
+        t: Float[Tensor, "B T"],
     ) -> Float[Tensor, "B D L"]:
         
-        pad = get_padding(x.size(-1), self.chunk_size)
-
-        if pad > 0:
-            x = F.pad(x, (0, pad), mode='replicate')
+        x, p = pad(x, self.chunk_size)
 
         hs = []
 
-        for pre, down in zip(self.pre, self.down):
-            x = pre(x, *args, **kwargs)
+        for pre_split, post_split, down in zip(self.pre_split, self.post_split, self.down):
+            x = pre_split(x, t)
             hs.append(x)
+            x = post_split(x, t)
             x = down(x)
 
-        x = self.middle(x, *args, **kwargs)
+        x = self.middle(x, t)
 
-        for up, post in zip(self.up, self.post):
+        for up, pre_join, post_join in zip(self.up, self.pre_join, self.post_join):
             x = up(x)
+            x = pre_join(x, t)
             x = hs.pop() + x
-            x = post(x, *args, **kwargs)
+            x = post_join(x, t)
 
-        if pad > 0:
-            x = x[...,:-pad]
-
-        return x
+        return unpad(x, p)
