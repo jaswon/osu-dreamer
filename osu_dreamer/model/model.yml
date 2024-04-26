@@ -17,7 +17,7 @@ trainer:
             init_args:
                 monitor: val/loss
                 mode: min
-                patience: 50
+                patience: 100
 
         - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     
@@ -73,8 +73,8 @@ model:
         num_layers: 6
 
     denoiser_args:
-        t_dim: 64
+        t_dim: 32
         h_dim: 64
 
-        unet_scales: [2,2,2]
-        seq_depth: 8
+        unet_scales: [2,2,2,2]
+        seq_depth: 12

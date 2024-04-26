@@ -1,6 +1,7 @@
 
 from jaxtyping import Float
 
+import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
@@ -33,30 +34,31 @@ class UNet(nn.Module):
 
         self.chunk_size = 1
 
-        conv = lambda dim: nn.Sequential(
-            nn.Conv1d(dim, dim, 5,1,2, groups=dim),
-            nn.Conv1d(dim, dim, 1),
-            nn.GroupNorm(1, dim),
-            nn.SiLU(),
-        )
-
-        self.pre_split = nn.ModuleList()
-        self.post_split = nn.ModuleList()
+        self.split = nn.ModuleList()
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
-        self.pre_join = nn.ModuleList()
-        self.post_join = nn.ModuleList()
+        self.join = nn.ModuleList()
 
         for scale in scales:
             self.chunk_size *= scale
 
-            self.pre_split.append(ScaleShift(dim, t_dim, conv(dim)))
-            self.post_split.append(ScaleShift(dim, t_dim, conv(dim)))
+            self.split.append(ScaleShift(dim, t_dim, nn.Sequential(
+                nn.Conv1d(dim, dim, 5,1,2, groups=dim),
+                nn.Conv1d(dim, 2*dim, 1),
+                nn.GroupNorm(1, 2*dim),
+                nn.SiLU(),
+                nn.Conv1d(2*dim, 2*dim, 1),
+            )))
             self.down.append(Filter1D(dim, scale, transpose=False))
 
             self.up.insert(0, Filter1D(dim, scale, transpose=True))
-            self.pre_join.insert(0, ScaleShift(dim, t_dim, conv(dim)))
-            self.post_join.insert(0, ScaleShift(dim, t_dim, conv(dim)))
+            self.join.insert(0, ScaleShift(2*dim, t_dim, nn.Sequential(
+                nn.Conv1d(2*dim, 2*dim, 5,1,2, groups=2*dim),
+                nn.Conv1d(2*dim, dim, 1),
+                nn.GroupNorm(1, dim),
+                nn.SiLU(),
+                nn.Conv1d(dim, dim, 1),
+            )))
 
     def forward(
         self,
@@ -68,18 +70,16 @@ class UNet(nn.Module):
 
         hs = []
 
-        for pre_split, post_split, down in zip(self.pre_split, self.post_split, self.down):
-            x = pre_split(x, t)
-            hs.append(x)
-            x = post_split(x, t)
+        for split, down in zip(self.split, self.down):
+            x, h = split(x, t).chunk(2, dim=1)
+            hs.append(h)
             x = down(x)
 
         x = self.middle(x, t)
 
-        for up, pre_join, post_join in zip(self.up, self.pre_join, self.post_join):
+        for up, join in zip(self.up, self.join):
             x = up(x)
-            x = pre_join(x, t)
-            x = hs.pop() + x
-            x = post_join(x, t)
+            h = hs.pop()
+            x = join(th.cat([h, x], dim=1), t)
 
         return unpad(x, p)
