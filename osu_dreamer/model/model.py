@@ -19,9 +19,9 @@ except:
 
 import pytorch_lightning as pl
 
-from .data.dataset import Batch
-from .data.load_audio import A_DIM
-from .data.beatmap.encode import X_DIM
+from osu_dreamer.data.dataset import Batch
+from osu_dreamer.data.load_audio import A_DIM
+from osu_dreamer.data.beatmap.encode import X_DIM
 
 from .diffusion import Diffusion
 

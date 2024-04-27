@@ -5,8 +5,8 @@ from multiprocessing import Pool
 
 from tqdm import tqdm
 
-from ..data.reclaim_memory import reclaim_memory
-from ..data.prepare_map import prepare_map
+from osu_dreamer.data.reclaim_memory import reclaim_memory
+from osu_dreamer.data.prepare_map import prepare_map
 
 import click
 

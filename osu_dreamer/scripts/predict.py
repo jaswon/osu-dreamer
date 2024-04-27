@@ -9,10 +9,10 @@ import torch as th
 
 import click
 
-from ..data.load_audio import load_audio, get_frame_times
-from ..data.beatmap.decode import decode_beatmap, Metadata
+from osu_dreamer.data.load_audio import load_audio, get_frame_times
+from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
 
-from ..model import Model
+from osu_dreamer.model import Model
     
 
 file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)

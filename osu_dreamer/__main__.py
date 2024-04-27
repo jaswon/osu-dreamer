@@ -12,9 +12,9 @@ from .scripts.generate_data import generate_data
 def main():
     pass
 
+main.add_command(generate_data)
 main.add_command(fit)
 main.add_command(predict)
-main.add_command(generate_data)
 
 if __name__ == "__main__":
     main()
