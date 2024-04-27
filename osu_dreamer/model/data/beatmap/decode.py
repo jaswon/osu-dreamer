@@ -130,15 +130,20 @@ def decode_beatmap(metadata: Metadata, enc: EncodedBeatmap, frame_times: FrameTi
             add_hit_circle()
             continue
 
-        u = frame_times[sustain_end]
-        if u-t < 20:
+        if sustain_end - onset_loc < 4:
             # sustain too short
             add_hit_circle()
             continue
 
+        u = frame_times[sustain_end]
         if slider_end == -1:
             # spinner
             hos.append(f"256,192,{t},{2**3 + combo_bit},0,{u}")
+            continue
+
+        if slider_end - onset_loc < 4:
+            # slider too short
+            add_hit_circle()
             continue
 
         # slider

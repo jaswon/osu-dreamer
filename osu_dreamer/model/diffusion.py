@@ -103,7 +103,7 @@ class Diffusion:
             x_t = x_hat + (t_nxt - t_hat) * d_cur
 
             # 2nd order correction (Huen's method)
-            if t_nxt > 0:
+            if t_nxt[0,0,0] > 0:
                 pred_x0 = self.pred_x0(model, pred_x0, x_t, t_nxt)
                 d_prime = (x_t - pred_x0) / t_nxt
                 x_t = x_hat + (t_nxt - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
