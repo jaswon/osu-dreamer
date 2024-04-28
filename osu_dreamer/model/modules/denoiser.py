@@ -27,17 +27,22 @@ class GaussianFourierProjection(nn.Module):
 @dataclass
 class EncoderArgs:
     h_dim: int
-    num_layers: int
+    unet_scales: list[int]
+    seq_depth: int
     ssm_args: S4Args
 
 class Encoder(nn.Sequential):
     def __init__(self, a_dim: int, args: EncoderArgs):
         super().__init__(
             nn.Conv1d(a_dim, args.h_dim, 1),
-            ResiDual(args.h_dim, [
-                S4Block(args.h_dim, args.ssm_args)
-                for _ in range(args.num_layers)
-            ]),
+            UNet(
+                args.h_dim, 
+                args.unet_scales, 
+                ResiDual(args.h_dim, [
+                    S4Block(args.h_dim, args.ssm_args)
+                    for _ in range(args.seq_depth)
+                ]),
+            ),
         )
 
 @dataclass
@@ -68,11 +73,10 @@ class Denoiser(nn.Module):
         )
 
         in_dim = a_dim + x_dim + x_dim
-        self.proj_in = nn.Conv1d(in_dim, args.h_dim, 1)
+        self.proj_in = ScaleShift(in_dim, args.t_dim, nn.Conv1d(in_dim, args.h_dim, 1))
 
         self.net = UNet(
             args.h_dim,
-            args.t_dim,
             args.unet_scales,
             ResiDual(args.h_dim, [
                 ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.ssm_args))
@@ -93,6 +97,6 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],
     ) -> Float[Tensor, "B X L"]:
         t = self.proj_t(t)
-        h = self.proj_in(th.cat([a, x, y], dim=1))
+        h = self.proj_in(th.cat([a, x, y], dim=1), t)
         o = self.net(h, t)
         return self.proj_out(o)
