@@ -24,6 +24,12 @@ BeatmapEncoding = IntEnum('BeatmapEncoding', [
 ], start=0)
 X_DIM = len(BeatmapEncoding)
 
+CURSOR_SIGNALS = [
+    BeatmapEncoding.CURSOR_X,
+    BeatmapEncoding.CURSOR_Y,
+]
+CURSOR_DIM = len(CURSOR_SIGNALS)
+
 EncodedBeatmap = Float[ndarray, str(f"{X_DIM} L")]
 
 def encode_beatmap(bm: Beatmap, frame_times: FrameTimes) -> EncodedBeatmap:
