@@ -16,11 +16,13 @@ class ResiDual(nn.Module):
         self.blocks = nn.ModuleList(blocks)
         self.x_d_scale = 1 / len(blocks)
 
-        self.norms = nn.ModuleList([
-            nn.GroupNorm(1, dim)
-            for _ in blocks
-        ])
-        self.post_norm = nn.GroupNorm(1, dim)
+        normact = lambda: nn.Sequential(
+            nn.GroupNorm(1, dim),
+            nn.SiLU(),
+        )
+
+        self.normacts = nn.ModuleList([ normact() for _ in blocks ])
+        self.post_normact = normact()
         
 
     def forward(
@@ -29,10 +31,9 @@ class ResiDual(nn.Module):
         *args,
         **kwargs,
     ) -> Float[Tensor, "B D L"]:
-        # resiDual
         r = th.zeros_like(x)
-        for block, norm in zip(self.blocks, self.norms):
+        for block, norm in zip(self.blocks, self.normacts):
             x_f = block(x, *args, **kwargs)
             x, r = norm(x + x_f), r + x_f * self.x_d_scale
-        x = x + self.post_norm(r)
+        x = x + self.post_normact(r)
         return x
