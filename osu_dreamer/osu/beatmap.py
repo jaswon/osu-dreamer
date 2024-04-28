@@ -92,7 +92,7 @@ class Beatmap:
 
         self.unparsed_hitobjects = cfg["HitObjects"]
         self.unparsed_timingpoints = cfg["TimingPoints"]
-        self.unparsed_events = cfg["Events"]
+        self.unparsed_events = cfg.get("Events", [])
         if not meta_only:
             self.parse_map_data()
 
