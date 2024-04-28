@@ -48,36 +48,12 @@ def log_vandermonde(
     return 2 * p[...,0]
 
 
-def make_DPLR_HiPPO(N: int) -> tuple[
-    Float[Tensor, "N"],   # Lambda_real
-    Float[Tensor, "N"],   # Lambda_imag
-]:
-    """diagonalized HiPPO matrix"""
-
-    # make NxN HiPPO matrix
-    P = th.sqrt(1 + 2 * th.arange(N))
-    A = P[:, None] * P[None, :]
-    A = th.diag(th.arange(N)) - th.tril(A)
-
-    # construct NPLR representation
-    P = th.sqrt(th.arange(N) + 0.5) # Add in a rank 1 term. Makes it Normal.
-    S = A + P[:, None] * P[None, :]
-
-    # diagonalize the NPLR representation
-    S_diag = th.diagonal(S)
-    Lambda_real = th.mean(S_diag) * th.ones_like(S_diag)
-    Lambda_imag = th.linalg.eigvalsh(S * -1j)
-
-    return Lambda_real, Lambda_imag
-
-
 @dataclass
 class S4Args:
     state_size: int = 64
     dt_min: float = .001
     dt_max: float = .1
     bidirectional: bool = True
-    initialization: str = 'inv'
 
 class S4D(nn.Module):
     """
@@ -105,20 +81,10 @@ class S4D(nn.Module):
         self.log_dt = nn.Parameter(log_dt)
         setattr(self.log_dt, 'opt_adj', 's4')
 
-        if args.initialization == 'legs':
-            A_re, A_im = make_DPLR_HiPPO(N*2)
-            A_re, A_im = A_re[A_im < 0], -A_im[A_im < 0]
-        elif args.initialization == 'lin':
-            A_re = th.ones(N) * -.5
-            A_im = th.arange(N,-1,-1) * th.pi
-        elif args.initialization == 'inv':
-            A_re = th.ones(N) * -.5
-            n2p1 = th.arange(N) * 2 + 1
-            A_im = N*2/th.pi * (N*2/n2p1 - 1)
-        else:
-            raise NotImplementedError(f'unknown initialization `{args.initialization}`')
+        # S4D-Inv initialization approximates S4D-LegS using inverse-law
+        A_re = th.ones(N) * -.5
+        A_im = N*2/th.pi * (N*2/(th.arange(N) * 2 + 1) - 1)
 
-        assert (A_re<0).all(), '`A_re` should be negative'
         self.log_neg_A_re = nn.Parameter(repeat(th.log(-A_re), 'n -> h n', h=H).clone())
         setattr(self.log_neg_A_re, 'opt_adj', 's4')
         self.A_im = nn.Parameter(repeat(A_im, 'n -> h n', h=H).clone())
