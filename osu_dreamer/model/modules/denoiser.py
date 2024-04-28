@@ -10,9 +10,7 @@ from .residual import ResiDual
 from .s4d import S4Block, S4Args
 from .scaleshift import ScaleShift
 from .unet import UNet
-
-class ResBlock(nn.Sequential):
-    def forward(self, x): return super().forward(x) + x
+    
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
@@ -37,11 +35,8 @@ class Encoder(nn.Sequential):
         super().__init__(
             nn.Conv1d(a_dim, args.h_dim, 1),
             ResiDual(args.h_dim, [
-                layer for _ in range(args.num_layers)
-                for layer in [
-                    S4Block(args.h_dim, args.ssm_args),
-                    nn.Conv1d(args.h_dim, args.h_dim, 1),
-                ]
+                S4Block(args.h_dim, args.ssm_args)
+                for _ in range(args.num_layers)
             ]),
         )
 
@@ -80,12 +75,8 @@ class Denoiser(nn.Module):
             args.t_dim,
             args.unet_scales,
             ResiDual(args.h_dim, [
-                ScaleShift(args.h_dim, args.t_dim, layer)
+                ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.ssm_args))
                 for _ in range(args.seq_depth)
-                for layer in [
-                    S4Block(args.h_dim, args.ssm_args),
-                    nn.Conv1d(args.h_dim, args.h_dim, 1),
-                ]
             ])
         )
         
