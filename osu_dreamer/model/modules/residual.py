@@ -5,35 +5,34 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
-class ResiDual(nn.Module):
+class ResStack(nn.Module):
     def __init__(
         self,
         dim: int,
         blocks: Sequence[nn.Module],
     ):
         super().__init__()
-
         self.blocks = nn.ModuleList(blocks)
-        self.x_d_scale = 1 / len(blocks)
+        self.outs = nn.ModuleList([ nn.Conv1d(dim, 2*dim, 1) for _ in blocks ])
 
-        normact = lambda: nn.Sequential(
+        self.out = nn.Sequential(
+            nn.Conv1d(dim, dim, 1),
             nn.GroupNorm(1, dim),
             nn.SiLU(),
+            nn.Conv1d(dim, dim, 1),
         )
-
-        self.normacts = nn.ModuleList([ normact() for _ in blocks ])
-        self.post_normact = normact()
-        
 
     def forward(
         self,
         x: Float[Tensor, "B D L"],
-        *args,
-        **kwargs,
+        *args, **kwargs,
     ) -> Float[Tensor, "B D L"]:
-        r = th.zeros_like(x)
-        for block, norm in zip(self.blocks, self.normacts):
-            x_f = block(x, *args, **kwargs)
-            x, r = norm(x + x_f), r + x_f * self.x_d_scale
-        x = x + self.post_normact(r)
-        return x
+        
+        o = th.zeros_like(x)
+        for block, out in zip(self.blocks, self.outs):
+            h = block(x, *args, **kwargs)
+            res, skip = out(h).chunk(2, dim=1)
+            x = x + res
+            o = o + skip
+
+        return self.out(o)

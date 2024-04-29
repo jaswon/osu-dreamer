@@ -6,7 +6,7 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from .residual import ResiDual
+from .residual import ResStack
 from .s4d import S4Block, S4Args
 from .scaleshift import ScaleShift
 from .unet import UNet
@@ -38,7 +38,7 @@ class Encoder(nn.Sequential):
             UNet(
                 args.h_dim, 
                 args.unet_scales, 
-                ResiDual(args.h_dim, [
+                ResStack(args.h_dim, [
                     S4Block(args.h_dim, args.ssm_args)
                     for _ in range(args.seq_depth)
                 ]),
@@ -85,7 +85,7 @@ class Denoiser(nn.Module):
         self.net = UNet(
             args.h_dim,
             args.unet_scales,
-            ResiDual(args.h_dim, [
+            ResStack(args.h_dim, [
                 ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.ssm_args))
                 for _ in range(args.seq_depth)
             ])
