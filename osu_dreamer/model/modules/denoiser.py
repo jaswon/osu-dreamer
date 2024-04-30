@@ -49,6 +49,7 @@ class Encoder(nn.Sequential):
 class DenoiserArgs:
     t_dim: int
     h_dim: int
+    proj_dim: int
     unet_scales: list[int]
     seq_depth: int
     ssm_args: S4Args
@@ -74,12 +75,12 @@ class Denoiser(nn.Module):
 
         in_dim = a_dim + x_dim + x_dim
         self.proj_in_1 = ScaleShift(in_dim, args.t_dim, nn.Sequential(
-            nn.Conv1d(in_dim, args.h_dim, 1),
-            nn.GroupNorm(1, args.h_dim),
+            nn.Conv1d(in_dim, args.proj_dim, 1),
+            nn.GroupNorm(1, args.proj_dim),
         ))
-        self.proj_in_2 = ScaleShift(args.h_dim, args.t_dim, nn.Sequential(
+        self.proj_in_2 = ScaleShift(args.proj_dim, args.t_dim, nn.Sequential(
             nn.SiLU(),
-            nn.Conv1d(args.h_dim, args.h_dim, 1),
+            nn.Conv1d(args.proj_dim, args.h_dim, 1),
         ))
 
         self.net = UNet(

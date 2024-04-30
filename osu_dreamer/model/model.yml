@@ -46,7 +46,7 @@ data:
     
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
-    val_size: 64
+    val_size: 128
     # val_split: .1
     
 model:
@@ -76,6 +76,7 @@ model:
     denoiser_args:
         t_dim: 32
         h_dim: 64
+        proj_dim: 256
 
         unet_scales: [2,2,2,2]
         seq_depth: 6
