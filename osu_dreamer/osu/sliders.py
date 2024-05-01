@@ -93,14 +93,12 @@ class Line(Slider):
 
         vec = end - self.start
         self.end = self.start + vec / np.linalg.norm(vec) * length
-        # self.end = self.end.round(0).astype(np.integer)
 
     def __repr__(self):
         return f"{super().__repr__()} Line[*{self.slides}]({self.start} -> {self.end})"
 
     def lerp(self, t: float) -> Vec2:
-        ret = (1 - t) * self.start + t * self.end
-        return ret.round(0).astype(np.integer)
+        return (1 - t) * self.start + t * self.end
 
     def vel(self, t: float) -> Vec2:
         return (self.end - self.start) / self.slide_duration
@@ -132,8 +130,7 @@ class Perfect(Slider):
 
     def lerp(self, t: float) -> Vec2:
         angle = (1 - t) * self.start + t * self.end
-        ret = self.center + self.radius * np.array([np.cos(angle), np.sin(angle)])
-        return ret.round(0).astype(np.integer)
+        return self.center + self.radius * np.array([np.cos(angle), np.sin(angle)])
 
     def vel(self, t: float) ->  Vec2:
         angle = (1 - t) * self.start + t * self.end
@@ -218,8 +215,8 @@ class Bezier(Slider):
 
     def lerp(self, t: float):
         idx, t = self.curve_reparameterize(t)
-        return self.path_segments[idx].evaluate(t)[:,0].round(0).astype(np.integer)
+        return self.path_segments[idx].evaluate(t)[:,0]
 
     def vel(self, t: float) -> Vec2:
         idx, t = self.curve_reparameterize(t)
-        return self.path_segments[idx].evaluate_hodograph(t)[:,0].round(0).astype(np.integer) / self.slide_duration
+        return self.path_segments[idx].evaluate_hodograph(t)[:,0] / self.slide_duration
