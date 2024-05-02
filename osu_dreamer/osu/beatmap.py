@@ -77,7 +77,7 @@ class Beatmap:
         try:
             self.ar = float(cfg["Difficulty"]["ApproachRate"])
         except KeyError:
-            self.ar = 7
+            self.ar = 7.
 
         # base slider velocity in hundreds of osu!pixels per beat
         self.slider_mult = float(cfg["Difficulty"]["SliderMultiplier"])
@@ -115,7 +115,6 @@ class Beatmap:
 
     def parse_timing_points(self, lines):
         self.timing_points: list[TimingPoint] = []
-        self.uninherited_timing_points: list[TimingPoint] = []
         
         cur_beat_length = None
         cur_slider_mult = 1.
@@ -124,7 +123,6 @@ class Beatmap:
         for l in lines:
             vals = [ float(x) for x in l.strip().split(",") ]
             t, x, meter = vals[:3]
-            kiai = int(vals[7] if len(vals) >= 8 else 0) % 2 == 1
             
             if x < 0:
                 # inherited timing point - controls slider multiplier
@@ -141,17 +139,18 @@ class Beatmap:
                 cur_beat_length = x
                 cur_slider_mult = 1.
                 cur_meter = meter
+
+            if cur_beat_length is None or cur_meter is None:
+                raise ValueError("inherited timing point appears before any uninherited timing points")
                 
-            tp = TimingPoint(int(t), cur_beat_length, cur_slider_mult, cur_meter, kiai)
+            tp = TimingPoint(int(t), cur_beat_length, cur_slider_mult, int(cur_meter))
+
+            # skip adding timing points if they duplicate the last active one
             if len(self.timing_points) == 0 or tp != self.timing_points[-1]:
                 self.timing_points.append(tp)
             
-            utp = TimingPoint(int(t), cur_beat_length, None, cur_meter, None)
-            if len(self.uninherited_timing_points) == 0 or utp != self.uninherited_timing_points[-1]:
-                self.uninherited_timing_points.append(utp)
-            
         if len(self.timing_points) == 0:
-            raise ValueError("no uninherited timing points")
+            raise ValueError("no timing points")
             
     def get_active_timing_point(self, t):
         idx = bisect.bisect(self.timing_points, Timed(t)) - 1
@@ -171,8 +170,8 @@ class Beatmap:
             elif k & (1 << 1):  # slider
                 curve, slides, length = spl[5:8]
                 _, *control_points = curve.split("|")
-                control_points = [np.array([x,y])] + [
-                    np.array(list(map(int, p.split(":")))) for p in control_points
+                control_points = [np.array([x,y], dtype=float)] + [
+                    np.array(list(map(int, p.split(":"))), dtype=float) for p in control_points
                 ]
                 
                 tp = self.get_active_timing_point(t)

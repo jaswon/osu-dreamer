@@ -45,7 +45,7 @@ def prepare_map(data_dir: Path, map_file: Path):
             except (ValueError, EOFError):
                 # can be raised if file was created but writing hasn't completed
                 # just wait a little for the writing to finish
-                time.sleep(.001 * 2**i)
+                time.sleep(.01 * 2**i)
         else:
             # retried 5 times without success, just skip
             print(f"{bm.audio_filename}: unable to load spectrogram from {spec_path}")

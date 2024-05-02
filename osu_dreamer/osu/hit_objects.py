@@ -18,12 +18,11 @@ class Timed:
 
 
 class TimingPoint(Timed):
-    def __init__(self, t: int, beat_length: float, slider_mult: float, meter: int, kiai: bool):
+    def __init__(self, t: int, beat_length: float, slider_mult: float, meter: int):
         super().__init__(t)
         self.beat_length = beat_length
         self.slider_mult = slider_mult
-        self.meter = int(meter)
-        self.kiai = kiai
+        self.meter = meter
         
     def __repr__(self):
         return " ".join([
@@ -31,7 +30,6 @@ class TimingPoint(Timed):
             f"beat_len={self.beat_length}",
             f"slider_mult={self.slider_mult}",
             f"meter={self.meter}",
-            f"kiai={self.kiai}",
         ])
     
     def __eq__(self, other: "TimingPoint"):
@@ -39,7 +37,6 @@ class TimingPoint(Timed):
             self.beat_length == other.beat_length,
             self.slider_mult == other.slider_mult,
             self.meter == other.meter,
-            self.kiai == other.kiai,
         ])
 
 class HitObject(Timed):
@@ -73,7 +70,7 @@ class Circle(HitObject):
         return self.t
     
     def start_pos(self) -> Vec2:
-        return np.array([ self.x, self.y ])
+        return np.array([ self.x, self.y ], dtype=float)
 
 class Spinner(HitObject):
     def __init__(self, t: int, new_combo: bool, u: int):
@@ -87,7 +84,7 @@ class Spinner(HitObject):
         return self.u
     
     def start_pos(self) -> Vec2:
-        return np.array([ 256, 192 ])
+        return np.array([ 256, 192 ], dtype=float)
 
 
 class Slider(HitObject):
@@ -125,7 +122,7 @@ class Slider(HitObject):
         raise NotImplementedError
     
     def start_pos(self) -> Vec2:
-        return self.lerp(0)
+        return self.lerp(0.)
     
     def end_pos(self) -> Vec2:
-        return self.lerp(self.slides % 2)
+        return self.lerp(float(self.slides % 2))

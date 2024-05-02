@@ -25,7 +25,7 @@ def timing_signal(bm: Beatmap, frame_times: FrameTimes) -> TimingSignal:
     """
     sig = np.zeros((2, len(frame_times)))
 
-    for i, tp in enumerate(bm.uninherited_timing_points):
+    for i, tp in enumerate(bm.timing_points):
         start = tp.t
         if i == 0:
             # rewind start to beginning of song
