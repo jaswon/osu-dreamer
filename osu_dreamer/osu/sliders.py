@@ -1,5 +1,9 @@
 
+from jaxtyping import Float, Int
+
 import numpy as np
+from numpy import ndarray
+
 import bezier
 
 from .hit_objects import Slider, Vec2
@@ -97,11 +101,12 @@ class Line(Slider):
     def __repr__(self):
         return f"{super().__repr__()} Line[*{self.slides}]({self.start} -> {self.end})"
 
-    def lerp(self, t: float) -> Vec2:
-        return (1 - t) * self.start + t * self.end
+    def lerp(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
+        return (1 - t[:,None]) * self.start + t[:,None] * self.end
 
-    def vel(self, t: float) -> Vec2:
-        return (self.end - self.start) / self.slide_duration
+    def vel(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
+        vel = (self.end - self.start) / self.slide_duration
+        return vel[None].repeat(t.shape[0], axis=0)
 
 
 class Perfect(Slider):
@@ -128,13 +133,13 @@ class Perfect(Slider):
     def __repr__(self):
         return f"{super().__repr__()} Perfect[*{self.slides}](O:{self.center} R:{self.radius} {self.start} -> {self.end})"
 
-    def lerp(self, t: float) -> Vec2:
+    def lerp(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
         angle = (1 - t) * self.start + t * self.end
-        return self.center + self.radius * np.array([np.cos(angle), np.sin(angle)])
+        return self.center + self.radius * np.stack([np.cos(angle), np.sin(angle)], axis=1)
 
-    def vel(self, t: float) ->  Vec2:
+    def vel(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
         angle = (1 - t) * self.start + t * self.end
-        return self.radius * np.array([-np.sin(angle), np.cos(angle)]) * (self.end - self.start) / self.slide_duration
+        return self.radius * np.stack([-np.sin(angle), np.cos(angle)], axis=1) * (self.end - self.start) / self.slide_duration
 
 
 
@@ -197,15 +202,14 @@ class Bezier(Slider):
             curves.append(curve)
             
         self.path_segments = curves
-        self.cum_t = np.cumsum([ c.length for c in curves ]) / self.length
-        self.cum_t[-1] = 1.
+        self.cum_t = np.cumsum([ c.length for c in curves ])
+        self.cum_t /= self.cum_t[-1]
 
-    def curve_reparameterize(self, t: float) -> tuple[int, float]:
+    def curve_reparameterize(self, t: Float[ndarray, "L"]) -> tuple[Int[ndarray, "L"], Float[ndarray, "L"]]:
         """
         converts the parameter to an index into the sequence of curves and a new parameter localized to that curve
         """
-        idx = int(np.searchsorted(self.cum_t, min(1, max(0, t))))
-        assert idx < len(self.cum_t), (idx, t, self.cum_t)
+        idx = np.searchsorted(self.cum_t, np.clip(t, 0, 1))
 
         range_start = np.insert(self.cum_t, 0, 0)[idx]
         range_end = self.cum_t[idx]
@@ -213,10 +217,14 @@ class Bezier(Slider):
         t = (t - range_start) / (range_end - range_start)
         return idx, t
 
-    def lerp(self, t: float):
-        idx, t = self.curve_reparameterize(t)
-        return self.path_segments[idx].evaluate(t)[:,0]
+    def lerp(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
+        return np.stack([
+            self.path_segments[idx].evaluate(t)[:,0]
+            for idx, t in zip(*self.curve_reparameterize(t))
+        ], axis=0)
 
-    def vel(self, t: float) -> Vec2:
-        idx, t = self.curve_reparameterize(t)
-        return self.path_segments[idx].evaluate_hodograph(t)[:,0] / self.slide_duration
+    def vel(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
+        return np.stack([
+            self.path_segments[idx].evaluate_hodograph(t)[:,0] / self.slide_duration
+            for idx, t in zip(*self.curve_reparameterize(t))
+        ], axis=0)

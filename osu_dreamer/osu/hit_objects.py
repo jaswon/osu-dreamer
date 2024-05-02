@@ -109,20 +109,20 @@ class Slider(HitObject):
     def end_time(self) -> int:
         return int(self.t + self.slide_duration * self.slides)
 
-    def lerp(self, _: float) -> Vec2:
+    def lerp(self, _: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
         """
         return cursor pos given fraction of one slide (t=1 means end of slider)
         """
         raise NotImplementedError
     
-    def vel(self, _:float) -> Vec2:
+    def vel(self, _: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
         """
         return cursor vel given fraction of one slide (t=1 means end of slider)
         """
         raise NotImplementedError
     
     def start_pos(self) -> Vec2:
-        return self.lerp(0.)
+        return self.lerp(np.array([0], dtype=float))[0]
     
     def end_pos(self) -> Vec2:
-        return self.lerp(float(self.slides % 2))
+        return self.lerp(np.array([self.slides % 2], dtype=float))[0]
