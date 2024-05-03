@@ -6,11 +6,11 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from .residual import ResStack
-from .s4d import S4Block, S4Args
-from .scaleshift import ScaleShift
-from .unet import UNet
+from osu_dreamer.common.residual import ResStack
+from osu_dreamer.common.s4d import S4Block, S4Args
+from osu_dreamer.common.unet import UNet
     
+from .scaleshift import ScaleShift
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
