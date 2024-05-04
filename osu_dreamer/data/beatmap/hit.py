@@ -26,7 +26,7 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "4 L"]:
         extents([ (ho.t, ho.end_time())            for ho in bm.hit_objects if isinstance(ho, (Slider, Spinner)) ], frame_times),
         extents([ (ho.t, ho.t + ho.slide_duration) for ho in bm.hit_objects if isinstance(ho, Slider)            ], frame_times),
         extents(combo_regions(bm), frame_times),
-    ])
+    ]) * 2 - 1
 
 def onsets(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "L"]:
     """returns time (in log ms) since last onset, scaled+shifted to [0,1]"""

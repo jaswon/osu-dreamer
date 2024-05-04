@@ -57,4 +57,4 @@ def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "2 L"]
         approach_f = (approach_t - start_time) / (nxt.t - start_time)
         pos.extend((1 - approach_f[:,None]) * cur.end_pos() + approach_f[:,None] * nxt.start_pos())
         
-    return (np.array(pos) / np.array([512,384])).T
+    return (np.array(pos) / np.array([256,192])).T - 1

@@ -33,8 +33,7 @@ CURSOR_DIM = len(CURSOR_SIGNALS)
 EncodedBeatmap = Float[ndarray, str(f"{X_DIM} L")]
 
 def encode_beatmap(bm: Beatmap, frame_times: FrameTimes) -> EncodedBeatmap:
-
     return np.concatenate([
         hit_signal(bm, frame_times),
         cursor_signal(bm, frame_times),
-    ], axis=0) * 2 - 1 # [0,1] -> [-1,1]
+    ], axis=0)
