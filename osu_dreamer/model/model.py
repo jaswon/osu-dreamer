@@ -58,6 +58,7 @@ class Model(pl.LightningModule):
 
         # training params
         self.optimizer = getattr(th.optim, optimizer)
+        assert 'default' in optimizer_args, "`default` key for `optimizer_args` required"
         self.optimizer_args = optimizer_args
 
     def forward(
@@ -105,13 +106,14 @@ class Model(pl.LightningModule):
 
     def configure_optimizers(self):
 
-        params = { lr: [] for lr in self.optimizer_args }
+        params = { opt_key: [] for opt_key in self.optimizer_args }
         for p in self.parameters():
-            params[getattr(p, 'opt_adj', 'default')].append(p)
+            opt_key = getattr(p, 'opt_key', 'default')
+            params.get(opt_key, params['default']).append(p)
 
         opt = self.optimizer([
-            { 'params': params[lr], **args }
-            for lr, args in self.optimizer_args.items()
+            { 'params': params[opt_key], **args }
+            for opt_key, args in self.optimizer_args.items()
         ])
 
         return opt

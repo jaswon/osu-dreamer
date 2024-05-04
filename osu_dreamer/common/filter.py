@@ -23,7 +23,7 @@ class Filter1D(nn.Module):
         filter = th.sinc(x / stride) / stride
         filter = filter[None,None,:].repeat(channels, 1, 1) # D 1 K
         self.filter = nn.Parameter(filter)
-        setattr(self.filter, 'opt_adj', 'filter')
+        setattr(self.filter, 'opt_key', 'filter')
 
         self.padding = filter_size // 2
         self.channels = channels

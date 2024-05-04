@@ -79,19 +79,19 @@ class S4D(nn.Module):
 
         log_dt = np.log(args.dt_min) + th.rand(H) * (np.log(args.dt_max) - np.log(args.dt_min))
         self.log_dt = nn.Parameter(log_dt)
-        setattr(self.log_dt, 'opt_adj', 's4')
+        setattr(self.log_dt, 'opt_key', 's4')
 
         # S4D-Inv initialization approximates S4D-LegS using inverse-law
         A_re = th.ones(N) * -.5
         A_im = N*2/th.pi * (N*2/(th.arange(N) * 2 + 1) - 1)
 
         self.log_neg_A_re = nn.Parameter(repeat(th.log(-A_re), 'n -> h n', h=H).clone())
-        setattr(self.log_neg_A_re, 'opt_adj', 's4')
+        setattr(self.log_neg_A_re, 'opt_key', 's4')
         self.A_im = nn.Parameter(repeat(A_im, 'n -> h n', h=H).clone())
-        setattr(self.A_im, 'opt_adj', 's4')
+        setattr(self.A_im, 'opt_key', 's4')
 
         self.B = nn.Parameter(th.view_as_real(th.ones(H, N, dtype=th.cfloat)))
-        setattr(self.B, 'opt_adj', 's4')
+        setattr(self.B, 'opt_key', 's4')
 
         C = 2 if args.bidirectional else 1
         self.C = nn.Parameter(th.view_as_real(th.randn(C, H, N, dtype=th.cfloat)))
