@@ -21,7 +21,7 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import X_DIM, CURSOR_DIM, CURSOR_SIGNALS
+from osu_dreamer.data.beatmap.encode import X_DIM, CURSOR_SIGNALS
 
 from .diffusion import Diffusion
 
@@ -71,11 +71,16 @@ class Model(pl.LightningModule):
         Float[Tensor, ""], # loss
     ]:
         # augment cursor by random flips
-        x[:,CURSOR_SIGNALS] *= th.randint(2, (x.size(0), CURSOR_DIM), device=x.device)[:,:,None]*2-1
+        x[:,CURSOR_SIGNALS] *= th.where(th.rand_like(x[:,CURSOR_SIGNALS,:1]) < .5, 1, -1)
 
         model = partial(self.denoiser, self.enc_a(a), p)
-        loss = self.diffusion.loss(model, x)
-        return { 'loss': loss.detach() }, loss
+        loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x)
+        x_hat = th.stack([ x_hat_uncond, x_hat_cond ], dim=0)
+        loss = (loss_weight * ( x_hat - x ) ** 2).mean()
+
+        return {
+            'loss': loss.detach(),
+        }, loss
     
     @th.no_grad()
     def sample(

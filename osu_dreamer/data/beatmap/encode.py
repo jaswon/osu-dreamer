@@ -19,14 +19,14 @@ BeatmapEncoding = IntEnum('BeatmapEncoding', [
     "COMBO",
 
     # cursor signals
-    "CURSOR_X",
-    "CURSOR_Y",
+    "X",
+    "Y",
 ], start=0)
 X_DIM = len(BeatmapEncoding)
 
 CURSOR_SIGNALS = [
-    BeatmapEncoding.CURSOR_X,
-    BeatmapEncoding.CURSOR_Y,
+    BeatmapEncoding.X,
+    BeatmapEncoding.Y,
 ]
 CURSOR_DIM = len(CURSOR_SIGNALS)
 

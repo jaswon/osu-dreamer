@@ -41,8 +41,8 @@ class Diffusion:
         pred_x0 = c_skip * x_t + c_out * model(y, c_in * x_t, c_noise)
         return pred_x0.clamp(min=-1, max=1)
 
-    def loss(self, model: Model, x0: X) -> Float[Tensor, ""]:
-        """denoising score matching objective"""
+    def sample_denoised(self, model: Model, x0: X) -> tuple[T,X,X]:
+        """sample denoised predictions of training data for denoising score matching objective"""
 
         t = self.sample_t(x0.size(0),1,1).to(x0.device)
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
@@ -50,11 +50,8 @@ class Diffusion:
 
         x0_hat_uncond = self.pred_x0(model, th.zeros_like(x0), x_t, t)
         x0_hat_cond = self.pred_x0(model, x0_hat_uncond.detach(), x_t, t)
-        x0_hat = th.cat([x0_hat_uncond, x0_hat_cond], dim=0)
-        loss = (x0_hat - x0.repeat(2,1,1)) ** 2
-        loss = (loss * loss_weight.repeat(2,1,1)).mean()
 
-        return loss
+        return loss_weight, x0_hat_uncond, x0_hat_cond
     
     @th.no_grad()
     def sample(

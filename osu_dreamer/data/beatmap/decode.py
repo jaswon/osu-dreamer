@@ -82,8 +82,8 @@ DEFAULT_BEAT_LEN = 60000/100 # 100 bpm
 
 def decode_beatmap(metadata: Metadata, enc: EncodedBeatmap, frame_times: FrameTimes) -> str:
 
-    cursor_signal = enc[[BeatmapEncoding.CURSOR_X, BeatmapEncoding.CURSOR_Y]]
-    cursor_signal = (cursor_signal+1)/2 * np.array([[512],[384]])
+    cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
+    cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
 
     onset_locs = decode_onsets(enc[BeatmapEncoding.ONSET])
     onset_loc2idx = np.full_like(frame_times, -1, dtype=int)
