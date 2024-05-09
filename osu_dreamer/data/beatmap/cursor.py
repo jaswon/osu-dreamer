@@ -11,7 +11,13 @@ from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner, HitObject
 
 from ..load_audio import FrameTimes
 
-def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "2 L"]:
+from enum import IntEnum
+CursorEncoding = IntEnum('CursorEncoding', [ "X", "Y" ], start=0)
+CURSOR_DIM = len(CursorEncoding)
+
+CursorSignal = Float[ndarray, str(f"{CURSOR_DIM} L")]
+
+def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> CursorSignal:
     """
     encodes the position of the cursor at `frame_times` (ms)
 

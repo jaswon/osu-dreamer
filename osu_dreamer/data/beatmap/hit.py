@@ -12,7 +12,18 @@ from scipy.signal import find_peaks
 
 from ..load_audio import FrameTimes
 
-def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "4 L"]:
+from enum import IntEnum
+HitEncoding = IntEnum('HitEncoding', [
+    "ONSET",
+    "SUSTAIN",
+    "SLIDER",
+    "COMBO",
+], start=0)
+HIT_DIM = len(HitEncoding)
+
+HitSignal = Float[ndarray, str(f"{HIT_DIM} L")]
+
+def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     """
     returns an array encoding a beatmap's hits:
     0. onsets
