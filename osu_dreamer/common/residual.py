@@ -15,13 +15,6 @@ class ResStack(nn.Module):
         self.blocks = nn.ModuleList(blocks)
         self.outs = nn.ModuleList([ nn.Conv1d(dim, 2*dim, 1) for _ in blocks ])
 
-        self.out = nn.Sequential(
-            nn.Conv1d(dim, dim, 1),
-            nn.GroupNorm(1, dim),
-            nn.SiLU(),
-            nn.Conv1d(dim, dim, 1),
-        )
-
     def forward(
         self,
         x: Float[Tensor, "B D L"],
@@ -35,4 +28,4 @@ class ResStack(nn.Module):
             x = x + res
             o = o + skip
 
-        return self.out(o)
+        return o
