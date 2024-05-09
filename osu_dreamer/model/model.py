@@ -56,7 +56,7 @@ class Model(pl.LightningModule):
         self.diffusion = Diffusion(P_mean, P_std)
         self.a_enc = Encoder(A_DIM, encoder_args)
         self.denoiser = Denoiser(X_DIM, encoder_args.h_dim, denoiser_args)
-        self.critic = Critic(CURSOR_DIM, A_DIM+HIT_DIM, critic_args)
+        self.critic = Critic(CURSOR_DIM, critic_args)
 
         # validation params
         self.val_steps = val_steps
@@ -78,8 +78,7 @@ class Model(pl.LightningModule):
         # augment cursor by random flips
         x[:,CursorSignals] *= th.where(th.rand_like(x[:,CursorSignals,:1]) < .5, 1, -1)
 
-        a_enc = self.a_enc(audio)
-        model = partial(self.denoiser, a_enc, position)
+        model = partial(self.denoiser, self.a_enc(audio), position)
         loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x)
         x_hat = th.stack([ x_hat_uncond, x_hat_cond ], dim=0) # 2 B X L
 
@@ -87,9 +86,8 @@ class Model(pl.LightningModule):
         diffusion_loss = (loss_weight * ( x_hat - x ) ** 2).mean()
 
         # 2. cursor critic loss
-        c = th.cat([ audio, x[:,HitSignals] ], dim=1)
-        real_logits = self.critic(c, x[:,CursorSignals])
-        fake_logits = self.critic(c, x_hat_cond[:,CursorSignals].detach())
+        real_logits = self.critic(x[:,CursorSignals])
+        fake_logits = self.critic(x_hat_cond[:,CursorSignals].detach())
 
         # RaSGAN objective
         real_score = real_logits - fake_logits.mean()
@@ -120,11 +118,9 @@ class Model(pl.LightningModule):
 
         z = th.randn(num_samples, X_DIM, l, device=audio.device)
 
-        a_enc = self.a_enc(audio)
-        denoiser = partial(self.denoiser, a_enc, p)
+        denoiser = partial(self.denoiser, self.a_enc(audio), p)
         def guide(x: X) -> X:
-            c = th.cat([ audio, x[:,HitSignals] ], dim=1)
-            score = self.critic(c, x[:,CursorSignals])
+            score = self.critic(x[:,CursorSignals])
             full = th.full_like(x, th.inf)
             full[:,CursorSignals] = score.type_as(full)
             return full

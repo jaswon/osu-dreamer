@@ -27,13 +27,12 @@ class Critic(nn.Module):
     def __init__(
         self,
         x_dim: int,
-        a_dim: int,
         args: CriticArgs,
     ):
         super().__init__()
 
         self.net = nn.Sequential(
-            nn.Conv1d(a_dim + CURSOR_FEATURES, args.h_dim, 1),
+            nn.Conv1d(CURSOR_FEATURES, args.h_dim, 1),
             ResStack(args.h_dim, [
                 nn.Sequential(
                     nn.ZeroPad1d((2**d,0)),
@@ -47,7 +46,6 @@ class Critic(nn.Module):
 
     def forward(
         self, 
-        audio: Float[Tensor, "B A L"],
         cursor: Float[Tensor, "B X L"],
     ) -> Float[Tensor, "B X L"]:
-        return self.net(th.cat([audio, cursor_features(cursor)], dim=1))
+        return self.net(cursor_features(cursor))
