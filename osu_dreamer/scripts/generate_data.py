@@ -29,9 +29,7 @@ def generate_data(maps_dir: Path, data_dir: Path, num_workers: int):
     
     print(f"{num_src_maps} osu! beatmaps found, processing...")
 
-    if data_dir.exists():
-        raise RuntimeError(f"data-dir already exists: {data_dir}")
-    data_dir.mkdir()
+    data_dir.mkdir(exist_ok=True)
     with Pool(processes=num_workers) as p:
         for _ in tqdm(p.imap_unordered(partial(prepare_map, data_dir), src_maps), total=num_src_maps):
             reclaim_memory()
