@@ -25,7 +25,8 @@ from osu_dreamer.data.beatmap.encode import X_DIM, CURSOR_SIGNALS
 
 from .diffusion import Diffusion
 
-from .modules.denoiser import Denoiser, DenoiserArgs, Encoder, EncoderArgs
+from .modules.encoder import Encoder, EncoderArgs
+from .modules.denoiser import Denoiser, DenoiserArgs
     
     
 class Model(pl.LightningModule):

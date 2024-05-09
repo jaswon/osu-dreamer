@@ -24,26 +24,6 @@ class GaussianFourierProjection(nn.Module):
         theta = x[:, None] * self.W[None, :] * 2 * th.pi
         return th.cat([theta.sin(), theta.cos()], dim=-1)
 
-@dataclass
-class EncoderArgs:
-    h_dim: int
-    unet_scales: list[int]
-    seq_depth: int
-    ssm_args: S4Args
-
-class Encoder(nn.Sequential):
-    def __init__(self, a_dim: int, args: EncoderArgs):
-        super().__init__(
-            nn.Conv1d(a_dim, args.h_dim, 1),
-            UNet(
-                args.h_dim, 
-                args.unet_scales, 
-                ResStack(args.h_dim, [
-                    S4Block(args.h_dim, args.ssm_args)
-                    for _ in range(args.seq_depth)
-                ]),
-            ),
-        )
 
 @dataclass
 class DenoiserArgs:
