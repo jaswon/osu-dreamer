@@ -58,7 +58,7 @@ class Diffusion:
     def sample(
         self, 
         denoiser: Model, 
-        guider: Callable[[X], X],
+        guide: Callable[[X], X],
         num_steps: int,
         z: X,
         show_progress: bool = False,
@@ -93,8 +93,8 @@ class Diffusion:
             """
             pred_x0 = self.pred_x0(denoiser, pred_x0, x, t)
             with th.enable_grad():
-                guider_score = F.logsigmoid(guider(pred_x0.requires_grad_())).mean()
-            guidance = th.autograd.grad(guider_score, pred_x0)[0]
+                guide_score = F.logsigmoid(guide(pred_x0.requires_grad_())).mean()
+            guidance = th.autograd.grad(guide_score, pred_x0)[0]
             return pred_x0, (pred_x0 - x) / t ** 2 - guidance
 
         pred_x0 = th.zeros_like(x_t)

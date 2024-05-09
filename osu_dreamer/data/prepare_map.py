@@ -67,11 +67,10 @@ def prepare_map(data_dir: Path, map_file: Path):
 
     # compute map signal
     try:
-        hit, cursor = encode_beatmap(bm, frame_times)
+        x = encode_beatmap(bm, frame_times)
     except Exception as e:
         print(e)
         raise RuntimeError('failed to encode beatmap')
 
     with open(map_path, "wb") as f:
-        np.save(f, hit, allow_pickle=False)
-        np.save(f, cursor, allow_pickle=False)
+        np.save(f, x, allow_pickle=False)

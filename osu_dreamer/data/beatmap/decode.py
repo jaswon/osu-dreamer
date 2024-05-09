@@ -7,8 +7,8 @@ import numpy as np
 from numpy import ndarray
 
 from .fit_bezier import segment_length, Point, fit_bezier
-from .encode import HitSignal, CursorSignal, FrameTimes
-from .hit import decode_extents, decode_onsets, HitEncoding
+from .encode import FrameTimes, EncodedBeatmap, BeatmapEncoding
+from .hit import decode_extents, decode_onsets
 
 @dataclass
 class Metadata:
@@ -80,31 +80,32 @@ def slider_decoder(
 ONSET_TOL = 2
 DEFAULT_BEAT_LEN = 60000/100 # 100 bpm
 
-def decode_beatmap(metadata: Metadata, hit_sig: HitSignal, cursor_sig: CursorSignal, frame_times: FrameTimes) -> str:
+def decode_beatmap(metadata: Metadata, enc: EncodedBeatmap, frame_times: FrameTimes) -> str:
 
-    cursor_signal = (cursor_sig+1) * np.array([[256],[192]])
+    cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
+    cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
 
-    onset_locs = decode_onsets(hit_sig[HitEncoding.ONSET])
+    onset_locs = decode_onsets(enc[BeatmapEncoding.ONSET])
     onset_loc2idx = np.full_like(frame_times, -1, dtype=int)
     for i, onset_idx in enumerate(onset_locs):
         onset_loc2idx[onset_idx-ONSET_TOL:onset_idx+ONSET_TOL+1] = i
 
     new_combos = [False] * len(onset_locs)
-    for combo_start in decode_extents(hit_sig[HitEncoding.COMBO])[0]:
+    for combo_start in decode_extents(enc[BeatmapEncoding.COMBO])[0]:
         onset_idx = onset_loc2idx[combo_start]
         if onset_idx == -1:
             continue
         new_combos[onset_idx] = True
 
     sustain_ends = [-1] * len(onset_locs)
-    for sustain_start, sustain_end in zip(*decode_extents(hit_sig[HitEncoding.SUSTAIN])):
+    for sustain_start, sustain_end in zip(*decode_extents(enc[BeatmapEncoding.SUSTAIN])):
         onset_idx = onset_loc2idx[sustain_start]
         if onset_idx == -1:
             continue
         sustain_ends[onset_idx] = sustain_end
 
     slider_ends = [-1] * len(onset_locs)
-    for slider_start, slider_end in zip(*decode_extents(hit_sig[HitEncoding.SLIDER])):
+    for slider_start, slider_end in zip(*decode_extents(enc[BeatmapEncoding.SLIDER])):
         onset_idx = onset_loc2idx[slider_start]
         if onset_idx == -1:
             continue

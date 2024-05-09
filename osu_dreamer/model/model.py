@@ -22,7 +22,7 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import CURSOR_DIM, HIT_DIM
+from osu_dreamer.data.beatmap.encode import CursorSignals, HitSignals, CURSOR_DIM, HIT_DIM, X_DIM
 
 from .diffusion import Diffusion, X
 
@@ -55,8 +55,8 @@ class Model(pl.LightningModule):
         # model
         self.diffusion = Diffusion(P_mean, P_std)
         self.a_enc = Encoder(A_DIM, encoder_args)
-        self.denoiser = Denoiser(HIT_DIM+CURSOR_DIM, encoder_args.h_dim, denoiser_args)
-        self.critic = Critic(critic_args)
+        self.denoiser = Denoiser(X_DIM, encoder_args.h_dim, denoiser_args)
+        self.critic = Critic(CURSOR_DIM, A_DIM+HIT_DIM, critic_args)
 
         # validation params
         self.val_steps = val_steps
@@ -70,18 +70,16 @@ class Model(pl.LightningModule):
         self, 
         audio: Float[Tensor, str(f"B {A_DIM} L")],
         position: Int[Tensor, "B L"],
-        hit_sig: Float[Tensor, str(f"B {HIT_DIM} L")],
-        cursor_sig: Float[Tensor, str(f"B {CURSOR_DIM} L")],
+        x: Float[Tensor, str(f"B {X_DIM} L")]
     ) -> tuple[
         dict[str, Tensor], # log dict
         Float[Tensor, ""], # loss
     ]:
         # augment cursor by random flips
-        cursor_sig *= th.where(th.rand_like(cursor_sig[...,:1]) < .5, 1, -1)
+        x[:,CursorSignals] *= th.where(th.rand_like(x[:,CursorSignals,:1]) < .5, 1, -1)
 
-        x = th.cat([hit_sig, cursor_sig], dim=1)
-
-        model = partial(self.denoiser, self.a_enc(audio), position)
+        a_enc = self.a_enc(audio)
+        model = partial(self.denoiser, a_enc, position)
         loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x)
         x_hat = th.stack([ x_hat_uncond, x_hat_cond ], dim=0) # 2 B X L
 
@@ -89,8 +87,9 @@ class Model(pl.LightningModule):
         diffusion_loss = (loss_weight * ( x_hat - x ) ** 2).mean()
 
         # 2. cursor critic loss
-        real_logits = self.critic(hit_sig, cursor_sig)
-        fake_logits = self.critic(x_hat_cond[:,:HIT_DIM].detach(), x_hat_cond[:,HIT_DIM:].detach())
+        c = th.cat([ audio, x[:,HitSignals] ], dim=1)
+        real_logits = self.critic(c, x[:,CursorSignals])
+        fake_logits = self.critic(c, x_hat_cond[:,CursorSignals].detach())
 
         # RaSGAN objective
         real_score = real_logits - fake_logits.mean()
@@ -108,26 +107,28 @@ class Model(pl.LightningModule):
     @th.no_grad()
     def sample(
         self, 
-        a: Float[Tensor, str(f"{A_DIM} L")],
+        audio: Float[Tensor, str(f"{A_DIM} L")],
         num_samples: int = 1,
         num_steps: int = 0,
         **kwargs,
-    ) -> Float[Tensor, str(f"B {HIT_DIM + CURSOR_DIM} L")]:
-        l = a.size(-1)
-        a = repeat(a, 'a l -> b a l', b=num_samples)
-        p = repeat(th.arange(l), 'l -> b l', b=num_samples).to(a.device)
+    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+        l = audio.size(-1)
+        audio = repeat(audio, 'a l -> b a l', b=num_samples)
+        p = repeat(th.arange(l), 'l -> b l', b=num_samples).to(audio.device)
 
         num_steps = num_steps if num_steps > 0 else self.val_steps
 
-        z = th.randn(num_samples, HIT_DIM + CURSOR_DIM, l, device=a.device)
-        denoiser = partial(self.denoiser, self.a_enc(a), p)
+        z = th.randn(num_samples, X_DIM, l, device=audio.device)
 
-        def classifier(x: X) -> X:
-            score = self.critic(x[:,:HIT_DIM], x[:,HIT_DIM:])
+        a_enc = self.a_enc(audio)
+        denoiser = partial(self.denoiser, a_enc, p)
+        def guide(x: X) -> X:
+            c = th.cat([ audio, x[:,HitSignals] ], dim=1)
+            score = self.critic(c, x[:,CursorSignals])
             full = th.full_like(x, th.inf)
-            full[:,HIT_DIM:] = score
+            full[:,CursorSignals] = score.type_as(full)
             return full
-        return self.diffusion.sample(denoiser, classifier, num_steps, z, **kwargs)
+        return self.diffusion.sample(denoiser, guide, num_steps, z, **kwargs)
 
 
 #
@@ -168,8 +169,7 @@ class Model(pl.LightningModule):
         th.cuda.empty_cache()
 
     def plot_sample(self, b: Batch):
-        a_tensor, _, hit_tensor, cursor_tensor = b
-        x_tensor = th.cat([hit_tensor, cursor_tensor], dim=1)
+        a_tensor, _, x_tensor = b
         
         a: Float[np.ndarray, "A L"] = a_tensor.squeeze(0).cpu().numpy()
 

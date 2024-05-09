@@ -13,14 +13,13 @@ from torch.utils.data import IterableDataset
 
 from .reclaim_memory import reclaim_memory
 from .load_audio import A_DIM
-from .beatmap.encode import CURSOR_DIM, HIT_DIM
+from .beatmap.encode import X_DIM
 
 
 class Batch(NamedTuple):
     audio: Float[Tensor, str(f"{A_DIM} L")]
     position: Int[Tensor, "L"]
-    hit: Float[Tensor, str(f"{HIT_DIM} L")]
-    cursor: Float[Tensor, str(f"{CURSOR_DIM} L")]
+    chart: Float[Tensor, str(f"{X_DIM} L")]
 
 
 class FullSequenceDataset(IterableDataset):
@@ -61,10 +60,9 @@ class FullSequenceDataset(IterableDataset):
         audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # [A,L]
         position = th.arange(audio.size(-1))
         with open(map_file, 'rb') as f:
-            hit = th.tensor(np.load(f)).float()
-            cursor = th.tensor(np.load(f)).float()
+            chart = th.tensor(np.load(f)).float()
             
-        yield Batch(audio,position,hit,cursor)
+        yield Batch(audio,position,chart)
         
         
 class SubsequenceDataset(FullSequenceDataset):
@@ -85,7 +83,7 @@ class SubsequenceDataset(FullSequenceDataset):
 
 
     def sample_stream(self, map_file, map_idx):
-        audio,position,hit,cursor = next(super().sample_stream(map_file, map_idx))
+        audio,position,chart = next(super().sample_stream(map_file, map_idx))
         L = audio.size(-1)
         if self.seq_len >= L:
             return
@@ -94,4 +92,4 @@ class SubsequenceDataset(FullSequenceDataset):
 
         for idx in th.randperm(L - self.seq_len)[:num_samples]:
             sl = ..., slice(idx,idx+self.seq_len)
-            yield Batch(audio=audio[sl], position=position[sl], hit=hit[sl], cursor=cursor[sl]) 
+            yield Batch(audio=audio[sl], position=position[sl], chart=chart[sl]) 

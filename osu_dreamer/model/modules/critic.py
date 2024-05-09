@@ -3,16 +3,17 @@ from dataclasses import dataclass
 
 from jaxtyping import Float
 
+import numpy as np
+
 import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
 from osu_dreamer.common.residual import ResStack
 
-from osu_dreamer.data.beatmap.encode import CURSOR_DIM, HIT_DIM
 
 CURSOR_FEATURES = 4
-def cursor_features(cursor: Float[Tensor, str(f"B {CURSOR_DIM} L")]) -> Float[Tensor, str(f"B {CURSOR_FEATURES} L")]:
+def cursor_features(cursor: Float[Tensor, "B X L"]) -> Float[Tensor, str(f"B {CURSOR_FEATURES} L")]:
     cursor_diff = F.pad(cursor[...,1:] - cursor[...,:-1], (1,0), mode='replicate')
     return th.cat([ cursor, cursor_diff ], dim=1)
 
@@ -25,27 +26,28 @@ class CriticArgs:
 class Critic(nn.Module):
     def __init__(
         self,
+        x_dim: int,
+        a_dim: int,
         args: CriticArgs,
     ):
         super().__init__()
 
         self.net = nn.Sequential(
-            nn.Conv1d(HIT_DIM + CURSOR_FEATURES, args.h_dim, 1),
+            nn.Conv1d(a_dim + CURSOR_FEATURES, args.h_dim, 1),
             ResStack(args.h_dim, [
                 nn.Sequential(
                     nn.ZeroPad1d((2**d,0)),
                     nn.Conv1d(args.h_dim, 2*args.h_dim, 2, dilation=2**d),
                     nn.GLU(dim=1),
                 )
-                for i in range(args.stack_depth)
-                for d in [i % args.wave_depth]
+                for d in np.arange(args.stack_depth) % args.wave_depth
             ]), # wave net
-            nn.Conv1d(args.h_dim, CURSOR_DIM, 1),
+            nn.Conv1d(args.h_dim, x_dim, 1),
         )
 
     def forward(
         self, 
-        hit: Float[Tensor, str(f"B {HIT_DIM} L")],
-        cursor: Float[Tensor, str(f"B {CURSOR_DIM} L")],
-    ) -> Float[Tensor, str(f"B {CURSOR_DIM} L")]:
-        return self.net(th.cat([hit, cursor_features(cursor)], dim=1))
+        audio: Float[Tensor, "B A L"],
+        cursor: Float[Tensor, "B X L"],
+    ) -> Float[Tensor, "B X L"]:
+        return self.net(th.cat([audio, cursor_features(cursor)], dim=1))
