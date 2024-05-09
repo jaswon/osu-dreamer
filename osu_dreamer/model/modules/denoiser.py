@@ -31,7 +31,7 @@ class DenoiserArgs:
     h_dim: int
     proj_dim: int
     unet_scales: list[int]
-    seq_depth: int
+    stack_depth: int
     ssm_args: S4Args
 
 class Denoiser(nn.Module):
@@ -68,7 +68,7 @@ class Denoiser(nn.Module):
             args.unet_scales,
             ResStack(args.h_dim, [
                 ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.ssm_args))
-                for _ in range(args.seq_depth)
+                for _ in range(args.stack_depth)
             ])
         )
         
