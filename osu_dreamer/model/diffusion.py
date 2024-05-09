@@ -6,6 +6,7 @@ import numpy as np
 
 import torch as th
 from torch import Tensor
+import torch.nn.functional as F
 
 from einops import repeat
 
@@ -56,14 +57,15 @@ class Diffusion:
     @th.no_grad()
     def sample(
         self, 
-        model: Model, 
+        denoiser: Model, 
+        guider: Callable[[X], X],
         num_steps: int,
         z: X,
         show_progress: bool = False,
 
         t_min: float = .002,
         t_max: float = 80.,
-        rho: float = 8.,
+        rho: float = 7.,
         S_churn: float = 10.,
         S_min: float = 0,
         S_max: float = float('inf'),
@@ -83,6 +85,18 @@ class Diffusion:
             from tqdm import tqdm
             loop = tqdm(loop, total=num_steps)
 
+        def compute_score(pred_x0, x, t):
+            """
+            https://arxiv.org/pdf/2011.13456.pdf#section.5
+            
+            score: ∇logp(xt|y,t) = ∇logp(xt|t) + ∇logp(y|xt)
+            """
+            pred_x0 = self.pred_x0(denoiser, pred_x0, x, t)
+            with th.enable_grad():
+                guider_score = F.logsigmoid(guider(pred_x0.requires_grad_())).mean()
+            guidance = th.autograd.grad(guider_score, pred_x0)[0]
+            return pred_x0, (pred_x0 - x) / t ** 2 - guidance
+
         pred_x0 = th.zeros_like(x_t)
         for t_cur, t_nxt in loop:
 
@@ -92,17 +106,14 @@ class Diffusion:
             x_hat = x_t + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * th.randn_like(x_t)
 
             # euler step
-            pred_x0 = self.pred_x0(model, pred_x0, x_hat, t_hat)
-            score = (pred_x0 - x_hat) / t_hat ** 2
-            # TODO: https://arxiv.org/pdf/2011.13456.pdf#section.5 - conditional generation
-            # score = ∇logp(xt|y,t) = ∇logp(xt|t) + ∇logp(y|xt)
+            pred_x0, score = compute_score(pred_x0, x_hat, t_hat)
             d_cur = -t_hat * score
             x_t = x_hat + (t_nxt - t_hat) * d_cur
 
             # 2nd order correction (Huen's method)
             if t_nxt[0,0,0] > 0:
-                pred_x0 = self.pred_x0(model, pred_x0, x_t, t_nxt)
-                d_prime = (x_t - pred_x0) / t_nxt
+                pred_x0, score = compute_score(pred_x0, x_t, t_nxt)
+                d_prime = -t_nxt * score
                 x_t = x_hat + (t_nxt - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
 
         return x_t

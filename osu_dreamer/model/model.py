@@ -8,6 +8,7 @@ import librosa
 
 import torch as th
 from torch import Tensor
+import torch.nn.functional as F
 
 from einops import repeat
 
@@ -23,10 +24,11 @@ from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import CURSOR_DIM, HIT_DIM
 
-from .diffusion import Diffusion
+from .diffusion import Diffusion, X
 
 from .modules.encoder import Encoder, EncoderArgs
 from .modules.denoiser import Denoiser, DenoiserArgs
+from .modules.critic import Critic, CriticArgs
     
     
 class Model(pl.LightningModule):
@@ -45,6 +47,7 @@ class Model(pl.LightningModule):
         # model hparams
         encoder_args: EncoderArgs,
         denoiser_args: DenoiserArgs,
+        critic_args: CriticArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -53,6 +56,7 @@ class Model(pl.LightningModule):
         self.diffusion = Diffusion(P_mean, P_std)
         self.a_enc = Encoder(A_DIM, encoder_args)
         self.denoiser = Denoiser(HIT_DIM+CURSOR_DIM, encoder_args.h_dim, denoiser_args)
+        self.critic = Critic(critic_args)
 
         # validation params
         self.val_steps = val_steps
@@ -79,10 +83,25 @@ class Model(pl.LightningModule):
 
         model = partial(self.denoiser, self.a_enc(audio), position)
         loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x)
-        x_hat = th.stack([ x_hat_uncond, x_hat_cond ], dim=0)
-        loss = (loss_weight * ( x_hat - x ) ** 2).mean()
+        x_hat = th.stack([ x_hat_uncond, x_hat_cond ], dim=0) # 2 B X L
+
+        # 1. diffusion loss
+        diffusion_loss = (loss_weight * ( x_hat - x ) ** 2).mean()
+
+        # 2. cursor critic loss
+        real_logits = self.critic(hit_sig, cursor_sig)
+        fake_logits = self.critic(x_hat_cond[:,:HIT_DIM].detach(), x_hat_cond[:,HIT_DIM:].detach())
+
+        # RaSGAN objective
+        real_score = real_logits - fake_logits.mean()
+        fake_score = fake_logits - real_logits.mean()
+        critic_loss = F.softplus(th.stack([-real_score, fake_score])).mean()
+
+        loss = diffusion_loss + critic_loss
 
         return {
+            'diffusion': diffusion_loss.detach(),
+            'critic': critic_loss.detach(),
             'loss': loss.detach(),
         }, loss
     
@@ -101,8 +120,14 @@ class Model(pl.LightningModule):
         num_steps = num_steps if num_steps > 0 else self.val_steps
 
         z = th.randn(num_samples, HIT_DIM + CURSOR_DIM, l, device=a.device)
-        model = partial(self.denoiser, self.a_enc(a), p)
-        return self.diffusion.sample(model, num_steps, z, **kwargs)
+        denoiser = partial(self.denoiser, self.a_enc(a), p)
+
+        def classifier(x: X) -> X:
+            score = self.critic(x[:,:HIT_DIM], x[:,HIT_DIM:])
+            full = th.full_like(x, th.inf)
+            full[:,HIT_DIM:] = score
+            return full
+        return self.diffusion.sample(denoiser, classifier, num_steps, z, **kwargs)
 
 
 #
