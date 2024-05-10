@@ -26,7 +26,6 @@ from osu_dreamer.data.beatmap.encode import CursorSignals, CURSOR_DIM, X_DIM
 
 from .diffusion import Diffusion
 
-from .modules.encoder import Encoder, EncoderArgs
 from .modules.denoiser import Denoiser, DenoiserArgs
 from .modules.critic import Critic, CriticArgs
     
@@ -48,7 +47,6 @@ class Model(pl.LightningModule):
         P_std: float,
 
         # model hparams
-        encoder_args: EncoderArgs,
         denoiser_args: DenoiserArgs,
         critic_args: CriticArgs,
     ):
@@ -58,8 +56,7 @@ class Model(pl.LightningModule):
 
         # model
         self.diffusion = Diffusion(P_mean, P_std)
-        self.a_enc = Encoder(A_DIM, encoder_args)
-        self.denoiser = Denoiser(X_DIM, encoder_args.h_dim, denoiser_args)
+        self.denoiser = Denoiser(X_DIM, A_DIM, denoiser_args)
         self.critic = Critic(CURSOR_DIM, critic_args)
 
         # validation params
@@ -88,7 +85,7 @@ class Model(pl.LightningModule):
         # augment cursor by random flips
         x_real[:,CursorSignals] *= th.where(th.rand_like(x_real[:,CursorSignals,:1]) < .5, 1, -1)
 
-        model = partial(self.denoiser, self.a_enc(audio), position)
+        model = partial(self.denoiser, self.denoiser.encoder(audio), position)
         loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x_real)
         x_fake = th.stack([ x_hat_uncond, x_hat_cond ], dim=0) # 2 B X L
 
@@ -131,7 +128,7 @@ class Model(pl.LightningModule):
 
         z = th.randn(num_samples, X_DIM, l, device=audio.device)
 
-        denoiser = partial(self.denoiser, self.a_enc(audio), p)
+        denoiser = partial(self.denoiser, self.denoiser.encoder(audio), p)
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
 
 
@@ -155,18 +152,8 @@ class Model(pl.LightningModule):
                 for opt_key, args in opt_args.items()
             ]
 
-        opt_critic = self.optimizer(get_param_groups(
-            self.critic.parameters(), 
-            self.critic_opt_args,
-        ))
-
-        opt_denoiser = self.optimizer(get_param_groups(
-            [
-                *self.a_enc.parameters(),
-                *self.denoiser.parameters(),
-            ], 
-            self.denoiser_opt_args,
-        ))
+        opt_critic   = self.optimizer(get_param_groups(  self.critic.parameters(), self.critic_opt_args))
+        opt_denoiser = self.optimizer(get_param_groups(self.denoiser.parameters(), self.denoiser_opt_args))
 
         return opt_critic, opt_denoiser 
 

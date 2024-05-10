@@ -59,13 +59,12 @@ model:
     P_std: 1.4
 
     # model hyperparameters
-
-    encoder_args:
-        h_dim: 32
-        unet_scales: [2,2]
-        stack_depth: 4
-
     denoiser_args:
+        encoder_args:
+            h_dim: 32
+            unet_scales: [2,2]
+            stack_depth: 4
+
         t_dim: 16
         h_dim: 64
         proj_dim: 256
