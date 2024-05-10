@@ -22,9 +22,9 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import CursorSignals, HitSignals, CURSOR_DIM, HIT_DIM, X_DIM
+from osu_dreamer.data.beatmap.encode import CursorSignals, CURSOR_DIM, X_DIM
 
-from .diffusion import Diffusion, X
+from .diffusion import Diffusion
 
 from .modules.encoder import Encoder, EncoderArgs
 from .modules.denoiser import Denoiser, DenoiserArgs
@@ -39,8 +39,11 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
+        accum_batches: int,                 # batches to accumulate
+        gen_adv_factor: float,              # adversarial loss scale factor
         optimizer: str,                     # optimizer
-        optimizer_args: dict[str, dict],    # optimizer args
+        denoiser_opt_args: dict[str, dict], # denoiser optimizer args
+        critic_opt_args: dict[str, dict],   # critic optimizer args
         P_mean: float,
         P_std: float,
 
@@ -51,6 +54,7 @@ class Model(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
+        self.automatic_optimization = False
 
         # model
         self.diffusion = Diffusion(P_mean, P_std)
@@ -62,45 +66,54 @@ class Model(pl.LightningModule):
         self.val_steps = val_steps
 
         # training params
+        self.accum_batches = accum_batches
+        self.gen_adv_factor = gen_adv_factor
         self.optimizer = getattr(th.optim, optimizer)
-        assert 'default' in optimizer_args, "`default` key for `optimizer_args` required"
-        self.optimizer_args = optimizer_args
+        assert 'default' in denoiser_opt_args, "`default` key for `denoiser_opt_args` required"
+        self.denoiser_opt_args = denoiser_opt_args
+        assert 'default' in critic_opt_args, "`default` key for `critic_opt_args` required"
+        self.critic_opt_args = critic_opt_args
+    
 
     def forward(
         self, 
         audio: Float[Tensor, str(f"B {A_DIM} L")],
         position: Int[Tensor, "B L"],
-        x: Float[Tensor, str(f"B {X_DIM} L")]
+        x_real: Float[Tensor, str(f"B {X_DIM} L")]
     ) -> tuple[
         dict[str, Tensor], # log dict
-        Float[Tensor, ""], # loss
+        Float[Tensor, ""], # denoiser loss
+        Float[Tensor, ""], # critic loss
     ]:
         # augment cursor by random flips
-        x[:,CursorSignals] *= th.where(th.rand_like(x[:,CursorSignals,:1]) < .5, 1, -1)
+        x_real[:,CursorSignals] *= th.where(th.rand_like(x_real[:,CursorSignals,:1]) < .5, 1, -1)
 
         model = partial(self.denoiser, self.a_enc(audio), position)
-        loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x)
-        x_hat = th.stack([ x_hat_uncond, x_hat_cond ], dim=0) # 2 B X L
+        loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x_real)
+        x_fake = th.stack([ x_hat_uncond, x_hat_cond ], dim=0) # 2 B X L
 
-        # 1. diffusion loss
-        diffusion_loss = (loss_weight * ( x_hat - x ) ** 2).mean()
+        # 1. diffusion (score matching objective) loss
+        diffusion_loss = (loss_weight * ( x_fake - x_real ) ** 2).mean()
 
-        # 2. cursor critic loss
-        real_logits = self.critic(x[:,CursorSignals])
-        fake_logits = self.critic(x_hat_cond[:,CursorSignals].detach())
-
-        # RaSGAN objective
+        # 2. adversarial (RaSGAN objective) loss
+        real_logits = self.critic(x_real[:,CursorSignals])
+        fake_logits = self.critic(x_hat_cond[:,CursorSignals])
+        
         real_score = real_logits - fake_logits.mean()
         fake_score = fake_logits - real_logits.mean()
-        critic_loss = F.softplus(th.stack([-real_score, fake_score])).mean()
 
-        loss = diffusion_loss + critic_loss
+        adv_denoiser_loss = F.softplus(th.stack([-fake_score, real_score])).mean()
+        adv_critic_loss   = F.softplus(th.stack([-real_score, fake_score])).mean()
 
+        denoiser_loss = diffusion_loss + adv_denoiser_loss * self.gen_adv_factor
+        critic_loss = adv_critic_loss
+        
         return {
-            'diffusion': diffusion_loss.detach(),
-            'critic': critic_loss.detach(),
-            'loss': loss.detach(),
-        }, loss
+            "denoiser/diffusion": diffusion_loss.detach(),
+            "denoiser/adversarial": adv_denoiser_loss.detach(),
+            "denoiser": denoiser_loss.detach(),
+            "critic": critic_loss.detach(),
+        }, denoiser_loss, critic_loss
     
     @th.no_grad()
     def sample(
@@ -119,12 +132,7 @@ class Model(pl.LightningModule):
         z = th.randn(num_samples, X_DIM, l, device=audio.device)
 
         denoiser = partial(self.denoiser, self.a_enc(audio), p)
-        def guide(x: X) -> X:
-            score = self.critic(x[:,CursorSignals])
-            full = th.full_like(x, th.inf)
-            full[:,CursorSignals] = score.type_as(full)
-            return full
-        return self.diffusion.sample(denoiser, guide, num_steps, z, **kwargs)
+        return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
 
 
 #
@@ -137,32 +145,59 @@ class Model(pl.LightningModule):
 
     def configure_optimizers(self):
 
-        params = { opt_key: [] for opt_key in self.optimizer_args }
-        for p in self.parameters():
-            opt_key = getattr(p, 'opt_key', 'default')
-            params.get(opt_key, params['default']).append(p)
+        def get_param_groups(all_params, opt_args):
+            params = { opt_key: [] for opt_key in opt_args }
+            for p in all_params:
+                opt_key = getattr(p, 'opt_key', 'default')
+                params.get(opt_key, params['default']).append(p)
+            return [
+                { 'params': params[opt_key], **args }
+                for opt_key, args in opt_args.items()
+            ]
 
-        opt = self.optimizer([
-            { 'params': params[opt_key], **args }
-            for opt_key, args in self.optimizer_args.items()
-        ])
+        opt_critic = self.optimizer(get_param_groups(
+            self.critic.parameters(), 
+            self.critic_opt_args,
+        ))
 
-        return opt
+        opt_denoiser = self.optimizer(get_param_groups(
+            [
+                *self.a_enc.parameters(),
+                *self.denoiser.parameters(),
+            ], 
+            self.denoiser_opt_args,
+        ))
+
+        return opt_critic, opt_denoiser 
 
     def training_step(self, batch: Batch, batch_idx):
-        log_dict, loss = self(*batch)
+        opt_critic, opt_denoiser = self.optimizers() # type: ignore
+        
+        self.denoiser.requires_grad_(True)
+        self.critic.requires_grad_(True)
+        log_dict, denoiser_loss, critic_loss = self(*batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
-        return loss
+
+        self.critic.requires_grad_(False)
+        self.manual_backward(denoiser_loss / self.accum_batches, retain_graph=True)
+
+        self.critic.requires_grad_(True)
+        self.denoiser.requires_grad_(False)
+        self.manual_backward(critic_loss / self.accum_batches)
+
+        if (batch_idx + 1) % self.accum_batches == 0:
+            opt_critic.step()
+            opt_denoiser.step()
+            opt_critic.zero_grad()
+            opt_denoiser.zero_grad()
 
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():
-            log_dict, _ = self(*batch)
+            log_dict, *_ = self(*batch)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0 and USE_MATPLOTLIB:
             self.plot_sample(batch)
-
-        th.cuda.empty_cache()
 
     def plot_sample(self, b: Batch):
         a_tensor, _, x_tensor = b

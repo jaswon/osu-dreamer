@@ -8,19 +8,6 @@ trainer:
     # number of epochs to run for. `-1` means run forever (until you interrupt manually)
     max_epochs: -1
     
-    # number of training steps per model update. 
-    accumulate_grad_batches: 2
-    
-    callbacks:
-        - 
-            class_path: pytorch_lightning.callbacks.EarlyStopping
-            init_args:
-                monitor: val/loss
-                mode: min
-                patience: 100
-
-        - class_path: pytorch_lightning.callbacks.LearningRateMonitor
-    
     devices: 1
     precision: 16-mixed
     
@@ -54,8 +41,13 @@ model:
     val_steps: 32
 
     # training parameters
+    accum_batches: 2
+    gen_adv_factor: .01
     optimizer: RAdam
-    optimizer_args:
+    critic_opt_args:
+        default:
+            lr: .0001
+    denoiser_opt_args:
         default:
             lr: .0001
         s4:

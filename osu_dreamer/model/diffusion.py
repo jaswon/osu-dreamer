@@ -1,4 +1,5 @@
 
+from typing import Optional
 from collections.abc import Callable
 from jaxtyping import Float
 
@@ -58,7 +59,7 @@ class Diffusion:
     def sample(
         self, 
         denoiser: Model, 
-        guide: Callable[[X], X],
+        guide: Optional[Callable[[X], X]],
         num_steps: int,
         z: X,
         show_progress: bool = False,
@@ -92,9 +93,12 @@ class Diffusion:
             score: ∇logp(xt|y,t) = ∇logp(xt|t) + ∇logp(y|xt)
             """
             pred_x0 = self.pred_x0(denoiser, pred_x0, x, t)
-            with th.enable_grad():
-                guide_score = F.logsigmoid(guide(pred_x0.requires_grad_())).mean()
-            guidance = th.autograd.grad(guide_score, pred_x0)[0]
+            if guide is not None:
+                with th.enable_grad():
+                    guide_score = F.logsigmoid(guide(pred_x0.requires_grad_())).mean()
+                guidance = th.autograd.grad(guide_score, pred_x0)[0]
+            else:
+                guidance = 0
             return pred_x0, (pred_x0 - x) / t ** 2 - guidance
 
         pred_x0 = th.zeros_like(x_t)
