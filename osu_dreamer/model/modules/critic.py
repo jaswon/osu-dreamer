@@ -44,6 +44,10 @@ class Critic(nn.Module):
             nn.Conv1d(args.h_dim, x_dim, 1),
         )
 
+        for m in self.modules():
+            if isinstance(m, th.nn.modules.conv._ConvNd):
+                th.nn.utils.spectral_norm(m)
+
     def forward(
         self, 
         cursor: Float[Tensor, "B X L"],
