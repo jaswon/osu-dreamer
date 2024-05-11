@@ -51,7 +51,7 @@ class DenoiserArgs:
     encoder_args: EncoderArgs
     t_dim: int
     h_dim: int
-    proj_dim: int
+    mlp_depth: int
     unet_scales: list[int]
     stack_depth: int
     ssm_args: S4Args
@@ -78,14 +78,16 @@ class Denoiser(nn.Module):
         )
 
         in_dim = args.encoder_args.h_dim + x_dim + x_dim
-        self.proj_in_1 = ScaleShift(in_dim, args.t_dim, nn.Sequential(
-            nn.Conv1d(in_dim, args.proj_dim, 1),
-            nn.GroupNorm(1, args.proj_dim),
-        ))
-        self.proj_in_2 = ScaleShift(args.proj_dim, args.t_dim, nn.Sequential(
-            nn.SiLU(),
-            nn.Conv1d(args.proj_dim, args.h_dim, 1),
-        ))
+        self.proj_in = nn.Conv1d(in_dim, args.h_dim, 1)
+
+        self.mlp = ResStack(args.h_dim, [
+            ScaleShift(args.h_dim, args.t_dim, nn.Sequential(
+                nn.Conv1d(args.h_dim, args.h_dim, 1),
+                nn.GroupNorm(1, args.h_dim),
+                nn.SiLU(),
+            ))
+            for _ in range(args.mlp_depth)
+        ])
 
         self.net = UNet(
             args.h_dim,
@@ -109,8 +111,7 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],
     ) -> Float[Tensor, "B X L"]:
         t = self.proj_t(t)
-        h = th.cat([a, x, y], dim=1)
-        h = self.proj_in_1(h, t)
-        h = self.proj_in_2(h, t)
+        h = self.proj_in(th.cat([a, x, y], dim=1))
+        h = self.mlp(h, t)
         o = self.net(h, t)
         return self.proj_out(o)
