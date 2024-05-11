@@ -11,9 +11,12 @@ import torch.nn.functional as F
 
 from osu_dreamer.common.residual import ResStack
 
+from osu_dreamer.data.beatmap.encode import CursorSignals
 
-CURSOR_FEATURES = 4
-def cursor_features(cursor: Float[Tensor, "B X L"]) -> Float[Tensor, str(f"B {CURSOR_FEATURES} L")]:
+
+CRITIC_FEATURES = 4
+def cursor_features(x: Float[Tensor, "B X L"]) -> Float[Tensor, str(f"B {CRITIC_FEATURES} L")]:
+    cursor = x[:,CursorSignals]
     cursor_diff = F.pad(cursor[...,1:] - cursor[...,:-1], (1,0), mode='replicate')
     return th.cat([ cursor, cursor_diff ], dim=1)
 
@@ -32,7 +35,7 @@ class Critic(nn.Module):
         super().__init__()
 
         self.net = nn.Sequential(
-            nn.Conv1d(CURSOR_FEATURES, args.h_dim, 1),
+            nn.Conv1d(CRITIC_FEATURES, args.h_dim, 1),
             ResStack(args.h_dim, [
                 nn.Sequential(
                     nn.ZeroPad1d((2**d,0)),

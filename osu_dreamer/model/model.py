@@ -57,7 +57,7 @@ class Model(pl.LightningModule):
         # model
         self.diffusion = Diffusion(P_mean, P_std)
         self.denoiser = Denoiser(X_DIM, A_DIM, denoiser_args)
-        self.critic = Critic(CURSOR_DIM, critic_args)
+        self.critic = Critic(X_DIM, critic_args)
 
         # validation params
         self.val_steps = val_steps
@@ -93,8 +93,8 @@ class Model(pl.LightningModule):
         diffusion_loss = (loss_weight * ( x_fake - x_real ) ** 2).mean()
 
         # 2. adversarial (RaSGAN objective) loss
-        real_logits = self.critic(x_real[:,CursorSignals])
-        fake_logits = self.critic(x_hat_cond[:,CursorSignals])
+        real_logits = self.critic(x_real)
+        fake_logits = self.critic(x_hat_cond)
         
         real_score = real_logits - fake_logits.mean()
         fake_score = fake_logits - real_logits.mean()
