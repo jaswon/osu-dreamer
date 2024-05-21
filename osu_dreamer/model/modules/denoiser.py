@@ -81,11 +81,7 @@ class Denoiser(nn.Module):
         self.proj_in = nn.Conv1d(in_dim, args.h_dim, 1)
 
         self.mlp = ResStack(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, nn.Sequential(
-                nn.Conv1d(args.h_dim, args.h_dim, 1),
-                nn.GroupNorm(1, args.h_dim),
-                nn.SiLU(),
-            ))
+            ScaleShift(args.h_dim, args.t_dim, nn.SiLU())
             for _ in range(args.mlp_depth)
         ])
 
@@ -93,7 +89,7 @@ class Denoiser(nn.Module):
             args.h_dim,
             args.unet_scales,
             ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.ssm_args))
+                S4Block(args.h_dim, args.ssm_args)
                 for _ in range(args.stack_depth)
             ])
         )
@@ -113,5 +109,5 @@ class Denoiser(nn.Module):
         t = self.proj_t(t)
         h = self.proj_in(th.cat([a, x, y], dim=1))
         h = self.mlp(h, t)
-        o = self.net(h, t)
+        o = self.net(h)
         return self.proj_out(o)
