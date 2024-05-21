@@ -23,10 +23,10 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .5
+    subseq_density: .25
     
     # size of training batch
-    batch_size: 16
+    batch_size: 8
     
     # number of workers to use for data loading
     num_workers: 6
@@ -41,15 +41,16 @@ model:
     val_steps: 32
 
     # training parameters
-    accum_batches: 2
+    accum_batches: 4
     gen_adv_factor: .01
-    optimizer: RAdam
+    r1_gamma: 10.
+    optimizer: RMSprop
     critic_opt_args:
         default:
             lr: .0001
     denoiser_opt_args:
         default:
-            lr: .0001
+            lr: .00006
         s4:
             lr: .00001
             weight_decay: 0.
@@ -59,15 +60,15 @@ model:
     # model hyperparameters
     denoiser_args:
         encoder_args:
-            h_dim: 32
-            unet_scales: [2,2]
-            stack_depth: 4
+            h_dim: 64
+            unet_scales: [4,4]
+            stack_depth: 8
 
-        t_dim: 16
-        h_dim: 64
-        mlp_depth: 3
+        t_dim: 128
+        h_dim: 128
 
-        unet_scales: [3,3,3]
+        mlp_depth: 8
+        unet_scales: [4,4]
         stack_depth: 16
 
     critic_args:

@@ -47,6 +47,9 @@ class Critic(nn.Module):
             nn.Conv1d(args.h_dim, x_dim, 1),
         )
 
+        # receptive field
+        self.rf = 1 + (2**args.wave_depth-1)*(args.stack_depth // args.wave_depth)
+
         for m in self.modules():
             if isinstance(m, th.nn.modules.conv._ConvNd):
                 th.nn.utils.spectral_norm(m)

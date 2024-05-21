@@ -10,7 +10,7 @@ import torch as th
 from torch import Tensor
 import torch.nn.functional as F
 
-from einops import repeat
+from einops import repeat, rearrange
 
 try:
     import matplotlib.pyplot as plt
@@ -40,6 +40,7 @@ class Model(pl.LightningModule):
         # training parameters
         accum_batches: int,                 # batches to accumulate
         gen_adv_factor: float,              # adversarial loss scale factor
+        r1_gamma: float,                    # R1 regularization factor
         optimizer: str,                     # optimizer
         denoiser_opt_args: dict[str, dict], # denoiser optimizer args
         critic_opt_args: dict[str, dict],   # critic optimizer args
@@ -65,6 +66,7 @@ class Model(pl.LightningModule):
         # training params
         self.accum_batches = accum_batches
         self.gen_adv_factor = gen_adv_factor
+        self.r1_gamma = r1_gamma
         self.optimizer = getattr(th.optim, optimizer)
         assert 'default' in denoiser_opt_args, "`default` key for `denoiser_opt_args` required"
         self.denoiser_opt_args = denoiser_opt_args
@@ -93,22 +95,27 @@ class Model(pl.LightningModule):
         diffusion_loss = (loss_weight * ( x_fake - x_real ) ** 2).mean()
 
         # 2. adversarial (RaSGAN objective) loss
-        real_logits = self.critic(x_real)
         fake_logits = self.critic(x_hat_cond)
-        
-        real_score = real_logits - fake_logits.mean()
-        fake_score = fake_logits - real_logits.mean()
+        r1_L = (x_real.size(-1) // self.critic.rf) * self.critic.rf
+        with th.enable_grad():
+            r1_real = x_real[:,:,:r1_L].requires_grad_()
+            real_logits = self.critic(r1_real)
+            real_grad = th.autograd.grad(real_logits[:,:,::self.critic.rf].sum(), r1_real, create_graph=True)[0]
+        real_grad_norm = rearrange(real_grad.pow(2), 'b x (f l) -> b (x f) l', f = self.critic.rf).sum(1)
+        r1_gp = self.r1_gamma * .5 * real_grad_norm.mean()
 
-        adv_denoiser_loss = F.softplus(th.stack([-fake_score, real_score])).mean()
-        adv_critic_loss   = F.softplus(th.stack([-real_score, fake_score])).mean()
+        adv_denoiser_loss = F.softplus(fake_logits - real_logits.mean()).mean()
+        adv_critic_loss   = F.softplus(real_logits - fake_logits.mean()).mean()
 
         denoiser_loss = diffusion_loss + adv_denoiser_loss * self.gen_adv_factor
-        critic_loss = adv_critic_loss
+        critic_loss = adv_critic_loss + r1_gp
         
         return {
             "denoiser/diffusion": diffusion_loss.detach(),
             "denoiser/adversarial": adv_denoiser_loss.detach(),
             "denoiser": denoiser_loss.detach(),
+            "critic/adversarial": adv_critic_loss.detach(),
+            "critic/grad_penalty": r1_gp.detach(),
             "critic": critic_loss.detach(),
         }, denoiser_loss, critic_loss
     
