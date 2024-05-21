@@ -1,7 +1,6 @@
 
 from jaxtyping import Float
 
-import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
@@ -32,31 +31,27 @@ class UNet(nn.Module):
 
         self.chunk_size = 1
 
-        self.split = nn.ModuleList()
+        self.pre = nn.ModuleList()
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
-        self.join = nn.ModuleList()
+        self.post = nn.ModuleList()
+
+        block = lambda: nn.Sequential(
+            nn.Conv1d(dim, 2*dim, 1),
+            nn.GroupNorm(1, 2*dim),
+            nn.SiLU(),
+            Filter1D(2*dim, 1, transpose=False),
+            nn.Conv1d(2*dim, dim, 1),
+        )
 
         for scale in scales:
             self.chunk_size *= scale
 
-            self.split.append(nn.Sequential(
-                nn.Conv1d(dim, dim, 5,1,2, groups=dim),
-                nn.Conv1d(dim, 2*dim, 1),
-                nn.GroupNorm(1, 2*dim),
-                nn.SiLU(),
-                nn.Conv1d(2*dim, 2*dim, 1),
-            ))
+            self.pre.append(block())
             self.down.append(Filter1D(dim, scale, transpose=False))
 
             self.up.insert(0, Filter1D(dim, scale, transpose=True))
-            self.join.insert(0, nn.Sequential(
-                nn.Conv1d(2*dim, 2*dim, 5,1,2, groups=2*dim),
-                nn.Conv1d(2*dim, dim, 1),
-                nn.GroupNorm(1, dim),
-                nn.SiLU(),
-                nn.Conv1d(dim, dim, 1),
-            ))
+            self.post.insert(0, block())
 
     def forward(
         self,
@@ -68,16 +63,16 @@ class UNet(nn.Module):
 
         hs = []
 
-        for split, down in zip(self.split, self.down):
-            x, h = split(x).chunk(2, dim=1)
+        for pre, down in zip(self.pre, self.down):
+            h = pre(x)
             hs.append(h)
-            x = down(x)
+            x = down(x-h)
 
         x = self.middle(x, *args, **kwargs)
 
-        for up, join in zip(self.up, self.join):
+        for up, post in zip(self.up, self.post):
             x = up(x)
             h = hs.pop()
-            x = join(th.cat([h, x], dim=1))
+            x = post(x+h)
 
         return unpad(x, p)
