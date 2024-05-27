@@ -34,6 +34,10 @@ class Critic(nn.Module):
     ):
         super().__init__()
 
+        proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
+        th.nn.init.zeros_(proj_out.weight)
+        th.nn.init.zeros_(proj_out.bias) # type: ignore
+
         self.net = nn.Sequential(
             nn.Conv1d(CRITIC_FEATURES, args.h_dim, 1),
             ResStack(args.h_dim, [
@@ -44,7 +48,7 @@ class Critic(nn.Module):
                 )
                 for d in np.arange(args.stack_depth) % args.wave_depth
             ]), # wave net
-            nn.Conv1d(args.h_dim, x_dim, 1),
+            proj_out,
         )
 
         # receptive field
