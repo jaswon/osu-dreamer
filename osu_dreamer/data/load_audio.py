@@ -8,33 +8,36 @@ import numpy as np
 import librosa
 
 # audio processing constants
-N_FFT = 2048
 SR = 22000
-MS_PER_FRAME = 4
+MS_PER_FRAME = 8
 HOP_LEN = (SR // 1000) * MS_PER_FRAME
-N_MELS = 64
 
-A_DIM = 32
+N_OCTAVES = 8
+OCTAVE_BINS = 12
+A_DIM = N_OCTAVES * OCTAVE_BINS
 
 FrameTimes = Float[np.ndarray, "L"]
 
 def get_frame_times(spec) -> FrameTimes:
     return librosa.frames_to_time(
         np.arange(spec.shape[-1]),
-        sr=SR, hop_length=HOP_LEN, n_fft=N_FFT,
+        sr=SR, hop_length=HOP_LEN,
     ) * 1000
+
+eps = 1e-10
+fmin = librosa.note_to_hz('C0')
 
 def load_audio(audio_file):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         wave, _ = librosa.load(audio_file, sr=SR, res_type='polyphase')
 
-    # compute spectrogram
-    return librosa.feature.mfcc(
+    # compute time-frequency representation
+    return np.log(eps + np.abs(librosa.vqt(
         y=wave,
         sr=SR,
-        n_mfcc=A_DIM,
-        n_fft=N_FFT,
         hop_length=HOP_LEN,
-        n_mels=N_MELS,
-    )
+        fmin=fmin,
+        n_bins=A_DIM,
+        bins_per_octave=OCTAVE_BINS,
+    )))
