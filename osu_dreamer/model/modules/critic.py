@@ -14,11 +14,11 @@ from osu_dreamer.common.residual import ResStack
 from osu_dreamer.data.beatmap.encode import CursorSignals
 
 
-CRITIC_FEATURES = 4
+CRITIC_FEATURES = 8
 def cursor_features(x: Float[Tensor, "B X L"]) -> Float[Tensor, str(f"B {CRITIC_FEATURES} L")]:
     cursor = x[:,CursorSignals]
     cursor_diff = F.pad(cursor[...,1:] - cursor[...,:-1], (1,0), mode='replicate')
-    return th.cat([ cursor, cursor_diff ], dim=1)
+    return th.cat([ x, cursor_diff ], dim=1)
 
 @dataclass
 class CriticArgs:
