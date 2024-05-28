@@ -43,7 +43,7 @@ class Diffusion:
         pred_x0 = c_skip * x_t + c_out * model(y, c_in * x_t, c_noise)
         return pred_x0.clamp(min=-1, max=1)
 
-    def sample_denoised(self, model: Model, x0: X) -> tuple[T,X,X]:
+    def sample_denoised(self, model: Model, x0: X) -> tuple[Float[Tensor, ""],X]:
         """sample denoised predictions of training data for denoising score matching objective"""
 
         t = self.sample_t(x0.size(0),1,1).to(x0.device)
@@ -52,8 +52,11 @@ class Diffusion:
 
         x0_hat_uncond = self.pred_x0(model, th.zeros_like(x0), x_t, t)
         x0_hat_cond = self.pred_x0(model, x0_hat_uncond.detach(), x_t, t)
+        x0_hat = th.stack([ x0_hat_uncond, x0_hat_cond ], dim=0)
 
-        return loss_weight, x0_hat_uncond, x0_hat_cond
+        diffusion_loss = (loss_weight * ( x0_hat - x0 ) ** 2).mean()
+
+        return diffusion_loss, x0_hat_cond
     
     @th.no_grad()
     def sample(

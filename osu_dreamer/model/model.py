@@ -88,14 +88,12 @@ class Model(pl.LightningModule):
         x_real[:,CursorSignals] *= th.where(th.rand_like(x_real[:,CursorSignals,:1]) < .5, 1, -1)
 
         model = partial(self.denoiser, self.denoiser.encoder(audio), position)
-        loss_weight, x_hat_uncond, x_hat_cond = self.diffusion.sample_denoised(model, x_real)
-        x_fake = th.stack([ x_hat_uncond, x_hat_cond ], dim=0) # 2 B X L
 
         # 1. diffusion (score matching objective) loss
-        diffusion_loss = (loss_weight * ( x_fake - x_real ) ** 2).mean()
+        diffusion_loss, x_fake = self.diffusion.sample_denoised(model, x_real)
 
         # 2. adversarial (RaSGAN objective) loss
-        fake_logits = self.critic(x_hat_cond)
+        fake_logits = self.critic(x_fake)
         r1_L = (x_real.size(-1) // self.critic.rf) * self.critic.rf
         with th.enable_grad():
             r1_real = x_real[:,:,:r1_L].requires_grad_()
