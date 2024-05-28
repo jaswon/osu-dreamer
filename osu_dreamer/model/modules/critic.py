@@ -9,6 +9,8 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+from einops import rearrange
+
 from osu_dreamer.common.residual import ResStack
 
 from osu_dreamer.data.beatmap.encode import CursorSignals
@@ -53,6 +55,13 @@ class Critic(nn.Module):
 
         # receptive field
         self.rf = 1 + (2**args.wave_depth-1)*(args.stack_depth // args.wave_depth)
+
+    def grad_norm(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, ""]:
+        L = (x.size(-1) // self.rf) * self.rf
+        x = x[:,:,:L].requires_grad_()
+        grad = th.autograd.grad(self(x)[:,:,::self.rf].sum(), x, create_graph=True)[0]
+        grad_norm = rearrange(grad.pow(2), 'b x (f l) -> b (x f) l', f = self.rf).sum(1)
+        return grad_norm.mean()
 
     def forward(
         self, 

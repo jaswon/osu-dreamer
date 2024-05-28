@@ -41,7 +41,6 @@ model:
     val_steps: 32
 
     # training parameters
-    accum_batches: 2
     gen_adv_factor: .01
     r1_gamma: 10.
     optimizer: RMSprop

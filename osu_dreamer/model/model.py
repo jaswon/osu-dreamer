@@ -38,7 +38,6 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
-        accum_batches: int,                 # batches to accumulate
         gen_adv_factor: float,              # adversarial loss scale factor
         r1_gamma: float,                    # R1 regularization factor
         optimizer: str,                     # optimizer
@@ -64,7 +63,6 @@ class Model(pl.LightningModule):
         self.val_steps = val_steps
 
         # training params
-        self.accum_batches = accum_batches
         self.gen_adv_factor = gen_adv_factor
         self.r1_gamma = r1_gamma
         self.optimizer = getattr(th.optim, optimizer)
@@ -74,48 +72,7 @@ class Model(pl.LightningModule):
         self.critic_opt_args = critic_opt_args
     
 
-    def forward(
-        self, 
-        audio: Float[Tensor, str(f"B {A_DIM} L")],
-        position: Int[Tensor, "B L"],
-        x_real: Float[Tensor, str(f"B {X_DIM} L")]
-    ) -> tuple[
-        dict[str, Tensor], # log dict
-        Float[Tensor, ""], # denoiser loss
-        Float[Tensor, ""], # critic loss
-    ]:
-        # augment cursor by random flips
-        x_real[:,CursorSignals] *= th.where(th.rand_like(x_real[:,CursorSignals,:1]) < .5, 1, -1)
-
-        model = partial(self.denoiser, self.denoiser.encoder(audio), position)
-
-        # 1. diffusion (score matching objective) loss
-        diffusion_loss, x_fake = self.diffusion.sample_denoised(model, x_real)
-
-        # 2. adversarial (RaSGAN objective) loss
-        fake_logits = self.critic(x_fake)
-        r1_L = (x_real.size(-1) // self.critic.rf) * self.critic.rf
-        with th.enable_grad():
-            r1_real = x_real[:,:,:r1_L].requires_grad_()
-            real_logits = self.critic(r1_real)
-            real_grad = th.autograd.grad(real_logits[:,:,::self.critic.rf].sum(), r1_real, create_graph=True)[0]
-        real_grad_norm = rearrange(real_grad.pow(2), 'b x (f l) -> b (x f) l', f = self.critic.rf).sum(1)
-        r1_gp = self.r1_gamma * .5 * real_grad_norm.mean()
-
-        adv_denoiser_loss = F.softplus(fake_logits - real_logits.mean()).mean()
-        adv_critic_loss   = F.softplus(real_logits - fake_logits.mean()).mean()
-
-        denoiser_loss = diffusion_loss + adv_denoiser_loss * self.gen_adv_factor
-        critic_loss = adv_critic_loss + r1_gp
-        
-        return {
-            "denoiser/diffusion": diffusion_loss.detach(),
-            "denoiser/adversarial": adv_denoiser_loss.detach(),
-            "denoiser": denoiser_loss.detach(),
-            "critic/adversarial": adv_critic_loss.detach(),
-            "critic/grad_penalty": r1_gp.detach(),
-            "critic": critic_loss.detach(),
-        }, denoiser_loss, critic_loss
+    def forward(self): pass
     
     @th.no_grad()
     def sample(
@@ -163,30 +120,54 @@ class Model(pl.LightningModule):
         return opt_critic, opt_denoiser 
 
     def training_step(self, batch: Batch, batch_idx):
+        audio, position, x_real = batch
         opt_critic, opt_denoiser = self.optimizers() # type: ignore
-        
-        self.denoiser.requires_grad_(True)
-        self.critic.requires_grad_(True)
-        log_dict, denoiser_loss, critic_loss = self(*batch)
-        self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
+        is_critic_step = batch_idx % 2 == 0
 
-        self.critic.requires_grad_(False)
-        self.manual_backward(denoiser_loss / self.accum_batches, retain_graph=True)
+        # augment cursor by random flips
+        x_real[:,CursorSignals] *= th.where(th.rand_like(x_real[:,CursorSignals,:1]) < .5, 1, -1)
 
-        self.critic.requires_grad_(True)
-        self.denoiser.requires_grad_(False)
-        self.manual_backward(critic_loss / self.accum_batches)
+        if is_critic_step:
+            self.denoiser.requires_grad_(False)
+            self.critic.requires_grad_(True)
+        else:
+            self.denoiser.requires_grad_(True)
+            self.critic.requires_grad_(False)
 
-        if (batch_idx + 1) % self.accum_batches == 0:
+        model = partial(self.denoiser, self.denoiser.encoder(audio), position)
+        diffusion_loss, x_fake = self.diffusion.sample_denoised(model, x_real)
+        self.log('train/denoiser/diffusion', diffusion_loss.detach())
+        fake_logits = self.critic(x_fake)
+        real_logits = self.critic(x_real)
+
+        if is_critic_step:
+            # critic step
+            adv_loss = F.softplus(real_logits - fake_logits.mean()).mean()
+            self.log('train/critic/adversarial', adv_loss.detach())
+
+            # R1 gradient penalty
+            r1_gp = self.r1_gamma * .5 * self.critic.grad_norm(x_real)
+            self.log('train/critic/grad_penalty', r1_gp.detach())
+
+            self.manual_backward(adv_loss + r1_gp)
             opt_critic.step()
-            opt_denoiser.step()
             opt_critic.zero_grad()
+        else:
+            # generator step
+            adv_loss = F.softplus(fake_logits - real_logits.mean()).mean()
+            self.log('train/denoiser/adversarial', adv_loss.detach())
+
+            self.manual_backward(diffusion_loss + adv_loss * self.gen_adv_factor)
+            opt_denoiser.step()
             opt_denoiser.zero_grad()
+ 
 
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
-        with th.no_grad():
-            log_dict, *_ = self(*batch)
-        self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
+        audio, position, x_real = batch
+
+        model = partial(self.denoiser, self.denoiser.encoder(audio), position)
+        diffusion_loss, _ = self.diffusion.sample_denoised(model, x_real)
+        self.log("val/denoiser/diffusion", diffusion_loss)
 
         if batch_idx == 0 and USE_MATPLOTLIB:
             self.plot_sample(batch)
