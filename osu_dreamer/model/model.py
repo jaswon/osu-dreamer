@@ -137,12 +137,16 @@ class Model(pl.LightningModule):
         model = partial(self.denoiser, self.denoiser.encoder(audio), position)
         diffusion_loss, x_fake = self.diffusion.sample_denoised(model, x_real)
         self.log('train/denoiser/diffusion', diffusion_loss.detach())
+
+        # Relativistic average Discriminator
         fake_logits = self.critic(x_fake)
         real_logits = self.critic(x_real)
+        ra_r = real_logits - fake_logits.mean()
+        ra_f = fake_logits - real_logits.mean()
 
         if is_critic_step:
             # critic step
-            adv_loss = F.softplus(real_logits - fake_logits.mean()).mean()
+            adv_loss = .5 * (F.softplus(-ra_r).mean() + F.softplus(ra_f).mean())
             self.log('train/critic/adversarial', adv_loss.detach())
 
             # R1 gradient penalty
@@ -154,7 +158,7 @@ class Model(pl.LightningModule):
             opt_critic.zero_grad()
         else:
             # generator step
-            adv_loss = F.softplus(fake_logits - real_logits.mean()).mean()
+            adv_loss = .5 * (F.softplus(-ra_f).mean() + F.softplus(ra_r).mean())
             self.log('train/denoiser/adversarial', adv_loss.detach())
 
             self.manual_backward(diffusion_loss + adv_loss * self.gen_adv_factor)
