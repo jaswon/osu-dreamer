@@ -41,6 +41,7 @@ class Model(pl.LightningModule):
         gen_adv_factor: float,              # adversarial loss scale factor
         r1_gamma: float,                    # R1 regularization factor
         optimizer: str,                     # optimizer
+        opt_args: dict,                     # default optimizer args
         denoiser_opt_args: dict[str, dict], # denoiser optimizer args
         critic_opt_args: dict[str, dict],   # critic optimizer args
         P_mean: float,
@@ -66,6 +67,7 @@ class Model(pl.LightningModule):
         self.gen_adv_factor = gen_adv_factor
         self.r1_gamma = r1_gamma
         self.optimizer = getattr(th.optim, optimizer)
+        self.opt_args = opt_args
         assert 'default' in denoiser_opt_args, "`default` key for `denoiser_opt_args` required"
         self.denoiser_opt_args = denoiser_opt_args
         assert 'default' in critic_opt_args, "`default` key for `critic_opt_args` required"
@@ -114,8 +116,8 @@ class Model(pl.LightningModule):
                 for opt_key, args in opt_args.items()
             ]
 
-        opt_critic   = self.optimizer(get_param_groups(  self.critic.parameters(), self.critic_opt_args))
-        opt_denoiser = self.optimizer(get_param_groups(self.denoiser.parameters(), self.denoiser_opt_args))
+        opt_critic   = self.optimizer(get_param_groups(  self.critic.parameters(), self.critic_opt_args), **self.opt_args)
+        opt_denoiser = self.optimizer(get_param_groups(self.denoiser.parameters(), self.denoiser_opt_args), **self.opt_args)
 
         return opt_critic, opt_denoiser 
 

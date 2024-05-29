@@ -43,7 +43,9 @@ model:
     # training parameters
     gen_adv_factor: .01
     r1_gamma: 10.
-    optimizer: RMSprop
+    optimizer: AdamW
+    opt_args:
+        betas: [.5, .999]
     critic_opt_args:
         default:
             lr: .0002
