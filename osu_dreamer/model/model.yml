@@ -10,9 +10,17 @@ trainer:
     
     devices: 1
     precision: 16-mixed
-    
-    logger: true
+
     enable_checkpointing: true
+    callbacks:
+        - # keep the best performing checkpoint
+            class_path: pytorch_lightning.callbacks.ModelCheckpoint
+            init_args:
+                monitor: val/denoiser/diffusion
+                mode: min
+                save_top_k: 1
+
+    logger: true
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
