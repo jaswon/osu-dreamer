@@ -31,7 +31,7 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .25
+    subseq_density: .5
     
     # size of training batch
     batch_size: 16
@@ -50,7 +50,7 @@ model:
 
     # training parameters
     gen_adv_factor: .01
-    r1_gamma: 10.
+    r1_gamma: 100.
     optimizer: AdamW
     opt_args:
         betas: [.5, .999]
