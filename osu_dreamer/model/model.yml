@@ -83,6 +83,10 @@ model:
         stack_depth: 20
 
     critic_args:
+        audio_h_dim: 8
+        audio_num_stacks: 3
+        audio_stack_depth: 3
+
         h_dim: 64
-        stack_depth: 12
-        wave_depth: 6
+        num_stacks: 3
+        stack_depth: 6
