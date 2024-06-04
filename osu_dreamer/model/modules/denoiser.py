@@ -16,6 +16,7 @@ from .scaleshift import ScaleShift
 class EncoderArgs:
     h_dim: int
     unet_scales: list[int]
+    unet_expand: int
     stack_depth: int
     ssm_args: S4Args
 
@@ -30,6 +31,7 @@ class Encoder(nn.Sequential):
                     S4Block(args.h_dim, args.ssm_args)
                     for _ in range(args.stack_depth)
                 ]),
+                args.unet_expand,
             ),
         )
     
@@ -53,6 +55,7 @@ class DenoiserArgs:
     h_dim: int
     mlp_depth: int
     unet_scales: list[int]
+    unet_expand: int
     stack_depth: int
     ssm_args: S4Args
 
@@ -91,7 +94,8 @@ class Denoiser(nn.Module):
             ResStack(args.h_dim, [
                 S4Block(args.h_dim, args.ssm_args)
                 for _ in range(args.stack_depth)
-            ])
+            ]),
+            args.unet_expand,
         )
         
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)

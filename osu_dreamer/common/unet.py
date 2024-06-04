@@ -17,6 +17,13 @@ def unpad(x: Float[Tensor, "... Lp"], padding: int) -> Float[Tensor, "... L"]:
         x = x[...,:-padding]
     return x
 
+class Residual(nn.Module):
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
+        
+    def forward(self, x):
+        return x + self.net(x)
 
 class UNet(nn.Module):
     def __init__(
@@ -24,6 +31,7 @@ class UNet(nn.Module):
         dim: int,
         scales: list[int],
         middle: nn.Module,
+        expand: int,
     ):
         super().__init__()
 
@@ -36,13 +44,13 @@ class UNet(nn.Module):
         self.up = nn.ModuleList()
         self.post = nn.ModuleList()
 
-        block = lambda: nn.Sequential(
-            nn.Conv1d(dim, 2*dim, 1),
-            nn.GroupNorm(1, 2*dim),
+        block = lambda: Residual(nn.Sequential(
+            Filter1D(dim, 1, transpose=False),
+            nn.Conv1d(dim, expand*dim, 1),
+            nn.GroupNorm(1, expand*dim),
             nn.SiLU(),
-            Filter1D(2*dim, 1, transpose=False),
-            nn.Conv1d(2*dim, dim, 1),
-        )
+            nn.Conv1d(expand*dim, dim, 1),
+        ))
 
         for scale in scales:
             self.chunk_size *= scale
