@@ -74,10 +74,11 @@ model:
             unet_block_depth: 2
             stack_depth: 8
 
-        t_dim: 128
+        t_features: 64
+        t_dim: 16
         h_dim: 128
 
-        mlp_depth: 8
+        mlp_depth: 12
         unet_scales: [4,4]
         unet_block_depth: 4
         stack_depth: 20

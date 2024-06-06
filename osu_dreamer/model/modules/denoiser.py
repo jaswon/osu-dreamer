@@ -51,6 +51,7 @@ class GaussianFourierProjection(nn.Module):
 @dataclass
 class DenoiserArgs:
     encoder_args: EncoderArgs
+    t_features: int
     t_dim: int
     h_dim: int
     mlp_depth: int
@@ -71,8 +72,8 @@ class Denoiser(nn.Module):
         self.encoder = Encoder(a_dim, args.encoder_args)
 
         self.proj_t = nn.Sequential(
-            GaussianFourierProjection(args.t_dim),
-            nn.Linear(args.t_dim, args.t_dim),
+            GaussianFourierProjection(args.t_features * 2),
+            nn.Linear(args.t_features * 2, args.t_dim),
             nn.LayerNorm(args.t_dim),
             nn.SiLU(),
             nn.Linear(args.t_dim, args.t_dim),
