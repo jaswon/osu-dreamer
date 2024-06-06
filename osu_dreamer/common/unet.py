@@ -5,6 +5,7 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from .filter import Filter1D
+from .residual import ResStack
 
 def pad(x: Float[Tensor, "... L"], size: int) -> tuple[Float[Tensor, "... Lp"], int]:
     padding = (size-x.size(-1)%size)%size
@@ -31,7 +32,7 @@ class UNet(nn.Module):
         dim: int,
         scales: list[int],
         middle: nn.Module,
-        expand: int,
+        block_depth: int,
     ):
         super().__init__()
 
@@ -44,13 +45,14 @@ class UNet(nn.Module):
         self.up = nn.ModuleList()
         self.post = nn.ModuleList()
 
-        block = lambda: Residual(nn.Sequential(
-            Filter1D(dim, 1, transpose=False),
-            nn.Conv1d(dim, expand*dim, 1),
-            nn.GroupNorm(1, expand*dim),
-            nn.SiLU(),
-            nn.Conv1d(expand*dim, dim, 1),
-        ))
+        block = lambda: ResStack(dim, [
+            nn.Sequential(
+                nn.Conv1d(dim, dim, 5,1,2, groups=dim),
+                nn.Conv1d(dim, 2*dim, 1),
+                nn.GLU(dim=1),
+            )
+            for _ in range(block_depth)
+        ])
 
         for scale in scales:
             self.chunk_size *= scale
