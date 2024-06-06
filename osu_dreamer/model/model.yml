@@ -56,12 +56,12 @@ model:
         betas: [.5, .999]
     critic_opt_args:
         default:
-            lr: .0002
+            lr: .0003
     denoiser_opt_args:
         default:
-            lr: .0001
+            lr: .0002
         s4:
-            lr: .00006
+            lr: .0001
             weight_decay: 0.
     P_mean: -1.2
     P_std: 1.4
@@ -74,11 +74,11 @@ model:
             unet_block_depth: 2
             stack_depth: 8
 
-        t_features: 64
+        t_features: 128
         t_dim: 16
-        h_dim: 128
+        h_dim: 96
 
-        mlp_depth: 12
+        mlp_depth: 16
         unet_scales: [4,4]
         unet_block_depth: 4
         stack_depth: 20

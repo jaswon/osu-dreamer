@@ -18,14 +18,6 @@ def unpad(x: Float[Tensor, "... Lp"], padding: int) -> Float[Tensor, "... L"]:
         x = x[...,:-padding]
     return x
 
-class Residual(nn.Module):
-    def __init__(self, net: nn.Module):
-        super().__init__()
-        self.net = net
-        
-    def forward(self, x):
-        return x + self.net(x)
-
 class UNet(nn.Module):
     def __init__(
         self,
@@ -47,9 +39,10 @@ class UNet(nn.Module):
 
         block = lambda: ResStack(dim, [
             nn.Sequential(
-                nn.Conv1d(dim, dim, 5,1,2, groups=dim),
-                nn.Conv1d(dim, 2*dim, 1),
-                nn.GLU(dim=1),
+                Filter1D(dim, 1, transpose=False),
+                nn.Conv1d(dim, dim, 1),
+                nn.GroupNorm(1, dim),
+                nn.SiLU(),
             )
             for _ in range(block_depth)
         ])
