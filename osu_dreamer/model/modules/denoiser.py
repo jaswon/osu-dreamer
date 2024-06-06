@@ -100,8 +100,8 @@ class Denoiser(nn.Module):
         )
         
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
-        self.proj_out.weight.data.fill_(0.)
-        self.proj_out.bias.data.fill_(0.) # type: ignore
+        th.nn.init.zeros_(self.proj_out.weight)
+        th.nn.init.zeros_(self.proj_out.bias) # type: ignore
 
     def forward(
         self, 
