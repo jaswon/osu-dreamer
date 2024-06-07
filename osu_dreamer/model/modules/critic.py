@@ -13,6 +13,17 @@ from osu_dreamer.common.residual import ResStack
 
 from osu_dreamer.data.beatmap.encode import CursorSignals
 
+class WaveNet(ResStack):
+    def __init__(self, dim: int, num_stacks: int, stack_depth: int):
+        super().__init__(dim, [
+            nn.Sequential(
+                nn.ZeroPad1d((2**d,0)),
+                nn.Conv1d(dim, 2*dim, 2, dilation=2**d),
+                nn.GLU(dim=1),
+            )
+            for _ in range(num_stacks)
+            for d in range(stack_depth)
+        ])
 
 CRITIC_FEATURES = 8
 def critic_features(x: Float[Tensor, "B X L"]) -> Float[Tensor, str(f"B {CRITIC_FEATURES} L")]:
@@ -38,16 +49,6 @@ class Critic(nn.Module):
         args: CriticArgs,
     ):
         super().__init__()
-        
-        WaveNet = lambda dim, num_stacks, stack_depth: ResStack(dim, [
-            nn.Sequential(
-                nn.ZeroPad1d((2**d,0)),
-                nn.Conv1d(dim, 2*dim, 2, dilation=2**d),
-                nn.GLU(dim=1),
-            )
-            for _ in range(num_stacks)
-            for d in range(stack_depth)
-        ])
 
         self.audio_pre = nn.Sequential(
             nn.Conv1d(a_dim, a_dim, 5,1,2, groups=a_dim),
