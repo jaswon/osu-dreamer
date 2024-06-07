@@ -7,33 +7,9 @@ import torch as th
 from torch import nn, Tensor
 
 from osu_dreamer.common.residual import ResStack
-from osu_dreamer.common.s4d import S4Block, S4Args
-from osu_dreamer.common.unet import UNet
     
 from .scaleshift import ScaleShift
-
-@dataclass
-class EncoderArgs:
-    h_dim: int
-    unet_scales: list[int]
-    unet_block_depth: int
-    stack_depth: int
-    ssm_args: S4Args
-
-class Encoder(nn.Sequential):
-    def __init__(self, a_dim: int, args: EncoderArgs):
-        super().__init__(
-            nn.Conv1d(a_dim, args.h_dim, 1),
-            UNet(
-                args.h_dim, 
-                args.unet_scales, 
-                ResStack(args.h_dim, [
-                    S4Block(args.h_dim, args.ssm_args)
-                    for _ in range(args.stack_depth)
-                ]),
-                args.unet_block_depth,
-            ),
-        )
+from .encoder import Encoder, EncoderArgs
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
@@ -50,15 +26,11 @@ class GaussianFourierProjection(nn.Module):
 
 @dataclass
 class DenoiserArgs:
-    encoder_args: EncoderArgs
     t_features: int
     t_dim: int
     h_dim: int
     mlp_depth: int
-    unet_scales: list[int]
-    unet_block_depth: int
-    stack_depth: int
-    ssm_args: S4Args
+    encoder_args: EncoderArgs
 
 class Denoiser(nn.Module):
     def __init__(
@@ -68,8 +40,6 @@ class Denoiser(nn.Module):
         args: DenoiserArgs,
     ):
         super().__init__()
-
-        self.encoder = Encoder(a_dim, args.encoder_args)
 
         self.proj_t = nn.Sequential(
             GaussianFourierProjection(args.t_features * 2),
@@ -81,23 +51,18 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        in_dim = args.encoder_args.h_dim + x_dim + x_dim
+        in_dim = a_dim + x_dim + x_dim
         self.proj_in = nn.Conv1d(in_dim, args.h_dim, 1)
 
         self.mlp = ResStack(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, nn.SiLU())
+            ScaleShift(args.h_dim, args.t_dim, nn.Sequential(
+                nn.SiLU(),
+                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
+            ))
             for _ in range(args.mlp_depth)
         ])
 
-        self.net = UNet(
-            args.h_dim,
-            args.unet_scales,
-            ResStack(args.h_dim, [
-                S4Block(args.h_dim, args.ssm_args)
-                for _ in range(args.stack_depth)
-            ]),
-            args.unet_block_depth,
-        )
+        self.encoder = Encoder(args.h_dim, args.encoder_args)
         
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
@@ -114,5 +79,5 @@ class Denoiser(nn.Module):
         t = self.proj_t(t)
         h = self.proj_in(th.cat([a, x, y], dim=1))
         h = self.mlp(h, t)
-        o = self.net(h)
+        o = self.encoder(h)
         return self.proj_out(o)

@@ -23,8 +23,8 @@ class UNet(nn.Module):
         self,
         dim: int,
         scales: list[int],
-        middle: nn.Module,
         block_depth: int,
+        middle: nn.Module,
     ):
         super().__init__()
 
