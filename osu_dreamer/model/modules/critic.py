@@ -11,7 +11,7 @@ from einops import rearrange
 
 from osu_dreamer.common.residual import ResStack
 
-from osu_dreamer.data.beatmap.encode import CursorSignals
+from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals
 
 class WaveNet(ResStack):
     def __init__(self, dim: int, num_stacks: int, stack_depth: int):
@@ -26,7 +26,7 @@ class WaveNet(ResStack):
         ])
 
 CRITIC_FEATURES = 8
-def critic_features(x: Float[Tensor, "B X L"]) -> Float[Tensor, str(f"B {CRITIC_FEATURES} L")]:
+def critic_features(x: Float[Tensor, str(f"B {X_DIM} L")]) -> Float[Tensor, str(f"B {CRITIC_FEATURES} L")]:
     cursor = x[:,CursorSignals]
     cursor_diff = F.pad(cursor[...,1:] - cursor[...,:-1], (1,0), mode='replicate')
     return th.cat([ x, cursor_diff ], dim=1)
@@ -45,7 +45,6 @@ class Critic(nn.Module):
     def __init__(
         self,
         a_dim: int,
-        x_dim: int,
         args: CriticArgs,
     ):
         super().__init__()
@@ -60,7 +59,8 @@ class Critic(nn.Module):
         self.net = nn.Sequential(
             nn.Conv1d(args.audio_h_dim + CRITIC_FEATURES, args.h_dim, 1),
             WaveNet(args.h_dim, args.num_stacks, args.stack_depth),
-            nn.Conv1d(args.h_dim, x_dim, 1),
+            nn.Conv1d(args.h_dim, 1, 1),
+            nn.Flatten(0, 1),
         )
 
         for m in self.modules():
@@ -74,7 +74,7 @@ class Critic(nn.Module):
         L = (x.size(-1) // self.rf) * self.rf
         x = x[:,:,:L].requires_grad_()
         a = a[:,:,:L]
-        grad = th.autograd.grad(self(a, x)[:,:,::self.rf].sum(), x, create_graph=True)[0]
+        grad = th.autograd.grad(self(a, x)[:,::self.rf].sum(), x, create_graph=True)[0]
         grad_norm = rearrange(grad.pow(2), 'b x (f l) -> b (x f) l', f = self.rf).sum(1)
         return grad_norm.mean()
 
@@ -82,5 +82,5 @@ class Critic(nn.Module):
         self, 
         audio: Float[Tensor, "B A L"],
         cursor: Float[Tensor, "B X L"],
-    ) -> Float[Tensor, "B X L"]:
+    ) -> Float[Tensor, "B L"]:
         return self.net(th.cat([self.audio_pre(audio), critic_features(cursor)], dim=1))

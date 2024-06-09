@@ -65,7 +65,7 @@ class Model(pl.LightningModule):
         )
         self.diffusion = Diffusion(P_mean, P_std)
         self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
-        self.critic = Critic(A_DIM, X_DIM, critic_args)
+        self.critic = Critic(A_DIM, critic_args)
 
         # validation params
         self.val_steps = val_steps
