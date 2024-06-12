@@ -50,18 +50,18 @@ model:
 
     # training parameters
     gen_adv_factor: .01
-    r1_gamma: 100.
+    r1_gamma: 400.
     optimizer: AdamW
     opt_args:
         betas: [.5, .999]
     critic_opt_args:
         default:
-            lr: .0003
+            lr: .0005
     denoiser_opt_args:
         default:
-            lr: .0002
+            lr: .0004
         s4:
-            lr: .0001
+            lr: .0003
             weight_decay: 0.
     P_mean: -1.2
     P_std: 1.4
@@ -76,14 +76,14 @@ model:
     denoiser_args:
         t_features: 128
         t_dim: 32
-        h_dim: 96
+        h_dim: 64
 
-        mlp_depth: 16
+        mlp_depth: 24
 
         encoder_args:
             scales: [4,4]
             block_depth: 4
-            stack_depth: 12
+            stack_depth: 16
 
     critic_args:
         audio_h_dim: 8

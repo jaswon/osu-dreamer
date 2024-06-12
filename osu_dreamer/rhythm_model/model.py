@@ -22,7 +22,7 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import CursorSignals, X_DIM
+from osu_dreamer.data.beatmap.encode import HIT_DIM, HitSignals
 
 from .diffusion import Diffusion
 
@@ -31,7 +31,7 @@ from .modules.denoiser import Denoiser, DenoiserArgs
 from .modules.critic import Critic, CriticArgs
     
     
-class Model(pl.LightningModule):
+class RhythmModel(pl.LightningModule):
     def __init__(
         self,
 
@@ -64,7 +64,7 @@ class Model(pl.LightningModule):
             Encoder(audio_features, audio_encoder_args)
         )
         self.diffusion = Diffusion(P_mean, P_std)
-        self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
+        self.denoiser = Denoiser(HIT_DIM, audio_features, denoiser_args)
         self.critic = Critic(A_DIM, critic_args)
 
         # validation params
@@ -90,14 +90,14 @@ class Model(pl.LightningModule):
         num_samples: int = 1,
         num_steps: int = 0,
         **kwargs,
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+    ) -> Float[Tensor, str(f"B {HIT_DIM} L")]:
         l = audio.size(-1)
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
         p = repeat(th.arange(l), 'l -> b l', b=num_samples).to(audio.device)
 
         num_steps = num_steps if num_steps > 0 else self.val_steps
 
-        z = th.randn(num_samples, X_DIM, l, device=audio.device)
+        z = th.randn(num_samples, HIT_DIM, l, device=audio.device)
 
         denoiser = partial(self.denoiser, self.audio_encoder(audio), p)
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
@@ -138,8 +138,8 @@ class Model(pl.LightningModule):
         audio, position, x_real = batch
         opt_critic, opt_denoiser = self.optimizers() # type: ignore
 
-        # augment cursor by random flips
-        x_real[:,CursorSignals] *= th.where(th.rand_like(x_real[:,CursorSignals,:1]) < .5, 1, -1)
+        # rhythm model only trains on hit signals
+        x_real = x_real[:, HitSignals]
 
         is_critic_step = batch_idx % 2 == 0
         with (opt_critic if is_critic_step else opt_denoiser).toggle_model():
@@ -178,6 +178,7 @@ class Model(pl.LightningModule):
 
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         audio, position, x_real = batch
+        x_real = x_real[:, HitSignals]
 
         model = partial(self.denoiser, self.audio_encoder(audio), position)
         diffusion_loss, _ = self.diffusion.sample_denoised(model, x_real)
@@ -188,6 +189,7 @@ class Model(pl.LightningModule):
 
     def plot_sample(self, b: Batch):
         a_tensor, _, x_tensor = b
+        x_tensor = x_tensor[:, HitSignals]
         
         a: Float[np.ndarray, "A L"] = a_tensor.squeeze(0).cpu().numpy()
 

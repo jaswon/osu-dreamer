@@ -5,13 +5,12 @@ from jaxtyping import Float
 
 import torch as th
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 from einops import rearrange
 
 from osu_dreamer.common.residual import ResStack
 
-from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals
+from osu_dreamer.data.beatmap.encode import HIT_DIM
 
 class WaveNet(ResStack):
     def __init__(self, dim: int, num_stacks: int, stack_depth: int):
@@ -25,11 +24,9 @@ class WaveNet(ResStack):
             for d in range(stack_depth)
         ])
 
-CRITIC_FEATURES = 8
-def critic_features(x: Float[Tensor, str(f"B {X_DIM} L")]) -> Float[Tensor, str(f"B {CRITIC_FEATURES} L")]:
-    cursor = x[:,CursorSignals]
-    cursor_diff = F.pad(cursor[...,1:] - cursor[...,:-1], (1,0), mode='replicate')
-    return th.cat([ x, cursor_diff ], dim=1)
+CRITIC_FEATURES = HIT_DIM
+def critic_features(x: Float[Tensor, str(f"B {HIT_DIM} L")]) -> Float[Tensor, str(f"B {CRITIC_FEATURES} L")]:
+    return x
 
 @dataclass
 class CriticArgs:
@@ -81,6 +78,6 @@ class Critic(nn.Module):
     def forward(
         self, 
         audio: Float[Tensor, "B A L"],
-        cursor: Float[Tensor, "B X L"],
+        x: Float[Tensor, "B X L"],
     ) -> Float[Tensor, "B L"]:
-        return self.net(th.cat([self.audio_pre(audio), critic_features(cursor)], dim=1))
+        return self.net(th.cat([self.audio_pre(audio), critic_features(x)], dim=1))
