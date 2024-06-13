@@ -12,14 +12,15 @@ class EncoderArgs:
     stack_depth: int
     ssm_args: S4Args
 
-class Encoder(UNet):
+class Encoder(ResStack):
     def __init__(self, dim: int, args: EncoderArgs):
-        super().__init__(
-            dim, 
-            args.scales, 
-            args.block_depth,
-            ResStack(dim, [
-                S4Block(dim, args.ssm_args)
-                for _ in range(args.stack_depth)
-            ]),
-        )
+        super().__init__(dim, [
+            UNet(
+                dim, 
+                args.scales, 
+                args.block_depth,
+                S4Block(dim, args.ssm_args),
+            )
+            for _ in range(args.stack_depth)
+        ])
+

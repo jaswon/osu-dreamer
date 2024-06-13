@@ -7,9 +7,10 @@ import torch as th
 from torch import nn, Tensor
 
 from osu_dreamer.common.residual import ResStack
-    
+from osu_dreamer.common.unet import UNet
+from osu_dreamer.common.s4d import S4Args, S4Block
+
 from .scaleshift import ScaleShift
-from .encoder import Encoder, EncoderArgs
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
@@ -29,8 +30,11 @@ class DenoiserArgs:
     t_features: int
     t_dim: int
     h_dim: int
-    mlp_depth: int
-    encoder_args: EncoderArgs
+    stack_depth: int
+
+    scales: list[int]
+    block_depth: int
+    ssm_args: S4Args
 
 class Denoiser(nn.Module):
     def __init__(
@@ -54,15 +58,15 @@ class Denoiser(nn.Module):
         in_dim = a_dim + x_dim + x_dim
         self.proj_in = nn.Conv1d(in_dim, args.h_dim, 1)
 
-        self.mlp = ResStack(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, nn.Sequential(
-                nn.SiLU(),
-                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
+        self.encoder = ResStack(args.h_dim, [
+            ScaleShift(args.h_dim, args.t_dim, UNet(
+                args.h_dim, 
+                args.scales, 
+                args.block_depth,
+                S4Block(args.h_dim, args.ssm_args),
             ))
-            for _ in range(args.mlp_depth)
+            for _ in range(args.stack_depth)
         ])
-
-        self.encoder = Encoder(args.h_dim, args.encoder_args)
         
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
@@ -78,6 +82,5 @@ class Denoiser(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         t = self.proj_t(t)
         h = self.proj_in(th.cat([a, x, y], dim=1))
-        h = self.mlp(h, t)
-        o = self.encoder(h)
+        o = self.encoder(h, t)
         return self.proj_out(o)

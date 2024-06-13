@@ -12,6 +12,7 @@ trainer:
     precision: 16-mixed
 
     enable_checkpointing: true
+    accumulate_grad_batches: 2
 
     logger: true
     enable_progress_bar: true
@@ -27,7 +28,7 @@ data:
     subseq_density: .5
     
     # size of training batch
-    batch_size: 16
+    batch_size: 8
     
     # number of workers to use for data loading
     num_workers: 6
@@ -55,18 +56,15 @@ model:
     # model hyperparameters
     audio_features: 64
     audio_encoder_args:
+        stack_depth: 6
         scales: [4,4]
-        block_depth: 3
-        stack_depth: 8
+        block_depth: 2
 
     denoiser_args:
-        t_features: 128
-        t_dim: 32
+        t_features: 64
+        t_dim: 16
         h_dim: 64
 
-        mlp_depth: 24
-
-        encoder_args:
-            scales: [4,4]
-            block_depth: 4
-            stack_depth: 16
+        stack_depth: 12
+        scales: [4,4]
+        block_depth: 2
