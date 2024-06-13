@@ -12,13 +12,6 @@ trainer:
     precision: 16-mixed
 
     enable_checkpointing: true
-    callbacks:
-        - # keep the best performing checkpoint
-            class_path: pytorch_lightning.callbacks.ModelCheckpoint
-            init_args:
-                monitor: val/denoiser/diffusion
-                mode: min
-                save_top_k: 4
 
     logger: true
     enable_progress_bar: true
@@ -49,15 +42,8 @@ model:
     val_steps: 32
 
     # training parameters
-    gen_adv_factor: .01
-    r1_gamma: 400.
     optimizer: AdamW
     opt_args:
-        betas: [.5, .999]
-    critic_opt_args:
-        default:
-            lr: .0005
-    denoiser_opt_args:
         default:
             lr: .0004
         s4:
@@ -70,7 +56,7 @@ model:
     audio_features: 64
     audio_encoder_args:
         scales: [4,4]
-        block_depth: 2
+        block_depth: 3
         stack_depth: 8
 
     denoiser_args:
@@ -84,12 +70,3 @@ model:
             scales: [4,4]
             block_depth: 4
             stack_depth: 16
-
-    critic_args:
-        audio_h_dim: 8
-        audio_num_stacks: 3
-        audio_stack_depth: 3
-
-        h_dim: 64
-        num_stacks: 3
-        stack_depth: 6

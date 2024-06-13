@@ -1,14 +1,13 @@
 
 from functools import partial
 
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 import numpy as np
 import librosa
 
 import torch as th
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 from einops import repeat
 
@@ -22,13 +21,12 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import HIT_DIM, HitSignals
+from osu_dreamer.data.beatmap.encode import X_DIM, HIT_DIM, HitSignals
 
 from .diffusion import Diffusion
 
 from .modules.encoder import Encoder, EncoderArgs
 from .modules.denoiser import Denoiser, DenoiserArgs
-from .modules.critic import Critic, CriticArgs
     
     
 class RhythmModel(pl.LightningModule):
@@ -39,12 +37,8 @@ class RhythmModel(pl.LightningModule):
         val_steps: int,
 
         # training parameters
-        gen_adv_factor: float,              # adversarial loss scale factor
-        r1_gamma: float,                    # R1 regularization factor
         optimizer: str,                     # optimizer
-        opt_args: dict,                     # default optimizer args
-        denoiser_opt_args: dict[str, dict], # denoiser optimizer args
-        critic_opt_args: dict[str, dict],   # critic optimizer args
+        opt_args: dict[str, dict],          # optimizer args
         P_mean: float,
         P_std: float,
 
@@ -52,36 +46,40 @@ class RhythmModel(pl.LightningModule):
         audio_features: int,
         audio_encoder_args: EncoderArgs,
         denoiser_args: DenoiserArgs,
-        critic_args: CriticArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
-        self.automatic_optimization = False
 
         # model
+        self.diffusion = Diffusion(P_mean, P_std)
+
         self.audio_encoder = nn.Sequential(
             nn.Conv1d(A_DIM, audio_features, 1),
             Encoder(audio_features, audio_encoder_args)
         )
-        self.diffusion = Diffusion(P_mean, P_std)
         self.denoiser = Denoiser(HIT_DIM, audio_features, denoiser_args)
-        self.critic = Critic(A_DIM, critic_args)
 
         # validation params
         self.val_steps = val_steps
 
         # training params
-        self.gen_adv_factor = gen_adv_factor
-        self.r1_gamma = r1_gamma
         self.optimizer = getattr(th.optim, optimizer)
+        assert 'default' in opt_args, "`default` key for `opt_args` required"
         self.opt_args = opt_args
-        assert 'default' in denoiser_opt_args, "`default` key for `denoiser_opt_args` required"
-        self.denoiser_opt_args = denoiser_opt_args
-        assert 'default' in critic_opt_args, "`default` key for `critic_opt_args` required"
-        self.critic_opt_args = critic_opt_args
     
 
-    def forward(self): pass
+    def forward(
+        self,
+        audio: Float[Tensor, str(f"B {A_DIM} L")],
+        position: Int[Tensor, "B L"],
+        x: Float[Tensor, str(f"B {X_DIM} L")],
+    ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
+        # rhythm model only trains on hit signals
+        x = x[:, HitSignals]
+            
+        model = partial(self.denoiser, self.audio_encoder(audio), position)
+        loss = self.diffusion.loss(model, x)
+        return loss, { "diffusion": loss.detach() }
     
     @th.no_grad()
     def sample(
@@ -113,76 +111,36 @@ class RhythmModel(pl.LightningModule):
 
     def configure_optimizers(self):
 
-        def get_param_groups(all_params, opt_args):
+        def get_param_groups(all_params: list[Tensor], opt_args: dict[str, dict]):
             params = { opt_key: [] for opt_key in opt_args }
             for p in all_params:
                 opt_key = getattr(p, 'opt_key', 'default')
                 params.get(opt_key, params['default']).append(p)
             return [
-                { 'params': params[opt_key], **args }
+                { 
+                    'params': params[opt_key], 
+                    **({} if opt_key == "default" else args),
+                }
                 for opt_key, args in opt_args.items()
             ]
-
-        opt_critic   = self.optimizer(get_param_groups(
-            self.critic.parameters(), 
-            self.critic_opt_args,
-        ), **self.opt_args)
-        opt_denoiser = self.optimizer(get_param_groups(
-            [ *self.denoiser.parameters(), *self.audio_encoder.parameters() ], 
-            self.denoiser_opt_args,
-        ), **self.opt_args)
-
-        return opt_critic, opt_denoiser 
+        
+        return self.optimizer(get_param_groups(
+            [
+                *self.denoiser.parameters(), 
+                *self.audio_encoder.parameters(),
+            ], 
+            self.opt_args,
+        ), **self.opt_args['default'])
 
     def training_step(self, batch: Batch, batch_idx):
-        audio, position, x_real = batch
-        opt_critic, opt_denoiser = self.optimizers() # type: ignore
-
-        # rhythm model only trains on hit signals
-        x_real = x_real[:, HitSignals]
-
-        is_critic_step = batch_idx % 2 == 0
-        with (opt_critic if is_critic_step else opt_denoiser).toggle_model():
-            
-            model = partial(self.denoiser, self.audio_encoder(audio), position)
-            diffusion_loss, x_fake = self.diffusion.sample_denoised(model, x_real)
-            self.log('train/denoiser/diffusion', diffusion_loss.detach())
-
-            # Relativistic average Discriminator
-            fake_logits = self.critic(audio, x_fake)
-            real_logits = self.critic(audio, x_real)
-            ra_r = real_logits - fake_logits.mean()
-            ra_f = fake_logits - real_logits.mean()
-
-            if is_critic_step:
-                # critic step
-                adv_loss = .5 * (F.softplus(-ra_r).mean() + F.softplus(ra_f).mean())
-                self.log('train/critic/adversarial', adv_loss.detach())
-
-                # R1 gradient penalty
-                r1_gp = self.r1_gamma * .5 * self.critic.grad_norm(audio, x_real)
-                self.log('train/critic/grad_penalty', r1_gp.detach())
-
-                self.manual_backward(adv_loss + r1_gp)
-                opt_critic.step()
-                opt_critic.zero_grad()
-            else:
-                # generator step
-                adv_loss = .5 * (F.softplus(-ra_f).mean() + F.softplus(ra_r).mean())
-                self.log('train/denoiser/adversarial', adv_loss.detach())
-
-                self.manual_backward(diffusion_loss + adv_loss * self.gen_adv_factor)
-                opt_denoiser.step()
-                opt_denoiser.zero_grad()
+        loss, log_dict = self(*batch)
+        self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
+        return loss
  
-
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
-        audio, position, x_real = batch
-        x_real = x_real[:, HitSignals]
-
-        model = partial(self.denoiser, self.audio_encoder(audio), position)
-        diffusion_loss, _ = self.diffusion.sample_denoised(model, x_real)
-        self.log("val/denoiser/diffusion", diffusion_loss)
+        with th.no_grad():
+            _, log_dict = self(*batch)
+        self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0 and USE_MATPLOTLIB:
             self.plot_sample(batch)
