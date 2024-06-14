@@ -21,7 +21,7 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import X_DIM, HIT_DIM, HitSignals
+from osu_dreamer.data.beatmap.encode import X_DIM
 
 from .diffusion import Diffusion
 
@@ -29,7 +29,7 @@ from .modules.encoder import Encoder, EncoderArgs
 from .modules.denoiser import Denoiser, DenoiserArgs
     
     
-class RhythmModel(pl.LightningModule):
+class Model(pl.LightningModule):
     def __init__(
         self,
 
@@ -57,7 +57,7 @@ class RhythmModel(pl.LightningModule):
             nn.Conv1d(A_DIM, audio_features, 1),
             Encoder(audio_features, audio_encoder_args)
         )
-        self.denoiser = Denoiser(HIT_DIM, audio_features, denoiser_args)
+        self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
 
         # validation params
         self.val_steps = val_steps
@@ -74,8 +74,6 @@ class RhythmModel(pl.LightningModule):
         position: Int[Tensor, "B L"],
         x: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
-        # rhythm model only trains on hit signals
-        x = x[:, HitSignals]
             
         model = partial(self.denoiser, self.audio_encoder(audio), position)
         loss = self.diffusion.loss(model, x)
@@ -88,14 +86,14 @@ class RhythmModel(pl.LightningModule):
         num_samples: int = 1,
         num_steps: int = 0,
         **kwargs,
-    ) -> Float[Tensor, str(f"B {HIT_DIM} L")]:
+    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         l = audio.size(-1)
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
         p = repeat(th.arange(l), 'l -> b l', b=num_samples).to(audio.device)
 
         num_steps = num_steps if num_steps > 0 else self.val_steps
 
-        z = th.randn(num_samples, HIT_DIM, l, device=audio.device)
+        z = th.randn(num_samples, X_DIM, l, device=audio.device)
 
         denoiser = partial(self.denoiser, self.audio_encoder(audio), p)
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
@@ -147,7 +145,6 @@ class RhythmModel(pl.LightningModule):
 
     def plot_sample(self, b: Batch):
         a_tensor, _, x_tensor = b
-        x_tensor = x_tensor[:, HitSignals]
         
         a: Float[np.ndarray, "A L"] = a_tensor.squeeze(0).cpu().numpy()
 

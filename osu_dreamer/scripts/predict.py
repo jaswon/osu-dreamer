@@ -12,7 +12,7 @@ import click
 from osu_dreamer.data.load_audio import load_audio, get_frame_times
 from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
 
-from osu_dreamer.rhythm_model import RhythmModel
+from osu_dreamer.model import Model
     
 
 file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
@@ -53,7 +53,7 @@ def predict(
             
     # load model
     # ======
-    model = RhythmModel.load_from_checkpoint(model_path).eval()
+    model = Model.load_from_checkpoint(model_path).eval()
     
     if th.cuda.is_available():
         print('using GPU accelerated inference')
