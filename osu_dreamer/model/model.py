@@ -9,7 +9,7 @@ import librosa
 import torch as th
 from torch import nn, Tensor
 
-from einops import repeat
+from einops import repeat, rearrange
 
 try:
     import matplotlib.pyplot as plt
@@ -34,6 +34,7 @@ class Model(pl.LightningModule):
         self,
 
         # validation parameters
+        val_batches: int,
         val_steps: int,
 
         # training parameters
@@ -60,6 +61,7 @@ class Model(pl.LightningModule):
         self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
 
         # validation params
+        self.val_batches = val_batches
         self.val_steps = val_steps
 
         # training params
@@ -137,7 +139,12 @@ class Model(pl.LightningModule):
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():
-            _, log_dict = self(*batch)
+            a,p,x = batch
+            bL = self.val_batches * (a.size(-1) // self.val_batches)
+            a = rearrange(a[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
+            p = rearrange(p[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
+            x = rearrange(x[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
+            _, log_dict = self(a,p,x)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0 and USE_MATPLOTLIB:
