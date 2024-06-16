@@ -18,6 +18,64 @@ def unpad(x: Float[Tensor, "... Lp"], padding: int) -> Float[Tensor, "... L"]:
         x = x[...,:-padding]
     return x
 
+block = lambda dim, block_depth: ResStack(dim, [
+    nn.Sequential(
+        Filter1D(dim, 1, transpose=False),
+        nn.Conv1d(dim, dim, 1),
+        nn.GroupNorm(1, dim),
+        nn.SiLU(),
+    )
+    for _ in range(block_depth)
+])
+
+class UNetEncoder(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        scales: list[int],
+        block_depth: int,
+    ):
+        super().__init__()
+
+        self.pre = nn.ModuleList()
+        self.down = nn.ModuleList()
+
+        for scale in scales:
+            self.pre.append(block(dim, block_depth))
+            self.down.append(Filter1D(dim, scale, transpose=False))
+
+    def forward(self, x: Float[Tensor, "B X L"]) -> tuple[list[Float[Tensor, "B X _L"]], Float[Tensor, "B X l"]]:
+        hs = []
+        for pre, down in zip(self.pre, self.down):
+            h = pre(x)
+            hs.append(h)
+            x = down(x-h)
+        return hs, x
+
+
+class UNetDecoder(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        scales: list[int],
+        block_depth: int,
+    ):
+        super().__init__()
+
+        self.post = nn.ModuleList()
+        self.up = nn.ModuleList()
+
+        for scale in scales:
+            self.post.insert(0, block(dim, block_depth))
+            self.up.insert(0, Filter1D(dim, scale, transpose=True))
+
+    def forward(self, hs: list[Float[Tensor, "B X _L"]], x: Float[Tensor, "B X l"]) -> Float[Tensor, "B X L"]:
+        for up, post in zip(self.up, self.post):
+            x = up(x)
+            h = hs.pop()
+            x = post(x+h)
+        return x
+
 class UNet(nn.Module):
     def __init__(
         self,
@@ -28,33 +86,14 @@ class UNet(nn.Module):
     ):
         super().__init__()
 
+        self.encoder = UNetEncoder(dim, scales, block_depth)
+        self.decoder = UNetDecoder(dim, scales, block_depth)
+
         self.middle = middle
 
         self.chunk_size = 1
-
-        self.pre = nn.ModuleList()
-        self.down = nn.ModuleList()
-        self.up = nn.ModuleList()
-        self.post = nn.ModuleList()
-
-        block = lambda: ResStack(dim, [
-            nn.Sequential(
-                Filter1D(dim, 1, transpose=False),
-                nn.Conv1d(dim, dim, 1),
-                nn.GroupNorm(1, dim),
-                nn.SiLU(),
-            )
-            for _ in range(block_depth)
-        ])
-
         for scale in scales:
             self.chunk_size *= scale
-
-            self.pre.append(block())
-            self.down.append(Filter1D(dim, scale, transpose=False))
-
-            self.up.insert(0, Filter1D(dim, scale, transpose=True))
-            self.post.insert(0, block())
 
     def forward(
         self,
@@ -64,18 +103,8 @@ class UNet(nn.Module):
         
         x, p = pad(x, self.chunk_size)
 
-        hs = []
-
-        for pre, down in zip(self.pre, self.down):
-            h = pre(x)
-            hs.append(h)
-            x = down(x-h)
-
+        hs, x = self.encoder(x)
         x = self.middle(x, *args, **kwargs)
-
-        for up, post in zip(self.up, self.post):
-            x = up(x)
-            h = hs.pop()
-            x = post(x+h)
+        x = self.decoder(hs, x)
 
         return unpad(x, p)
