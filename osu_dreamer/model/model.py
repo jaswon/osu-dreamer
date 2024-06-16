@@ -4,24 +4,18 @@ from functools import partial
 from jaxtyping import Float, Int
 
 import numpy as np
-import librosa
 
 import torch as th
 from torch import nn, Tensor
 
 from einops import repeat, rearrange
 
-try:
-    import matplotlib.pyplot as plt
-    USE_MATPLOTLIB = True
-except:
-    USE_MATPLOTLIB = False
-
 import pytorch_lightning as pl
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import X_DIM
+from osu_dreamer.data.plot import plot_signals
 
 from .diffusion import Diffusion
 
@@ -147,7 +141,7 @@ class Model(pl.LightningModule):
             _, log_dict = self(a,p,x)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
-        if batch_idx == 0 and USE_MATPLOTLIB:
+        if batch_idx == 0:
             self.plot_sample(batch)
 
     def plot_sample(self, b: Batch):
@@ -163,44 +157,6 @@ class Model(pl.LightningModule):
                     self.sample(a_tensor.squeeze(0)),
                 ]
             ]
-        
-        margin, margin_left = .1, .5
-        height_ratios = [.8] + [.6] * len(plots)
-        plots_per_row = len(height_ratios)
-        w, h = a.shape[-1] * .01, sum(height_ratios) * .4
 
-        # split plot across multiple rows
-        split = ((w/h)/(3/5)) ** .5 # 3 wide by 5 tall aspect ratio
-        split = int(split + 1)
-        w = w // split
-        h = h * split
-        height_ratios = height_ratios * split
-        
-        fig, all_axs = plt.subplots(
-            len(height_ratios), 1,
-            figsize=(w, h),
-            sharex=True,
-            gridspec_kw=dict(
-                height_ratios=height_ratios,
-                hspace=.1,
-                left=margin_left/w,
-                right=1-margin/w,
-                top=1-margin/h,
-                bottom=margin/h,
-            )
-        )
-
-        win_len = a.shape[-1] // split
-        for i in range(split):
-            ax1, *axs = all_axs[i * plots_per_row: (i+1) * plots_per_row]
-            sl = (..., slice(i * win_len, (i+1) * win_len))
-
-            ax1.imshow(librosa.power_to_db(a[sl]), origin="lower", aspect='auto')
-            
-            for (i, sample), ax in zip(enumerate(plots), axs):
-                ax.margins(x=0)
-                for ch in sample[sl]:
-                    ax.plot(ch)
-
-        self.logger.experiment.add_figure("samples", fig, global_step=self.global_step) # type: ignore
-        plt.close(fig)
+        with plot_signals(a, plots) as fig:
+            self.logger.experiment.add_figure("samples", fig, global_step=self.global_step) # type: ignore
