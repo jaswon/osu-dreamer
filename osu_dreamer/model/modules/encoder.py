@@ -1,6 +1,8 @@
 
 from dataclasses import dataclass
 
+from torch import nn
+
 from osu_dreamer.common.residual import ResStack
 from osu_dreamer.common.s4d import S4Block, S4Args
 from osu_dreamer.common.unet import UNet
@@ -18,7 +20,14 @@ class Encoder(ResStack):
             UNet(
                 dim, 
                 args.scales, 
-                args.block_depth,
+                lambda: ResStack(dim, [
+                    nn.Sequential(
+                        nn.Conv1d(dim, dim, 3,1,1, groups=dim),
+                        nn.GroupNorm(1, dim),
+                        nn.SiLU(),
+                    )
+                    for _ in range(args.block_depth)
+                ]),
                 S4Block(dim, args.ssm_args),
             )
             for _ in range(args.stack_depth)

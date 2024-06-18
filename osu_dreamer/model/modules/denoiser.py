@@ -62,7 +62,14 @@ class Denoiser(nn.Module):
             ScaleShift(args.h_dim, args.t_dim, UNet(
                 args.h_dim, 
                 args.scales, 
-                args.block_depth,
+                lambda: ResStack(args.h_dim, [
+                    nn.Sequential(
+                        nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
+                        nn.GroupNorm(1, args.h_dim),
+                        nn.SiLU(),
+                    )
+                    for _ in range(args.block_depth)
+                ]),
                 S4Block(args.h_dim, args.ssm_args),
             ))
             for _ in range(args.stack_depth)
