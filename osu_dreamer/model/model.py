@@ -48,10 +48,7 @@ class Model(pl.LightningModule):
         # model
         self.diffusion = Diffusion(P_mean, P_std)
 
-        self.audio_encoder = nn.Sequential(
-            nn.Conv1d(A_DIM, audio_features, 1),
-            Encoder(audio_features, audio_encoder_args)
-        )
+        self.audio_encoder = Encoder(A_DIM, audio_features, audio_encoder_args)
         self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
 
         # validation params

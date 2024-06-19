@@ -49,23 +49,19 @@ model:
         default:
             lr: .0004
         s4:
-            lr: .0003
+            lr: .0001
             weight_decay: 0.
-    P_mean: -1.2
-    P_std: 1.4
+    P_mean: -1.1
+    P_std: 1.6
 
     # model hyperparameters
     audio_features: 64
     audio_encoder_args:
         stack_depth: 3
-        scales: [4,4]
-        block_depth: 2
 
     denoiser_args:
         t_features: 64
         t_dim: 16
-        h_dim: 128
+        h_dim: 64
 
-        stack_depth: 6
-        scales: [4,4]
-        block_depth: 2
+        stack_depth: 8

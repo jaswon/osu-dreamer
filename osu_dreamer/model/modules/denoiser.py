@@ -7,7 +7,6 @@ import torch as th
 from torch import nn, Tensor
 
 from osu_dreamer.common.residual import ResStack
-from osu_dreamer.common.unet import UNet
 from osu_dreamer.common.s4d import S4Args, S4Block
 
 from .scaleshift import ScaleShift
@@ -31,9 +30,6 @@ class DenoiserArgs:
     t_dim: int
     h_dim: int
     stack_depth: int
-
-    scales: list[int]
-    block_depth: int
     ssm_args: S4Args
 
 class Denoiser(nn.Module):
@@ -55,23 +51,10 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        in_dim = a_dim + x_dim + x_dim
-        self.proj_in = nn.Conv1d(in_dim, args.h_dim, 1)
+        self.proj_in = nn.Conv1d(a_dim + x_dim + x_dim, args.h_dim, 1)
 
         self.encoder = ResStack(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, UNet(
-                args.h_dim, 
-                args.scales, 
-                lambda: ResStack(args.h_dim, [
-                    nn.Sequential(
-                        nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
-                        nn.GroupNorm(1, args.h_dim),
-                        nn.SiLU(),
-                    )
-                    for _ in range(args.block_depth)
-                ]),
-                S4Block(args.h_dim, args.ssm_args),
-            ))
+            ScaleShift(args.h_dim, args.t_dim, S4Block(args.h_dim, args.ssm_args))
             for _ in range(args.stack_depth)
         ])
         
