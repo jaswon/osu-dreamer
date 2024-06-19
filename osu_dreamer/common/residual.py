@@ -4,6 +4,7 @@ from jaxtyping import Float
 
 import torch as th
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 class ResStack(nn.Module):
     def __init__(
@@ -25,7 +26,7 @@ class ResStack(nn.Module):
         for block, out in zip(self.blocks, self.outs):
             h = block(x, *args, **kwargs)
             res, skip = out(h).chunk(2, dim=1)
-            x = x + res
+            x = F.silu(x + res)
             o = o + skip
 
         return o
