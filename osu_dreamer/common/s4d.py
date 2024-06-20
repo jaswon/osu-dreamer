@@ -134,6 +134,7 @@ class S4Block(nn.Module):
         super().__init__()
 
         self.proj_in = nn.Sequential(
+            nn.Conv1d(dim, dim, 5,1,2, groups=dim),
             nn.Conv1d(dim, 2*dim, 1),
             nn.GroupNorm(2, 2*dim),
             nn.SiLU(),
@@ -144,7 +145,10 @@ class S4Block(nn.Module):
             nn.Conv1d(dim, dim, 1),
         )
 
-        self.proj_out = nn.Conv1d(dim, dim, 1)
+        self.proj_out = nn.Sequential(
+            nn.Conv1d(dim, dim, 1),
+            nn.GroupNorm(1, dim),
+        )
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
         gate, h = self.proj_in(x).chunk(2, dim=1)
