@@ -19,6 +19,7 @@ trainer:
                 monitor: val/diffusion
                 mode: min
                 save_top_k: 2
+        - class_path: pytorch_lightning.callbacks.LearningRateMonitor
 
     accumulate_grad_batches: 2
 
@@ -55,21 +56,24 @@ model:
     optimizer: AdamW
     opt_args:
         default:
-            lr: .0004
+            lr: .0006
         s4:
-            lr: .0001
+            lr: .0004
             weight_decay: 0.
-    P_mean: -1.1
-    P_std: 1.6
+    sch_args:
+        patience: 10
+        factor: .2
+    P_mean: -0.9
+    P_std: 1.8
 
     # model hyperparameters
     audio_features: 64
     audio_encoder_args:
-        stack_depth: 3
+        stack_depth: 4
 
     denoiser_args:
         t_features: 64
-        t_dim: 16
-        h_dim: 64
+        t_dim: 32
+        h_dim: 96
 
         stack_depth: 8

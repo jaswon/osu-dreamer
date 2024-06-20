@@ -34,6 +34,7 @@ class Model(pl.LightningModule):
         # training parameters
         optimizer: str,                     # optimizer
         opt_args: dict[str, dict],          # optimizer args
+        sch_args: dict,                     # scheduler args
         P_mean: float,
         P_std: float,
 
@@ -59,6 +60,7 @@ class Model(pl.LightningModule):
         self.optimizer = getattr(th.optim, optimizer)
         assert 'default' in opt_args, "`default` key for `opt_args` required"
         self.opt_args = opt_args
+        self.sch_args = sch_args
     
 
     def forward(
@@ -115,13 +117,21 @@ class Model(pl.LightningModule):
                 for opt_key, args in opt_args.items()
             ]
         
-        return self.optimizer(get_param_groups(
+        opt = self.optimizer(get_param_groups(
             [
                 *self.denoiser.parameters(), 
                 *self.audio_encoder.parameters(),
             ], 
             self.opt_args,
         ), **self.opt_args['default'])
+        
+        return {
+            "optimizer": opt,
+            "lr_scheduler": {
+                "scheduler": th.optim.lr_scheduler.ReduceLROnPlateau(opt, **self.sch_args),
+                "monitor": "val/diffusion",
+            }
+        }
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(*batch)
