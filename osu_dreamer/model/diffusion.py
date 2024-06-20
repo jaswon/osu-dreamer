@@ -28,6 +28,8 @@ class Diffusion:
         super().__init__()
 
         self.std_data = std_data
+        self.t_min = np.exp(P_mean - 3 * P_std)
+        self.t_max = np.exp(P_mean + 3 * P_std)
         self.sample_t = lambda *shape: th.exp(P_mean + th.randn(shape) * P_std)
 
     def pred_x0(self, model: Model, y: X, x_t: X, std: T) -> X:
@@ -65,9 +67,6 @@ class Diffusion:
         z: X,
         show_progress: bool = False,
 
-        t_min: float = .002,
-        t_max: float = 80.,
-        rho: float = 7.,
         S_churn: float = 10.,
         S_min: float = 0,
         S_max: float = float('inf'),
@@ -76,11 +75,11 @@ class Diffusion:
         """https://github.com/NVlabs/edm/blob/62072d2612c7da05165d6233d13d17d71f213fee/generate.py#L25"""
 
         t = th.linspace(1, 0, num_steps)
-        sigmas = ( t_min ** (1/rho) + t * (t_max ** (1/rho) - t_min ** (1/rho)) ) ** rho
+        sigmas = th.exp( np.log(self.t_min) + t * (np.log(self.t_max) - np.log(self.t_min)) )
         sigmas = th.tensor([*sigmas.tolist(), 0], device=z.device)
         sigmas = repeat(sigmas, 's -> s b 1 1', b = z.size(0))
 
-        x_t = z * t_max
+        x_t = z * self.t_max
 
         loop = zip(sigmas[:-1], sigmas[1:])
         if show_progress:
