@@ -12,6 +12,14 @@ trainer:
     precision: 16-mixed
 
     enable_checkpointing: true
+    callbacks:
+        - # keep the best performing checkpoint
+            class_path: pytorch_lightning.callbacks.ModelCheckpoint
+            init_args:
+                monitor: val/diffusion
+                mode: min
+                save_top_k: 2
+
     accumulate_grad_batches: 2
 
     logger: true
