@@ -67,13 +67,15 @@ model:
     P_std: 1.8
 
     # model hyperparameters
-    audio_features: 64
+    audio_features: 24
     audio_encoder_args:
-        stack_depth: 4
+        stack_depth: 12
+        scales: [4,4]
 
     denoiser_args:
-        t_features: 64
+        t_features: 128
         t_dim: 32
-        h_dim: 96
+        h_dim: 48
 
-        stack_depth: 8
+        scales: [4,4]
+        stack_depth: 24
