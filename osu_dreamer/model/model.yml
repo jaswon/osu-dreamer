@@ -18,8 +18,16 @@ trainer:
             init_args:
                 monitor: val/diffusion
                 mode: min
-                save_top_k: 2
-        - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+                save_top_k: 1
+        - # early stopping
+            class_path: pytorch_lightning.callbacks.EarlyStopping
+            init_args:
+                monitor: val/diffusion
+                mode: min
+                patience: 20
+        - # learning rate monitor
+            class_path: pytorch_lightning.callbacks.LearningRateMonitor
+            init_args: {}
 
     accumulate_grad_batches: 2
 
@@ -62,8 +70,8 @@ model:
             weight_decay: 0.
     sch_args:
         patience: 10
-        factor: .2
-    P_mean: -0.9
+        factor: .5
+    P_mean: -1.5
     P_std: 1.8
 
     # model hyperparameters
