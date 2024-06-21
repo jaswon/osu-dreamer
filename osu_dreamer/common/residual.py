@@ -6,6 +6,14 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+class Residual(nn.Module):
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
+
+    def forward(self, x):
+        return x + self.net(x)
+
 class ResStack(nn.Module):
     def __init__(
         self,

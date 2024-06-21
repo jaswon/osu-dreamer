@@ -6,7 +6,7 @@ from jaxtyping import Float, Int
 import numpy as np
 
 import torch as th
-from torch import nn, Tensor
+from torch import Tensor
 
 from einops import repeat, rearrange
 
@@ -48,7 +48,6 @@ class Model(pl.LightningModule):
 
         # model
         self.diffusion = Diffusion(P_mean, P_std)
-
         self.audio_encoder = Encoder(A_DIM, audio_features, audio_encoder_args)
         self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
 
