@@ -42,7 +42,7 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .25
+    subseq_density: .5
     
     # size of training batch
     batch_size: 8
@@ -64,7 +64,7 @@ model:
     optimizer: AdamW
     opt_args:
         default:
-            lr: .0001
+            lr: .0006
     sch_args:
         patience: 10
         factor: .5
@@ -74,8 +74,8 @@ model:
     # model hyperparameters
     audio_features: 32
     audio_encoder_args:
-        scales: [4,4,4]
-        stack_depth: 6
+        scales: [2,2,2,2,2]
+        stack_depth: 24
 
     denoiser_args:
         t_features: 128
@@ -83,5 +83,5 @@ model:
         h_dim: 32
 
         enc_args:
-            scales: [4,4,4]
-            stack_depth: 3
+            scales: [2,2,2,2,2]
+            stack_depth: 8

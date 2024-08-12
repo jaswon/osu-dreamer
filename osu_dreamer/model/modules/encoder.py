@@ -44,11 +44,10 @@ class EncoderArgs:
 class Encoder(nn.Module):
     def __init__(self, dim: int, args: EncoderArgs, in_dim: int = 0, t_dim: int = 0):
         super().__init__()
-        self.rope = RoPE(args.attn_args.head_dim)
         self.proj_in = nn.Identity() if in_dim==0 else nn.Conv1d(in_dim, dim, 1)
-
         self.use_cond = t_dim != 0
-
+        
+        self.rope = RoPE(args.attn_args.head_dim)
         self.net = UNet(dim, args.scales, ResStack(dim, [
             ScaleShift(dim, t_dim, block) if self.use_cond else block
             for _ in range(args.stack_depth)
@@ -56,6 +55,14 @@ class Encoder(nn.Module):
                 LinearAttn(dim, self.rope, args.attn_args),
                 nn.Conv1d(dim, dim, 5,1,2, groups=dim),
             ]
+        ]), lambda: ResStack(dim, [
+            nn.Sequential(
+                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
+                nn.Conv1d(dim, dim, 1),
+                nn.GroupNorm(1, dim),
+                nn.SiLU(),
+            )
+            for _ in range(3)
         ]))
 
         self.chunk_size = 1

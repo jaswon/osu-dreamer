@@ -1,11 +1,9 @@
 
-from typing import Optional
 from collections.abc import Callable
 from jaxtyping import Float
 
 from torch import nn, Tensor
 
-from osu_dreamer.common.residual import Residual
 from osu_dreamer.common.filter import Filter1D
 
 from .pad import pad, unpad
@@ -69,18 +67,9 @@ class UNet(nn.Module):
         dim: int,
         scales: list[int],
         middle: nn.Module,
-        block: Optional[Callable[[], nn.Module]] = None,
+        block: Callable[[], nn.Module],
     ):
         super().__init__()
-
-        if block is None:
-            block = lambda: Residual(nn.Sequential(
-                nn.Conv1d(dim, dim, 5,1,2, groups=dim),
-                nn.Conv1d(dim, dim, 1),
-                nn.GroupNorm(1, dim),
-                nn.SiLU(),
-                nn.Conv1d(dim, dim, 1),
-            ))
 
         self.encoder = UNetEncoder(dim, scales, block)
         self.decoder = UNetDecoder(dim, scales, block)

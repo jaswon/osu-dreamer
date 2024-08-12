@@ -56,8 +56,8 @@ def exp_taylor_map(x: Float[Tensor, "... d"]) -> Float[Tensor, "... D"]:
 
 @dataclass
 class AttnArgs:
-    head_dim: int = 64
-    n_heads: int = 16
+    head_dim: int = 24
+    n_heads: int = 8
 
 # from taylor_series_linear_attention import TaylorSeriesLinearAttn
 class LinearAttn(nn.Module):
