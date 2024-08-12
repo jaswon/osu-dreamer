@@ -64,10 +64,7 @@ model:
     optimizer: AdamW
     opt_args:
         default:
-            lr: .0006
-        s4:
-            lr: .0004
-            weight_decay: 0.
+            lr: .0001
     sch_args:
         patience: 10
         factor: .5
@@ -75,15 +72,16 @@ model:
     P_std: 1.8
 
     # model hyperparameters
-    audio_features: 24
+    audio_features: 32
     audio_encoder_args:
-        stack_depth: 12
-        scales: [4,4]
+        scales: [4,4,4]
+        stack_depth: 6
 
     denoiser_args:
         t_features: 128
-        t_dim: 32
-        h_dim: 48
+        t_dim: 64
+        h_dim: 32
 
-        scales: [4,4]
-        stack_depth: 24
+        enc_args:
+            scales: [4,4,4]
+            stack_depth: 3

@@ -48,7 +48,7 @@ class Model(pl.LightningModule):
 
         # model
         self.diffusion = Diffusion(P_mean, P_std)
-        self.audio_encoder = Encoder(A_DIM, audio_features, audio_encoder_args)
+        self.audio_encoder = Encoder(audio_features, audio_encoder_args, in_dim=A_DIM)
         self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
 
         # validation params
@@ -69,7 +69,7 @@ class Model(pl.LightningModule):
         x: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
             
-        model = partial(self.denoiser, self.audio_encoder(audio), position)
+        model = partial(self.denoiser, self.audio_encoder(audio, position), position)
         loss = self.diffusion.loss(model, x)
         return loss, { "diffusion": loss.detach() }
     
@@ -89,7 +89,7 @@ class Model(pl.LightningModule):
 
         z = th.randn(num_samples, X_DIM, l, device=audio.device)
 
-        denoiser = partial(self.denoiser, self.audio_encoder(audio), p)
+        denoiser = partial(self.denoiser, self.audio_encoder(audio, p), p)
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
 
 

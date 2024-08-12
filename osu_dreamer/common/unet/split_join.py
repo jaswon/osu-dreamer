@@ -1,7 +1,6 @@
 
 from jaxtyping import Float
 
-import torch as th
 from torch import nn, Tensor
 
 # Split/Join via projection

@@ -75,7 +75,7 @@ class UNet(nn.Module):
 
         if block is None:
             block = lambda: Residual(nn.Sequential(
-                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
+                nn.Conv1d(dim, dim, 5,1,2, groups=dim),
                 nn.Conv1d(dim, dim, 1),
                 nn.GroupNorm(1, dim),
                 nn.SiLU(),
