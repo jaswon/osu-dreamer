@@ -56,12 +56,7 @@ class Encoder(nn.Module):
                 nn.Conv1d(dim, dim, 5,1,2, groups=dim),
             ]
         ]), lambda: ResStack(dim, [
-            nn.Sequential(
-                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
-                nn.Conv1d(dim, dim, 1),
-                nn.GroupNorm(1, dim),
-                nn.SiLU(),
-            )
+            nn.Conv1d(dim, dim, 5,1,2, groups=dim)
             for _ in range(3)
         ]))
 

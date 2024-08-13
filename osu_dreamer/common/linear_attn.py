@@ -74,7 +74,6 @@ class LinearAttn(nn.Module):
         self.rope = rope
 
         self.qkv = nn.Sequential(
-            nn.GroupNorm(1, dim),
             nn.Conv1d(dim, dim_inner * 3, 1, bias = False),
             Rearrange('b (qkv h d) n -> qkv b h n d', h = args.n_heads, qkv = 3),
         )
