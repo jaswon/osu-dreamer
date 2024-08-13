@@ -76,6 +76,7 @@ model:
     audio_encoder_args:
         scales: [2,2,2,2,2]
         stack_depth: 24
+        block_depth: 8
 
     denoiser_args:
         t_features: 128
@@ -85,3 +86,4 @@ model:
         enc_args:
             scales: [2,2,2,2,2]
             stack_depth: 8
+            block_depth: 8

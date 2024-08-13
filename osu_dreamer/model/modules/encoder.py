@@ -38,6 +38,7 @@ class ScaleShift(nn.Module):
 @dataclass
 class EncoderArgs:
     stack_depth: int
+    block_depth: int
     scales: list[int]
     attn_args: AttnArgs
 
@@ -57,7 +58,7 @@ class Encoder(nn.Module):
             ]
         ]), lambda: ResStack(dim, [
             nn.Conv1d(dim, dim, 5,1,2, groups=dim)
-            for _ in range(3)
+            for _ in range(args.block_depth)
         ]))
 
         self.chunk_size = 1
