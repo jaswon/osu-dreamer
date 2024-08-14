@@ -17,13 +17,11 @@ def rotate_half(x: Float[Tensor, "... D"]) -> Float[Tensor, "... D"]:
     return rearrange(x_r, '... d r -> ... (d r)')
 
 class RoPE(nn.Module):
-    def __init__(self, dim: int, max_timescale: float = 1e5, b=.7):
+    def __init__(self, dim: int, max_timescale: float = 10_000):
         super().__init__()
         d = dim // 2
         assert d * 2 == dim
-        # a = np.log(max_timescale) / d**b
-        # self.fs = th.exp(-a * (1 + th.arange(d, dtype=th.float)) ** b) * 2 * th.pi # D/2
-        self.fs = max_timescale ** -(th.arange(0, dim, 2, dtype=th.float) / dim)
+        self.fs = max_timescale ** -(th.arange(0, dim, 2).float() / dim)
 
     def set_ts(self, ts: Float[Tensor, "B L"]):
         theta = (self.fs.to(ts.device) * ts[...,None]) # B L D/2
@@ -88,8 +86,8 @@ class LinearAttn(nn.Module):
 
         L = x.size(-1)
         q = exp_taylor_map(self.rope(q) * self.scale * np.log(L)) / L # https://arxiv.org/abs/2202.12172
-        k = exp_taylor_map(self.rope(k)) / L
-
+        k = exp_taylor_map(self.rope(k)) / L 
+        
         kv = th.einsum('b h n d, b h n e -> b h d e', k, v)
         qk_inv = th.einsum('b h n d, b h m d -> b h n', q, k).clamp(min = eps).pow(-1)
         attn = th.einsum('b h n d, b h d e, b h n -> b h n e', q, kv, qk_inv)
