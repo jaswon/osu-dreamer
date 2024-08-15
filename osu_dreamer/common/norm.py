@@ -6,7 +6,7 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 class RMSNorm(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim: int):
         super().__init__()
         self.scale = dim ** 0.5
         self.gamma = nn.Parameter(th.ones(dim,1))

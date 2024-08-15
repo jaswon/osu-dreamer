@@ -2,6 +2,7 @@
 from jaxtyping import Float
 
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 # Split/Join via projection
 
@@ -16,12 +17,9 @@ class ProjSplit(nn.Module):
 class ProjJoin(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
-        self.norm = nn.GroupNorm(1, dim)
-        self.scaleshift = nn.Conv1d(dim, 2*dim, 1)
 
     def forward(self, h: Float[Tensor, "B X L"], x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
-        scale, shift = self.scaleshift(x).chunk(2, dim=1)
-        return scale * self.norm(h) + shift
+        return F.silu(h) * x
     
 
 # Split/Join via residual
