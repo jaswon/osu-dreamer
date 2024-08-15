@@ -5,21 +5,11 @@ from typing import Optional
 from jaxtyping import Float, Int
 
 from torch import nn, Tensor
-import torch as th
-import torch.nn.functional as F
 
+from osu_dreamer.common.norm import RMSNorm
 from osu_dreamer.common.residual import ResStack
 from osu_dreamer.common.unet import UNet
 from osu_dreamer.common.linear_attn import RoPE, LinearAttn, AttnArgs
-
-class RMSNorm(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.scale = dim ** 0.5
-        self.gamma = nn.Parameter(th.ones(dim,1))
-
-    def forward(self, x):
-        return F.normalize(x, dim = 1, eps=1e-8) * self.gamma * self.scale
 
 class ScaleShift(nn.Module):
     def __init__(self, dim: int, cond_dim: int, net: nn.Module):
