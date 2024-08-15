@@ -64,7 +64,7 @@ model:
     optimizer: AdamW
     opt_args:
         default:
-            lr: .0006
+            lr: .0003
     sch_args:
         patience: 10
         factor: .5
@@ -75,8 +75,12 @@ model:
     audio_features: 32
     audio_encoder_args:
         scales: [2,2,2,2,2]
-        stack_depth: 24
-        block_depth: 8
+        stack_depth: 16
+        block_depth: 4
+
+        attn_args:
+            head_dim: 32
+            n_heads: 8
 
     denoiser_args:
         t_features: 128
@@ -85,5 +89,9 @@ model:
 
         enc_args:
             scales: [2,2,2,2,2]
-            stack_depth: 8
-            block_depth: 8
+            stack_depth: 16
+            block_depth: 4
+
+            attn_args:
+                head_dim: 32
+                n_heads: 8
