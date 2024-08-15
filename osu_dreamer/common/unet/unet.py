@@ -25,7 +25,7 @@ class UNetEncoder(nn.Module):
         for scale in scales:
             self.pre.append(block())
             self.split.append(Split(dim))
-            self.down.append(Filter1D(dim, scale, transpose=False))
+            self.down.insert(0, nn.Conv1d(dim, dim, scale+2,scale,1))
 
     def forward(self, x: Float[Tensor, "B D L"]) -> tuple[list[Float[Tensor, "B D _L"]], Float[Tensor, "B D l"]]:
         hs = []
@@ -52,7 +52,7 @@ class UNetDecoder(nn.Module):
         for scale in scales:
             self.post.insert(0, block())
             self.join.insert(0, Join(dim))
-            self.up.insert(0, Filter1D(dim, scale, transpose=True))
+            self.up.insert(0, nn.ConvTranspose1d(dim, dim, scale+2,scale,1))
 
     def forward(self, hs: list[Float[Tensor, "B D _L"]], x: Float[Tensor, "B D l"]) -> Float[Tensor, "B D L"]:
         for up, join, post in zip(self.up, self.join, self.post):
