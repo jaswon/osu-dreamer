@@ -4,62 +4,22 @@ from jaxtyping import Float
 
 from torch import nn, Tensor
 
-from osu_dreamer.common.filter import Filter1D
+from osu_dreamer.common.norm import RMSNorm
 
 from .pad import pad, unpad
-from .split_join import Split, Join
 
-class UNetEncoder(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        scales: list[int],
-        block: Callable[[], nn.Module],
-    ):
+class Join(nn.Module):
+    def __init__(self, dim: int):
         super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv1d(dim, dim, 5,1,2, groups=dim),
+            nn.Conv1d(dim, dim, 1),
+            RMSNorm(dim),
+            nn.SiLU(),
+        )
 
-        self.pre = nn.ModuleList()
-        self.split = nn.ModuleList()
-        self.down = nn.ModuleList()
-
-        for scale in scales:
-            self.pre.append(block())
-            self.split.append(Split(dim))
-            self.down.insert(0, nn.Conv1d(dim, dim, scale+2,scale,1))
-
-    def forward(self, x: Float[Tensor, "B D L"]) -> tuple[list[Float[Tensor, "B D _L"]], Float[Tensor, "B D l"]]:
-        hs = []
-        for pre, split, down in zip(self.pre, self.split, self.down):
-            h, x = split(pre(x))
-            hs.append(h)
-            x = down(x)
-        return hs, x
-
-
-class UNetDecoder(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        scales: list[int],
-        block: Callable[[], nn.Module],
-    ):
-        super().__init__()
-
-        self.post = nn.ModuleList()
-        self.join = nn.ModuleList()
-        self.up = nn.ModuleList()
-
-        for scale in scales:
-            self.post.insert(0, block())
-            self.join.insert(0, Join(dim))
-            self.up.insert(0, nn.ConvTranspose1d(dim, dim, scale+2,scale,1))
-
-    def forward(self, hs: list[Float[Tensor, "B D _L"]], x: Float[Tensor, "B D l"]) -> Float[Tensor, "B D L"]:
-        for up, join, post in zip(self.up, self.join, self.post):
-            x = up(x)
-            h = hs.pop()
-            x = post(join(h, x))
-        return x
+    def forward(self, h: Float[Tensor, "B X L"], x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
+        return self.net(h) * x
 
 class UNet(nn.Module):
     def __init__(
@@ -71,8 +31,19 @@ class UNet(nn.Module):
     ):
         super().__init__()
 
-        self.encoder = UNetEncoder(dim, scales, block)
-        self.decoder = UNetDecoder(dim, scales, block)
+        self.pre = nn.ModuleList()
+        self.down = nn.ModuleList()
+        self.post = nn.ModuleList()
+        self.join = nn.ModuleList()
+        self.up = nn.ModuleList()
+
+        for scale in scales:
+            self.pre.append(block())
+            self.down.append(nn.Conv1d(dim, dim, scale+2,scale,1))
+            
+            self.post.insert(0, block())
+            self.join.insert(0, Join(dim))
+            self.up.insert(0, nn.ConvTranspose1d(dim, dim, scale+2,scale,1))
 
         self.middle = middle
 
@@ -88,8 +59,17 @@ class UNet(nn.Module):
         
         x, p = pad(x, self.chunk_size)
 
-        hs, x = self.encoder(x)
+        hs = []
+        for pre, down in zip(self.pre, self.down):
+            x = pre(x)
+            hs.append(x)
+            x = down(x)
+            
         x = self.middle(x, *args, **kwargs)
-        x = self.decoder(hs, x)
+
+        for up, join, post in zip(self.up, self.join, self.post):
+            x = up(x)
+            x = join(hs.pop(), x)
+            x = post(x)
 
         return unpad(x, p)
