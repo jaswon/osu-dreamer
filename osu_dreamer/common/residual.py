@@ -6,6 +6,8 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+from osu_dreamer.common.norm import RMSNorm
+
 class Residual(nn.Module):
     def __init__(self, net: nn.Module):
         super().__init__()
@@ -22,7 +24,7 @@ class ResStack(nn.Module):
     ):
         super().__init__()
         self.blocks = nn.ModuleList(blocks)
-        self.norms = nn.ModuleList([ nn.GroupNorm(1, dim) for _ in blocks ])
+        self.norms = nn.ModuleList([ RMSNorm(dim) for _ in blocks ])
         self.outs = nn.ModuleList([ nn.Conv1d(dim, 2*dim, 1) for _ in blocks ])
 
     def forward(
