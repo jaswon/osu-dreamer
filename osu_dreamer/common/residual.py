@@ -25,6 +25,7 @@ class ResStack(nn.Module):
         super().__init__()
         self.blocks = nn.ModuleList(blocks)
         self.norms = nn.ModuleList([ RMSNorm(dim) for _ in blocks ])
+        self.projs = nn.ModuleList([ nn.Conv1d(dim, dim, 1) for _ in blocks ])
         self.outs = nn.ModuleList([ nn.Conv1d(dim, 2*dim, 1) for _ in blocks ])
 
     def forward(
@@ -34,10 +35,10 @@ class ResStack(nn.Module):
     ) -> Float[Tensor, "B D L"]:
         
         o = th.zeros_like(x)
-        for block, norm, out in zip(self.blocks, self.norms, self.outs):
+        for block, proj, norm, out in zip(self.blocks, self.projs, self.norms, self.outs):
             h = block(x, *args, **kwargs)
             res, skip = out(h).chunk(2, dim=1)
-            x = F.silu(norm(x + res))
+            x = F.silu(norm(proj(x) + res))
             o = o + skip
 
         return o
