@@ -6,7 +6,8 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from .encoder import Encoder, EncoderArgs
+from osu_dreamer.common.norm import RMSNorm
+from osu_dreamer.common.residual import ResStack
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
@@ -20,13 +21,26 @@ class GaussianFourierProjection(nn.Module):
         theta = x[:, None] * self.W[None, :] * 2 * th.pi
         return th.cat([theta.sin(), theta.cos()], dim=-1)
 
+class ScaleShift(nn.Module):
+    def __init__(self, dim: int, cond_dim: int, net: nn.Module):
+        super().__init__()
+        self.net = net
+
+        self.norm = RMSNorm(dim)
+        self.to_scale_shift = nn.Linear(cond_dim, dim * 2)
+        nn.init.zeros_(self.to_scale_shift.weight)
+        nn.init.zeros_(self.to_scale_shift.bias)
+
+    def forward(self, x: Float[Tensor, "B D L"], e: Float[Tensor, "B T"]):
+        scale, shift = self.to_scale_shift(e).unsqueeze(-1).chunk(2, dim=1)
+        return self.net(self.norm(x) * (1+scale) + shift)
 
 @dataclass
 class DenoiserArgs:
     t_features: int
     t_dim: int
     h_dim: int
-    enc_args: EncoderArgs
+    stack_depth: int
 
 class Denoiser(nn.Module):
     def __init__(
@@ -49,8 +63,13 @@ class Denoiser(nn.Module):
 
         self.proj_in = nn.Conv1d(a_dim + x_dim + x_dim, args.h_dim, 1)
 
-        self.encoder = Encoder(args.h_dim, args.enc_args, t_dim=args.t_dim)
-        
+        self.net = ResStack(args.h_dim, [
+            ScaleShift(args.h_dim, args.t_dim, 
+                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
+            )
+            for _ in range(args.stack_depth)
+        ])
+
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
         th.nn.init.zeros_(self.proj_out.bias) # type: ignore
@@ -65,5 +84,5 @@ class Denoiser(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         t = self.proj_t(t)
         h = self.proj_in(th.cat([a, x, y], dim=1))
-        o = self.encoder(h, p, t)
+        o = self.net(h, t)
         return self.proj_out(o)
