@@ -22,17 +22,16 @@ class RoPE(nn.Module):
         d = dim // 2
         assert d * 2 == dim
         self.fs = max_timescale ** -(th.arange(0, dim, 2).float() / dim)
-        self.set_sincos(int(max_timescale))
+
+        self.sincos = th.empty(2,0) # invalidated immediately
+        self.get_sincos(int(max_timescale))
 
     def get_sincos(self, L: int) -> Float[Tensor, "2 L D"]:
-        if L > self.sincos.size(0):
-            self.set_sincos(L)
-        return self.sincos[:L]
-
-    def set_sincos(self, L: int):
-        theta = th.arange(L)[:,None] * self.fs # L D/2
-        theta = repeat(theta, 'l d -> l (d r)', r=2)
-        self.sincos = th.stack([theta.sin(), theta.cos()]) # 2 L D
+        if L > self.sincos.size(1):
+            theta = th.arange(L)[:,None] * self.fs # L D/2
+            theta = repeat(theta, 'l d -> l (d r)', r=2)
+            self.sincos = th.stack([theta.sin(), theta.cos()]) # 2 L D
+        return self.sincos[:,:L]
 
     def forward(self, x: Float[Tensor, "B ... L D"]) -> Float[Tensor, "B ... L D"]:
         sin, cos = self.get_sincos(x.size(-2)).to(x.device)
