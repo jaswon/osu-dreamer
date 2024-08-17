@@ -28,14 +28,13 @@ class ScaleShift(nn.Module):
         super().__init__()
         self.net = net
 
-        self.norm = RMSNorm(dim)
         self.to_scale_shift = nn.Linear(cond_dim, dim * 2)
         nn.init.zeros_(self.to_scale_shift.weight)
         nn.init.zeros_(self.to_scale_shift.bias)
 
     def forward(self, x: Float[Tensor, "B D L"], e: Float[Tensor, "B T"]):
         scale, shift = self.to_scale_shift(e).unsqueeze(-1).chunk(2, dim=1)
-        return self.net(self.norm(x) * (1+scale) + shift)
+        return self.net(x * (1+scale) + shift)
 
 @dataclass
 class DenoiserArgs:
