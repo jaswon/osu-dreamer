@@ -8,6 +8,8 @@ from torch import nn, Tensor
 
 from osu_dreamer.common.norm import RMSNorm
 from osu_dreamer.common.residual import ResStack
+from osu_dreamer.common.unet import UNet
+from osu_dreamer.common.linear_attn import RoPE, LinearAttn, AttnArgs
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
@@ -40,7 +42,9 @@ class DenoiserArgs:
     t_features: int
     t_dim: int
     h_dim: int
+    scales: list[int]
     stack_depth: int
+    attn_args: AttnArgs
 
 class Denoiser(nn.Module):
     def __init__(
@@ -62,12 +66,22 @@ class Denoiser(nn.Module):
         )
 
         self.proj_in = nn.Conv1d(a_dim + x_dim + x_dim, args.h_dim, 1)
-
+        
+        self.rope = RoPE(args.attn_args.head_dim)
         self.net = ResStack(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, 
-                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
-            )
+            ScaleShift(args.h_dim, args.t_dim, block)
             for _ in range(args.stack_depth)
+            for block in [
+                UNet(
+                    args.h_dim, args.scales, 
+                    LinearAttn(args.h_dim, self.rope, args.attn_args), 
+                    lambda: nn.Sequential(
+                        nn.Conv1d(args.h_dim, args.h_dim * 2, 5,1,2, groups=args.h_dim),
+                        nn.Conv1d(args.h_dim * 2, args.h_dim, 1),
+                    ),
+                ),
+                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
+            ]
         ])
 
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
@@ -82,7 +96,6 @@ class Denoiser(nn.Module):
         x: Float[Tensor, "B X L"],
         t: Float[Tensor, "B"],
     ) -> Float[Tensor, "B X L"]:
-        t = self.proj_t(t)
         h = self.proj_in(th.cat([a, x, y], dim=1))
-        o = self.net(h, t)
+        o = self.net(h, self.proj_t(t))
         return self.proj_out(o)
