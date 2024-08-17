@@ -22,18 +22,21 @@ class RoPE(nn.Module):
         d = dim // 2
         assert d * 2 == dim
         self.fs = max_timescale ** -(th.arange(0, dim, 2).float() / dim)
+        self.set_sincos(int(max_timescale))
 
-    def set_ts(self, ts: Float[Tensor, "B L"]):
-        theta = (self.fs.to(ts.device) * ts[...,None]) # B L D/2
-        theta = repeat(theta, '... d -> ... (d r)', r=2)
-        self.sincos = th.stack([theta.sin(), theta.cos()]) # B L D
+    def get_sincos(self, L: int) -> Float[Tensor, "2 L D"]:
+        if L > self.sincos.size(0):
+            self.set_sincos(L)
+        return self.sincos[:L]
 
-    def forward(self, x: Float[Tensor, "B ... D"]) -> Float[Tensor, "B ... D"]:
-        sin, cos = self.sincos.to(x.device)
-        return (
-            th.einsum('b ... l d, b l d -> b ... l d', x, cos) +
-            th.einsum('b ... l d, b l d -> b ... l d', rotate_half(x), sin)
-        )
+    def set_sincos(self, L: int):
+        theta = th.arange(L)[:,None] * self.fs # L D/2
+        theta = repeat(theta, 'l d -> l (d r)', r=2)
+        self.sincos = th.stack([theta.sin(), theta.cos()]) # 2 L D
+
+    def forward(self, x: Float[Tensor, "B ... L D"]) -> Float[Tensor, "B ... L D"]:
+        sin, cos = self.get_sincos(x.size(-2)).to(x.device)
+        return x * cos + rotate_half(x) * sin
     
 
 def exp_taylor_map(x: Float[Tensor, "... d"]) -> Float[Tensor, "... D"]:

@@ -34,15 +34,10 @@ class Encoder(nn.Module):
             for _ in range(args.block_depth)
         ]))
 
-        self.chunk_size = 1
-        for scale in args.scales:
-            self.chunk_size *= scale
-
     def forward(
         self,
         a: Float[Tensor, "B A L"],
         p: Int[Tensor, "B L"],
     ) -> Float[Tensor, "B H L"]:
-        self.rope.set_ts( p.float()[...,::self.chunk_size] / self.chunk_size )
         h = self.proj_in(a)
         return self.net(h)
