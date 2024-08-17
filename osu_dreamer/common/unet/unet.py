@@ -39,17 +39,11 @@ class UNet(nn.Module):
 
         for scale in scales:
             self.pre.append(block())
-            self.down.append(nn.Sequential(
-                nn.Conv1d(dim, dim, scale+2,scale,1, groups=dim),
-                nn.Conv1d(dim, dim, 1),
-            ))
+            self.down.append(nn.Conv1d(dim, dim, scale+2,scale,1, groups=dim))
             
             self.post.insert(0, block())
             self.join.insert(0, Join(dim))
-            self.up.insert(0, nn.Sequential(
-                nn.ConvTranspose1d(dim, dim, scale+2,scale,1, groups=dim),
-                nn.Conv1d(dim, dim, 1),
-            ))
+            self.up.insert(0, nn.ConvTranspose1d(dim, dim, scale+2,scale,1, groups=dim))
 
         self.middle = middle
 
