@@ -24,10 +24,7 @@ trainer:
             init_args:
                 monitor: val/diffusion
                 mode: min
-                patience: 20
-        - # learning rate monitor
-            class_path: pytorch_lightning.callbacks.LearningRateMonitor
-            init_args: {}
+                patience: 10
 
     accumulate_grad_batches: 2
 
@@ -61,13 +58,9 @@ model:
     val_batches: 64
 
     # training parameters
-    optimizer: AdamW
     opt_args:
         default:
-            lr: .0002
-    sch_args:
-        patience: 10
-        factor: .5
+            lr: .0001
     P_mean: -1.5
     P_std: 1.8
 
