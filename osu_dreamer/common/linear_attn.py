@@ -1,4 +1,5 @@
 
+from typing import Optional
 from jaxtyping import Float
 
 from dataclasses import dataclass
@@ -56,8 +57,9 @@ def exp_taylor_map(x: Float[Tensor, "... d"]) -> Float[Tensor, "... D"]:
 
 @dataclass
 class AttnArgs:
-    head_dim: int = 24
-    n_heads: int = 8
+    head_dim: int
+    n_heads: int
+    one_kv_head: bool = True
 
 # from taylor_series_linear_attention import TaylorSeriesLinearAttn
 class LinearAttn(nn.Module):
@@ -73,9 +75,15 @@ class LinearAttn(nn.Module):
 
         self.rope = rope
 
-        self.qkv = nn.Sequential(
-            nn.Conv1d(dim, dim_inner * 3, 1, bias = False),
-            Rearrange('b (qkv h d) n -> qkv b h n d', h = args.n_heads, qkv = 3),
+        self.q = nn.Sequential(
+            nn.Conv1d(dim, dim_inner, 1, bias = False),
+            Rearrange('b (h d) n -> b h n d', h = args.n_heads),
+        )
+
+        kv_heads = 1 if args.one_kv_head else args.n_heads
+        self.kv = nn.Sequential(
+            nn.Conv1d(dim, args.head_dim * kv_heads * 2, 1, bias = False),
+            Rearrange('b (kv h d) n -> kv b h n d', h = kv_heads, kv = 2),
         )
 
         self.out = nn.Sequential(
@@ -83,8 +91,9 @@ class LinearAttn(nn.Module):
             nn.Conv1d(dim_inner, dim, 1, bias = False),
         )
 
-    def forward(self, x: Float[Tensor, "B D L"], eps: float = 1e-5) -> Float[Tensor, "B D L"]:
-        q, k, v = self.qkv(x) # b h n d
+    def forward(self, x: Float[Tensor, "B D L"], ctx: Optional[Float[Tensor, "B D L"]] = None, eps: float = 1e-5) -> Float[Tensor, "B D L"]:
+        q = self.q(x) # b h n d
+        k,v = self.kv(x if ctx is None else ctx) # b h n d
 
         L = x.size(-1)
         q = exp_taylor_map(self.rope(q) * self.scale * np.log(L)) / L # https://arxiv.org/abs/2202.12172
