@@ -30,7 +30,7 @@ class ResStack(nn.Module):
         *args, **kwargs,
     ) -> Float[Tensor, "B D L"]:
         
-        o = th.zeros_like(x)
+        o = x
         for block, out in zip(self.blocks, self.outs):
             h = block(x, *args, **kwargs)
             res, skip = out(h).chunk(2, dim=1)
