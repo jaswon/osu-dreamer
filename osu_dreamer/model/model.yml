@@ -47,8 +47,6 @@ model:
 
 
     # model hyperparameters
-    z_dim: 64
-    
     critic_args:
         h_dim: 32
 
@@ -62,6 +60,7 @@ model:
             one_kv_head: true
 
     generator_args:
+        z_dim: 64
         h_dim: 64
         enc_stack_depth: 16
 

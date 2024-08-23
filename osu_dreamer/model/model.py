@@ -33,7 +33,6 @@ class Model(pl.LightningModule):
         gen_adv_factor: float,
 
         # model hparams
-        z_dim: int,
         generator_args: GeneratorArgs,
         critic_args: CriticArgs,
     ):
@@ -42,7 +41,7 @@ class Model(pl.LightningModule):
         self.automatic_optimization = False
 
         # model
-        self.generator = Generator(z_dim, X_DIM, A_DIM, generator_args)
+        self.generator = Generator(X_DIM, A_DIM, generator_args)
         self.critic = Critic(X_DIM, A_DIM, critic_args) # reports P(X in P_data)
     
         # training params

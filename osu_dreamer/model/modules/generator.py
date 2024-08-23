@@ -26,6 +26,7 @@ class ScaleShift(nn.Module):
 
 @dataclass
 class GeneratorArgs:
+    z_dim: int
     h_dim: int
 
     enc_stack_depth: int
@@ -37,13 +38,18 @@ class GeneratorArgs:
 class Generator(nn.Module):
     def __init__(
         self,
-        z_dim: int,
         x_dim: int,
         a_dim: int,
         args: GeneratorArgs,
     ):
         super().__init__()
-        self.z_dim = z_dim
+        self.z_dim = args.z_dim
+
+        self.proj_z = nn.Sequential(
+            nn.Linear(args.z_dim, args.z_dim),
+            nn.LayerNorm(args.z_dim),
+            nn.SiLU(),
+        )
 
         self.proj_in = nn.Sequential(
             nn.Conv1d(a_dim, args.h_dim, 1), 
@@ -57,7 +63,7 @@ class Generator(nn.Module):
         self.net = UNet(
             args.h_dim, args.scales,
             ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, z_dim, block)
+                ScaleShift(args.h_dim, args.z_dim, block)
                 for _ in range(args.stack_depth)
                 for block in [
                     LinearAttn(args.h_dim, self.rope, args.attn_args),
@@ -71,6 +77,8 @@ class Generator(nn.Module):
         )
 
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
+        th.nn.init.zeros_(self.proj_out.weight)
+        th.nn.init.zeros_(self.proj_out.bias) # type: ignore
 
     def forward(
         self, 
@@ -82,5 +90,5 @@ class Generator(nn.Module):
             z = th.randn(a.size(0), self.z_dim, device=a.device)
         
         h = self.proj_in(a)
-        o = self.net(h,z)
+        o = self.net(h,self.proj_z(z))
         return self.proj_out(o).clamp(min=-1, max=1)
