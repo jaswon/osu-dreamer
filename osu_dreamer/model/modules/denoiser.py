@@ -6,7 +6,6 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from osu_dreamer.common.norm import RMSNorm
 from osu_dreamer.common.residual import ResStack
 from osu_dreamer.common.unet import UNet
 from osu_dreamer.common.linear_attn import RoPE, LinearAttn, AttnArgs
@@ -24,16 +23,16 @@ class GaussianFourierProjection(nn.Module):
         return th.cat([theta.sin(), theta.cos()], dim=-1)
 
 class ScaleShift(nn.Module):
-    def __init__(self, dim: int, cond_dim: int, net: nn.Module):
+    def __init__(self, dim: int, t_dim: int, net: nn.Module):
         super().__init__()
         self.net = net
 
-        self.to_scale_shift = nn.Linear(cond_dim, dim * 2)
-        nn.init.zeros_(self.to_scale_shift.weight)
-        nn.init.zeros_(self.to_scale_shift.bias)
+        self.ss = nn.Linear(t_dim, dim*2)
+        nn.init.zeros_(self.ss.weight)
+        nn.init.zeros_(self.ss.bias)
 
-    def forward(self, x: Float[Tensor, "B D L"], e: Float[Tensor, "B T"]):
-        scale, shift = self.to_scale_shift(e).unsqueeze(-1).chunk(2, dim=1)
+    def forward(self, x: Float[Tensor, "B X L"], t: Float[Tensor, "B T"]):
+        scale, shift = self.ss(t)[...,None].chunk(2, dim=1)
         return self.net(x * (1+scale) + shift)
 
 @dataclass
@@ -64,7 +63,7 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_in = nn.Conv1d(a_dim + x_dim + x_dim, args.h_dim, 1)
+        self.proj_h = nn.Conv1d(a_dim+x_dim+x_dim, args.h_dim, 1)
         
         self.rope = RoPE(args.attn_args.head_dim)
         self.net = ResStack(args.h_dim, [
@@ -95,6 +94,6 @@ class Denoiser(nn.Module):
         x: Float[Tensor, "B X L"],
         t: Float[Tensor, "B"],
     ) -> Float[Tensor, "B X L"]:
-        h = self.proj_in(th.cat([a, x, y], dim=1))
-        o = self.net(h, self.proj_t(t))
-        return self.proj_out(o)
+        t = self.proj_t(t)
+        h = self.proj_h(th.cat([a,x,y], dim=1))
+        return self.proj_out(self.net(h,t))
