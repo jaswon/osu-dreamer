@@ -3,7 +3,6 @@ from collections.abc import Callable
 from jaxtyping import Float
 
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 from .pad import pad, unpad
 
@@ -56,7 +55,7 @@ class UNet(nn.Module):
 
         for up, post in zip(self.up, self.post):
             x = up(x)
-            x = F.silu(hs.pop()) * x
+            x = hs.pop() * x
             x = post(x, *args, **kwargs)
 
         return unpad(x, p)
