@@ -76,13 +76,10 @@ class Generator(nn.Module):
         self, 
         a: Float[Tensor, "B A L"],
         p: Int[Tensor, "B L"],
-        seed: Optional[int] = None,
+        z: Optional[Float[Tensor, "B Z"]] = None,
     ) -> Float[Tensor, "B X L"]:
-        rng = None
-        if seed is not None:
-            rng = th.Generator()
-            rng.manual_seed(seed)
-        z = th.randn(a.size(0), self.z_dim, generator=rng, device=a.device)
+        if z is None:
+            z = th.randn(a.size(0), self.z_dim, device=a.device)
         
         h = self.proj_in(a)
         o = self.net(h,z)

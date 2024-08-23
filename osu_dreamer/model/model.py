@@ -56,9 +56,10 @@ class Model(pl.LightningModule):
         self, 
         a: Float[Tensor, "A L"],
         p: Int[Tensor, "L"],
-        seed: Optional[Int] = None,
+        z: Optional[Float[Tensor, "Z"]] = None,
     ) -> Float[Tensor, "X L"]:
-        return self.generator(a[None], p[None], seed=seed)[0]
+        z = z[None] if z is not None else None
+        return self.generator(a[None], p[None], z=z)[0]
 
     def forward(
         self,
