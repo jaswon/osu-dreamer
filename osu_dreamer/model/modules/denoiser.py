@@ -41,6 +41,7 @@ class DenoiserArgs:
     t_dim: int
     h_dim: int
     scales: list[int]
+    block_depth: int
     stack_depth: int
     attn_args: AttnArgs
 
@@ -66,21 +67,21 @@ class Denoiser(nn.Module):
         self.proj_h = nn.Conv1d(a_dim+x_dim+x_dim, args.h_dim, 1)
         
         self.rope = RoPE(args.attn_args.head_dim)
-        self.net = ResStack(args.h_dim, [
-            ScaleShift(args.h_dim, args.t_dim, block)
-            for _ in range(args.stack_depth)
-            for block in [
-                UNet(
-                    args.h_dim, args.scales, 
-                    LinearAttn(args.h_dim, self.rope, args.attn_args), 
-                    lambda: nn.Sequential(
-                        nn.Conv1d(args.h_dim, args.h_dim * 2, 5,1,2, groups=args.h_dim),
-                        nn.Conv1d(args.h_dim * 2, args.h_dim, 1),
-                    ),
-                ),
-                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
-            ]
-        ])
+        self.net = UNet(
+            args.h_dim, args.scales,
+            ResStack(args.h_dim, [
+                ScaleShift(args.h_dim, args.t_dim, block)
+                for _ in range(args.stack_depth)
+                for block in [
+                    LinearAttn(args.h_dim, self.rope, args.attn_args),
+                    nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
+                ]
+            ]),
+            lambda: ResStack(args.h_dim, [
+                ScaleShift(args.h_dim, args.t_dim, nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim))
+                for _ in range(args.block_depth)
+            ]),
+        )
 
         self.proj_out = nn.Conv1d(args.h_dim, x_dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)

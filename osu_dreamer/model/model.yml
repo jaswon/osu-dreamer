@@ -26,7 +26,7 @@ trainer:
                 mode: min
                 patience: 10
 
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 4
 
     logger: true
     enable_progress_bar: true
@@ -42,7 +42,7 @@ data:
     subseq_density: .5
     
     # size of training batch
-    batch_size: 8
+    batch_size: 16
     
     # number of workers to use for data loading
     num_workers: 6
@@ -60,7 +60,7 @@ model:
     # training parameters
     opt_args:
         default:
-            lr: .0001
+            lr: .00003
     P_mean: -1.5
     P_std: 1.8
 
@@ -72,11 +72,13 @@ model:
     denoiser_args:
         t_features: 128
         t_dim: 64
-        h_dim: 32
+        h_dim: 64
 
-        scales: [2,2,2,2,2]
+        scales: [3,2,2,2]
+        block_depth: 6
 
         stack_depth: 8
         attn_args:
             head_dim: 16
             n_heads: 32
+            one_kv_head: true
