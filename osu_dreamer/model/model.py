@@ -1,14 +1,12 @@
 
-from functools import partial
-
+from typing import Optional
 from jaxtyping import Float, Int
 
 import numpy as np
 
 import torch as th
 from torch import Tensor
-
-from einops import repeat, rearrange
+import torch.nn.functional as F
 
 import pytorch_lightning as pl
 
@@ -19,77 +17,105 @@ from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.common.adabelief import AdaBelief
 
-from .diffusion import Diffusion
+from .modules.critic import Critic, CriticArgs
+from .modules.generator import Generator, GeneratorArgs
 
-from .modules.encoder import Encoder, EncoderArgs
-from .modules.denoiser import Denoiser, DenoiserArgs
-    
-    
+
 class Model(pl.LightningModule):
     def __init__(
         self,
 
-        # validation parameters
-        val_batches: int,
-        val_steps: int,
-
         # training parameters
-        opt_args: dict[str, dict],          # optimizer args
-        P_mean: float,
-        P_std: float,
+        accum_batches: int,
+        critic_lr: float,
+        gen_lr: float,
+        r1_gamma: float,
+        gen_adv_factor: float,
 
         # model hparams
-        audio_features: int,
-        audio_encoder_args: EncoderArgs,
-        denoiser_args: DenoiserArgs,
+        z_dim: int,
+        generator_args: GeneratorArgs,
+        critic_args: CriticArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
+        self.automatic_optimization = False
 
         # model
-        self.diffusion = Diffusion(P_mean, P_std)
-        self.audio_encoder = Encoder(audio_features, audio_encoder_args, in_dim=A_DIM)
-        self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
-
-        # validation params
-        self.val_batches = val_batches
-        self.val_steps = val_steps
-
-        # training params
-        assert 'default' in opt_args, "`default` key for `opt_args` required"
-        self.opt_args = opt_args
+        self.generator = Generator(z_dim, X_DIM, A_DIM, generator_args)
+        self.critic = Critic(X_DIM, A_DIM, critic_args) # reports P(X in P_data)
     
+        # training params
+        self.accum_batches = accum_batches
+        self.critic_lr = critic_lr
+        self.gen_lr = gen_lr
+        self.gen_adv_factor = gen_adv_factor
+        self.r1_gamma = r1_gamma
+    
+    def sample(
+        self, 
+        a: Float[Tensor, "A L"],
+        p: Int[Tensor, "L"],
+        seed: Optional[Int] = None,
+    ) -> Float[Tensor, "X L"]:
+        return self.generator(a[None], p[None], seed=seed)[0]
 
     def forward(
         self,
-        audio: Float[Tensor, str(f"B {A_DIM} L")],
-        position: Int[Tensor, "B L"],
-        x: Float[Tensor, str(f"B {X_DIM} L")],
-    ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
-            
-        model = partial(self.denoiser, self.audio_encoder(audio, position), position)
-        loss = self.diffusion.loss(model, x)
-        return loss, { "diffusion": loss.detach() }
-    
-    @th.no_grad()
-    def sample(
-        self, 
-        audio: Float[Tensor, str(f"{A_DIM} L")],
-        num_samples: int = 1,
-        num_steps: int = 0,
-        **kwargs,
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        l = audio.size(-1)
-        audio = repeat(audio, 'a l -> b a l', b=num_samples)
-        p = repeat(th.arange(l), 'l -> b l', b=num_samples).to(audio.device)
+        a: Float[Tensor, "B A L"],
+        p: Int[Tensor, "B L"],
+        x_real: Float[Tensor, "B X L"],
+    ):
+        self.generator.requires_grad_(True)
+        self.critic.requires_grad_(True)
 
-        num_steps = num_steps if num_steps > 0 else self.val_steps
+        x_fake = self.generator(a, p)
 
-        z = th.randn(num_samples, X_DIM, l, device=audio.device)
+        with th.enable_grad():
+            x_real.requires_grad_()
+            logits_real = self.critic(a, p, x_real)
+        logits_fake = self.critic(a, p, x_fake)
 
-        denoiser = partial(self.denoiser, self.audio_encoder(audio, p), p)
-        return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
+        # RaSGAN adversarial loss
+        real_score = logits_real - logits_fake.mean()
+        fake_score = logits_fake - logits_real.mean()
 
+        adv_loss_g = F.softplus(th.stack([-fake_score, real_score])).mean()
+        adv_loss_c = F.softplus(th.stack([-real_score, fake_score])).mean()
+
+        #################### 1. Compute Generator Loss ####################
+
+        # reconstruction loss for low frequency structure
+        gen_recon_loss = F.mse_loss(x_real, x_fake)
+
+        gen_loss = gen_recon_loss + adv_loss_g * self.gen_adv_factor
+
+        if gen_loss.isnan():
+            raise RuntimeError('generator nan loss')
+
+        #################### 2. Compute Critic Loss ####################
+
+        # R1 Regularization
+        with th.enable_grad():
+            r1_grad = th.autograd.grad(
+                outputs=logits_real,
+                inputs=x_real,
+                grad_outputs=th.ones_like(logits_real),
+                create_graph=True,
+            )[0]
+        r1_loss = 0.5 * (r1_grad.norm(2, dim=1) ** 2).mean()
+
+        critic_loss = adv_loss_c + r1_loss * self.r1_gamma
+
+        if critic_loss.isnan():
+            raise RuntimeError('critic nan loss')
+        
+        return gen_loss, critic_loss, {
+            'gen/recon': gen_recon_loss.detach(),
+            'gen/adv': adv_loss_g.detach(),
+            'critic/adv': adv_loss_c.detach(),
+            'critic/r1': r1_loss.detach(),
+        }
 
 #
 #
@@ -100,57 +126,61 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
+        opt_crit = AdaBelief(
+            self.critic.parameters(),
+            lr=self.critic_lr,
+        )
 
-        def get_param_groups(all_params: list[Tensor], opt_args: dict[str, dict]):
-            params = { opt_key: [] for opt_key in opt_args }
-            for p in all_params:
-                opt_key = getattr(p, 'opt_key', 'default')
-                params.get(opt_key, params['default']).append(p)
-            return [
-                { 
-                    'params': params[opt_key], 
-                    **({} if opt_key == "default" else args),
-                }
-                for opt_key, args in opt_args.items()
-            ]
-        
-        return AdaBelief(get_param_groups(
-            [
-                *self.denoiser.parameters(), 
-                *self.audio_encoder.parameters(),
-            ], 
-            self.opt_args,
-        ), **self.opt_args['default'])
+        opt_gen = AdaBelief(
+            self.generator.parameters(), 
+            lr=self.gen_lr,
+        )
+
+        return [opt_crit, opt_gen]
 
     def training_step(self, batch: Batch, batch_idx):
-        loss, log_dict = self(*batch)
-        self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
-        return loss
- 
+        opt_crit, opt_gen = self.optimizers() # type: ignore
+        should_step = (batch_idx + 1) % self.accum_batches == 0
+
+        self.generator.requires_grad_(True)
+        self.critic.requires_grad_(True)
+        gen_loss, critic_loss, log_dict = self(*batch)
+
+        self.log_dict({ f"train/{k}":v for k,v in log_dict.items() })
+
+        self.critic.requires_grad_(False)
+        self.manual_backward(gen_loss / self.accum_batches, retain_graph=True)
+
+        self.critic.requires_grad_(True)
+        self.generator.requires_grad_(False)
+        self.manual_backward(critic_loss / self.accum_batches)
+
+        if should_step:
+            opt_crit.step()
+            opt_crit.zero_grad()
+            opt_gen.step()
+            opt_gen.zero_grad()
+
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
+
         with th.no_grad():
-            a,p,x = batch
-            bL = self.val_batches * (a.size(-1) // self.val_batches)
-            a = rearrange(a[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
-            p = rearrange(p[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
-            x = rearrange(x[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
-            _, log_dict = self(a,p,x)
-        self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
+            _, _, log_dict = self(*batch)
+        self.log_dict({ f"val/{k}":v for k,v in log_dict.items() })
 
         if batch_idx == 0:
             self.plot_sample(batch)
 
     def plot_sample(self, b: Batch):
-        a_tensor, _, x_tensor = b
+        a_tensor, p_tensor, x_tensor = b
         
-        a: Float[np.ndarray, "A L"] = a_tensor.squeeze(0).cpu().numpy()
+        a: Float[np.ndarray, "A L"] = a_tensor[0].cpu().numpy()
 
         with th.no_grad():
             plots = [
-                x.squeeze(0).cpu().numpy()
+                x.cpu().numpy()
                 for x in [
-                    x_tensor, 
-                    self.sample(a_tensor.squeeze(0)),
+                    x_tensor[0], 
+                    self.sample(a_tensor[0], p_tensor[0]),
                 ]
             ]
 

@@ -46,7 +46,7 @@ class UNet(nn.Module):
 
         hs = []
         for pre, split, down in zip(self.pre, self.split, self.down):
-            x = pre(x, *args, **kwargs)
+            x = pre(x)
             h, x = split(x).chunk(2, dim=1)
             hs.append(h)
             x = down(x)
@@ -56,6 +56,6 @@ class UNet(nn.Module):
         for up, post in zip(self.up, self.post):
             x = up(x)
             x = hs.pop() * x
-            x = post(x, *args, **kwargs)
+            x = post(x)
 
         return unpad(x, p)

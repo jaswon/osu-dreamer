@@ -12,21 +12,6 @@ trainer:
     precision: 16-mixed
 
     enable_checkpointing: true
-    callbacks:
-        - # keep the best performing checkpoint
-            class_path: pytorch_lightning.callbacks.ModelCheckpoint
-            init_args:
-                monitor: val/diffusion
-                mode: min
-                save_top_k: 1
-        - # early stopping
-            class_path: pytorch_lightning.callbacks.EarlyStopping
-            init_args:
-                monitor: val/diffusion
-                mode: min
-                patience: 10
-
-    accumulate_grad_batches: 4
 
     logger: true
     enable_progress_bar: true
@@ -39,7 +24,7 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .5
+    subseq_density: .2
     
     # size of training batch
     batch_size: 16
@@ -53,28 +38,34 @@ data:
     # val_split: .1
     
 model:
-    # validation parameters
-    val_steps: 32
-    val_batches: 64
-
     # training parameters
-    opt_args:
-        default:
-            lr: .00003
-    P_mean: -1.5
-    P_std: 1.8
+    accum_batches: 2
+    gen_lr: .0003
+    critic_lr: .0004
+    r1_gamma: 5.
+    gen_adv_factor: .01
+
 
     # model hyperparameters
-    audio_features: 64
-    audio_encoder_args:
-        stack_depth: 16
+    z_dim: 64
+    
+    critic_args:
+        h_dim: 32
 
-    denoiser_args:
-        t_features: 128
-        t_dim: 64
+        scales: [3,3,3]
+        block_depth: 6
+
+        stack_depth: 8
+        attn_args:
+            head_dim: 16
+            n_heads: 32
+            one_kv_head: true
+
+    generator_args:
         h_dim: 64
+        enc_stack_depth: 16
 
-        scales: [3,2,2,2]
+        scales: [3,3,3]
         block_depth: 6
 
         stack_depth: 8
