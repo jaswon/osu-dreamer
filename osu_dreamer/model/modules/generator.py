@@ -64,7 +64,7 @@ class Generator(nn.Module):
                 ]
             ]),
             lambda: ResStack(args.h_dim, [
-                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim)
+                ScaleShift(args.h_dim, args.z_dim, nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim))
                 for _ in range(args.block_depth)
             ]),
         )
