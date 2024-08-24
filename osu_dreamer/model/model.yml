@@ -62,7 +62,6 @@ model:
     generator_args:
         z_dim: 64
         h_dim: 64
-        enc_stack_depth: 16
 
         scales: [3,3,3]
         block_depth: 6

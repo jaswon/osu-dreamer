@@ -29,7 +29,6 @@ class GeneratorArgs:
     z_dim: int
     h_dim: int
 
-    enc_stack_depth: int
     scales: list[int]
     block_depth: int
     stack_depth: int
@@ -51,13 +50,7 @@ class Generator(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_in = nn.Sequential(
-            nn.Conv1d(a_dim, args.h_dim, 1), 
-            ResStack(args.h_dim, [
-                nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim)
-                for _ in range(args.enc_stack_depth)
-            ]),
-        )
+        self.proj_in = nn.Conv1d(a_dim, args.h_dim, 1)
         
         self.rope = RoPE(args.attn_args.head_dim)
         self.net = UNet(
