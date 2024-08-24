@@ -31,6 +31,7 @@ class Model(pl.LightningModule):
         gen_lr: float,
         r1_gamma: float,
         gen_adv_factor: float,
+        grad_clip_threshold: float,
 
         # model hparams
         generator_args: GeneratorArgs,
@@ -50,6 +51,7 @@ class Model(pl.LightningModule):
         self.gen_lr = gen_lr
         self.gen_adv_factor = gen_adv_factor
         self.r1_gamma = r1_gamma
+        self.grad_clip_threshold = grad_clip_threshold
     
     def sample(
         self, 
@@ -156,8 +158,10 @@ class Model(pl.LightningModule):
         self.manual_backward(critic_loss / self.accum_batches)
 
         if should_step:
+            th.nn.utils.clip_grad_norm_(self.critic.parameters(), self.grad_clip_threshold)
             opt_crit.step()
             opt_crit.zero_grad()
+            th.nn.utils.clip_grad_norm_(self.generator.parameters(), self.grad_clip_threshold)
             opt_gen.step()
             opt_gen.zero_grad()
 

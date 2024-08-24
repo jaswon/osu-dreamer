@@ -44,7 +44,7 @@ model:
     critic_lr: .0004
     r1_gamma: 5.
     gen_adv_factor: .01
-
+    grad_clip_threshold: .05
 
     # model hyperparameters
     critic_args:
