@@ -103,7 +103,7 @@ class Model(pl.LightningModule):
                 grad_outputs=th.ones_like(logits_real),
                 create_graph=True,
             )[0]
-        r1_loss = 0.5 * (r1_grad.norm(2, dim=1) ** 2).mean()
+        r1_loss = 0.5 * r1_grad.pow(2).sum((1,2)).mean()
 
         critic_loss = adv_loss_c + r1_loss * self.r1_gamma
 
