@@ -76,11 +76,13 @@ class Model(pl.LightningModule):
         opt_crit = AdaBelief(
             self.critic.parameters(),
             lr=self.critic_lr,
+            betas=(.5,.999),
         )
 
         opt_gen = AdaBelief(
             self.generator.parameters(), 
             lr=self.gen_lr,
+            betas=(.5,.999),
         )
 
         return [opt_crit, opt_gen]
