@@ -123,13 +123,12 @@ class Model(pl.LightningModule):
             _, adv_loss_c = self.adversarial_loss(logits_real, logits_fake)
 
             # R1 Regularization
-            with th.autocast(x_real.device.type, enabled=False):
-                r1_grad = th.autograd.grad(
-                    outputs=logits_real.float(),
-                    inputs=x_real.float(),
-                    grad_outputs=th.ones_like(logits_real.float()),
-                    create_graph=True,
-                )[0]
+            r1_grad = th.autograd.grad(
+                outputs=logits_real.float(),
+                inputs=x_real.float(),
+                grad_outputs=th.ones_like(logits_real.float()),
+                create_graph=True,
+            )[0]
             r1_loss = 0.5 * r1_grad.pow(2).sum((1,2)).mean()
 
             critic_loss = adv_loss_c + r1_loss * self.r1_gamma

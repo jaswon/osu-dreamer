@@ -56,5 +56,4 @@ class Critic(nn.Module):
         p: Int[Tensor, "B L"],
         x: Float[Tensor, "B X L"],
     ) -> Float[Tensor, "B l"]:
-        with th.autocast(x.device.type, enabled=False):
-            return self.net(th.cat([self.a_pre(a),x], dim=1)).squeeze(1)
+        return self.net(th.cat([self.a_pre(a),x], dim=1)).squeeze(1)

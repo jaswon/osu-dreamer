@@ -9,7 +9,6 @@ trainer:
     max_epochs: -1
     
     devices: 1
-    precision: 16-mixed
 
     enable_checkpointing: true
 
