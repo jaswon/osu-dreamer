@@ -126,8 +126,12 @@ class Model(pl.LightningModule):
                     create_graph=True,
                 )[0]
             r1_loss = 0.5 * r1_grad.pow(2).sum((1,2)).mean()
+
+            critic_loss = adv_loss_c + r1_loss * self.r1_gamma
+            if critic_loss.isnan():
+                raise RuntimeError('critic nan loss')
             
-            self.manual_backward(adv_loss_c + r1_loss * self.r1_gamma)
+            self.manual_backward(critic_loss)
             self.log('train/critic/grad_norm', th.nn.utils.clip_grad_norm_(
                 self.critic.parameters(), 
                 self.grad_clip_threshold, 
@@ -151,8 +155,12 @@ class Model(pl.LightningModule):
 
             # reconstruction loss for low frequency structure
             gen_recon_loss = F.mse_loss(x_real, x_fake)
+
+            gen_loss = gen_recon_loss + adv_loss_g * self.gen_adv_factor
+            if gen_loss.isnan():
+                raise RuntimeError('generator nan loss')
             
-            self.manual_backward(gen_recon_loss + adv_loss_g * self.gen_adv_factor)
+            self.manual_backward(gen_loss)
             self.log('train/gen/grad_norm', th.nn.utils.clip_grad_norm_(
                 self.generator.parameters(), 
                 self.grad_clip_threshold, 
