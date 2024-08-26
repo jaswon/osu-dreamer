@@ -7,7 +7,7 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from osu_dreamer.common.residual import ResStack
+from osu_dreamer.common.residual import ResStack, WaveNet
 from osu_dreamer.common.unet import UNet
 from osu_dreamer.common.linear_attn import RoPE, LinearAttn, AttnArgs
 
@@ -28,6 +28,8 @@ class ScaleShift(nn.Module):
 class GeneratorArgs:
     z_dim: int
     h_dim: int
+    a_pre_num_blocks: int
+    a_pre_block_depth: int
 
     scales: list[int]
     block_depth: int
@@ -48,9 +50,15 @@ class Generator(nn.Module):
             nn.Linear(args.z_dim, args.z_dim),
             nn.LayerNorm(args.z_dim),
             nn.SiLU(),
+            nn.Linear(args.z_dim, args.z_dim),
+            nn.LayerNorm(args.z_dim),
+            nn.SiLU(),
         )
 
-        self.proj_in = nn.Conv1d(a_dim, args.h_dim, 1)
+        self.proj_in = nn.Sequential(
+            nn.Conv1d(a_dim, args.h_dim, 1),
+            WaveNet(args.h_dim, args.a_pre_num_blocks, args.a_pre_block_depth),
+        )
         
         self.rope = RoPE(args.attn_args.head_dim)
         self.net = UNet(

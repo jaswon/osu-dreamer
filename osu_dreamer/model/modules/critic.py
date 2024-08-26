@@ -6,7 +6,7 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from osu_dreamer.common.residual import ResStack
+from osu_dreamer.common.residual import ResStack, WaveNet
 
 
 @dataclass
@@ -28,18 +28,7 @@ class Critic(nn.Module):
 
         self.a_pre = nn.Sequential(
             nn.Conv1d(a_dim, args.h_dim, 1),
-            ResStack(args.h_dim, [
-                nn.Sequential(
-                    nn.ZeroPad1d((1,0) if d==0 else 2**(d-1)),
-                    nn.Conv1d(
-                        args.h_dim, args.h_dim, 2, 
-                        dilation=2**d,
-                        groups=args.h_dim,
-                    )
-                )
-                for _ in range(args.a_pre_num_blocks)
-                for d in range(args.a_pre_block_depth)
-            ]) # wave net: context length = num_blocks*2^block_depth
+            WaveNet(args.h_dim, args.a_pre_num_blocks, args.a_pre_block_depth),
         )
 
         self.net = nn.Sequential(
