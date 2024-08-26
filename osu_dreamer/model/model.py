@@ -94,14 +94,15 @@ class Model(pl.LightningModule):
         logits_real: Float[Tensor, "B l"], 
         logits_fake: Float[Tensor, "B l"],
     ) -> tuple[Float[Tensor, ""], Float[Tensor, ""]]:
-        # RaSGAN adversarial loss
+        """relativistic average GAN loss"""
+
         real_score = logits_real - logits_fake.mean()
         fake_score = logits_fake - logits_real.mean()
 
         return (
-            F.softplus(th.stack([-fake_score, real_score])).mean(), # generator loss
-            F.softplus(th.stack([-real_score, fake_score])).mean(), # critic loss
-        )
+            th.stack([real_score+1, fake_score-1]).pow(2).mean(), # generator loss
+            th.stack([real_score-1, fake_score+1]).pow(2).mean(), # critic loss
+        ) # RaLSGAN
 
     def training_step(self, batch: Batch, batch_idx):
         opt_crit, opt_gen = self.optimizers() # type: ignore
