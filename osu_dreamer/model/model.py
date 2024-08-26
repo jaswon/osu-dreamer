@@ -34,7 +34,6 @@ class Model(pl.LightningModule):
         gen_lr: float,
         r1_gamma: float,
         gen_adv_factor: float,
-        grad_clip_threshold: float,
         real_noise: float,
         critic_steps: int = 1,
         gen_steps: int = 1,
@@ -52,7 +51,6 @@ class Model(pl.LightningModule):
         self.gen_lr = gen_lr
         self.gen_adv_factor = gen_adv_factor
         self.r1_gamma = r1_gamma
-        self.grad_clip_threshold = grad_clip_threshold
         self.real_noise = real_noise
         self.gen_steps = gen_steps
         self.critic_steps = critic_steps
@@ -137,10 +135,6 @@ class Model(pl.LightningModule):
                 raise RuntimeError('critic nan loss')
             
             self.manual_backward(critic_loss)
-            self.log('train/critic/grad_norm', th.nn.utils.clip_grad_norm_(
-                self.critic.parameters(), 
-                self.grad_clip_threshold, 
-            ).detach())
             opt_crit.step()
             opt_crit.zero_grad()
 
@@ -166,10 +160,6 @@ class Model(pl.LightningModule):
                 raise RuntimeError('generator nan loss')
             
             self.manual_backward(gen_loss)
-            self.log('train/gen/grad_norm', th.nn.utils.clip_grad_norm_(
-                self.generator.parameters(), 
-                self.grad_clip_threshold, 
-            ).detach())
             opt_gen.step()
             opt_gen.zero_grad()
 
