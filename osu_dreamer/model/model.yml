@@ -49,15 +49,11 @@ model:
     # model hyperparameters
     critic_args:
         h_dim: 32
+        a_pre_num_blocks: 4
+        a_pre_block_depth: 4
 
-        scales: [3,3,3,3]
-        block_depth: 4
-
-        stack_depth: 4
-        attn_args:
-            head_dim: 16
-            n_heads: 16
-            one_kv_head: true
+        scales: [2,2,2,2,2,2,2,2,2,2]
+        block_depth: 3
 
     generator_args:
         z_dim: 64
