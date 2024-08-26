@@ -35,6 +35,7 @@ class Model(pl.LightningModule):
         r1_gamma: float,
         gen_adv_factor: float,
         grad_clip_threshold: float,
+        real_noise: float,
         critic_steps: int = 1,
         gen_steps: int = 1,
     ):
@@ -52,6 +53,7 @@ class Model(pl.LightningModule):
         self.gen_adv_factor = gen_adv_factor
         self.r1_gamma = r1_gamma
         self.grad_clip_threshold = grad_clip_threshold
+        self.real_noise = real_noise
         self.gen_steps = gen_steps
         self.critic_steps = critic_steps
     
@@ -104,6 +106,9 @@ class Model(pl.LightningModule):
     def training_step(self, batch: Batch, batch_idx):
         opt_crit, opt_gen = self.optimizers() # type: ignore
         a, p, x_real = batch
+
+        # noise `x_real` to handicap critic
+        x_real = x_real + th.randn_like(x_real) * self.real_noise
 
         #################### Train Critic ####################
 
@@ -182,10 +187,10 @@ class Model(pl.LightningModule):
 
         with th.no_grad():
             plots = [
-                x.cpu().numpy()
+                x[0].cpu().numpy()
                 for x in [
-                    x_tensor[0], 
-                    self.sample(a_tensor[0], p_tensor[0]),
+                    x_tensor + th.randn_like(x_tensor) * self.real_noise, 
+                    self.generator(a_tensor, p_tensor),
                 ]
             ]
 

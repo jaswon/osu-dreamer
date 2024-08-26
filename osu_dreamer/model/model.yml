@@ -44,6 +44,7 @@ model:
     r1_gamma: 10.
     gen_adv_factor: 5.
     grad_clip_threshold: 1.
+    real_noise: .001
     gen_steps: 3
 
     # model hyperparameters
