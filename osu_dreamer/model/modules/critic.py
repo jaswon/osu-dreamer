@@ -46,10 +46,15 @@ class Critic(nn.Module):
             nn.Conv1d(args.h_dim, 1, 1),
         )
 
+        for m in self.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.utils.parametrizations.spectral_norm(m)
+
     def forward(
         self,
         a: Float[Tensor, "B A L"],
         p: Int[Tensor, "B L"],
         x: Float[Tensor, "B X L"],
     ) -> Float[Tensor, "B l"]:
-        return self.net(th.cat([self.a_pre(a),x], dim=1)).squeeze(1)
+        with th.autocast(x.device.type, enabled=False):
+            return self.net(th.cat([self.a_pre(a),x], dim=1)).squeeze(1)
