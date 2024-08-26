@@ -95,7 +95,7 @@ class LinearAttn(nn.Module):
         q = self.q(x) # b h n d
         k,v = self.kv(x if ctx is None else ctx) # b h n d
 
-        with th.autocast(str(x.device), enabled=False):
+        with th.autocast(x.device.type, enabled=False):
             L = x.size(-1)
             q = exp_taylor_map(self.rope(q.float()) * self.scale * np.log(L)) / L # https://arxiv.org/abs/2202.12172
             k = exp_taylor_map(self.rope(k.float())) / L 
