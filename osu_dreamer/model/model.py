@@ -1,6 +1,5 @@
 
-from typing import Optional
-from jaxtyping import Float, Int
+from jaxtyping import Float
 
 import numpy as np
 
@@ -9,6 +8,8 @@ from torch import Tensor
 import torch.nn.functional as F
 
 import pytorch_lightning as pl
+
+from einops import repeat
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
@@ -54,14 +55,9 @@ class Model(pl.LightningModule):
         self.gen_steps = gen_steps
         self.critic_steps = critic_steps
     
-    def sample(
-        self, 
-        a: Float[Tensor, "A L"],
-        p: Int[Tensor, "L"],
-        z: Optional[Float[Tensor, "Z"]] = None,
-    ) -> Float[Tensor, "X L"]:
-        z = z[None] if z is not None else None
-        return self.generator(a[None], p[None], z=z)[0]
+    @th.no_grad()
+    def sample(self, a: Float[Tensor, "A L"], num_samples: int = 1) -> Float[Tensor, "B X L"]:
+        return self.generator(repeat(a, 'a l -> b a l', b=num_samples))
 
 #
 #
@@ -101,7 +97,7 @@ class Model(pl.LightningModule):
 
     def training_step(self, batch: Batch, batch_idx):
         opt_crit, opt_gen = self.optimizers() # type: ignore
-        a, p, x_real = batch
+        a, x_real = batch
 
         # noise `x_real` to handicap critic
         x_real = x_real + th.randn_like(x_real) * self.real_noise
@@ -111,10 +107,10 @@ class Model(pl.LightningModule):
         self.critic.requires_grad_(True)
         self.generator.requires_grad_(False)
         x_real.requires_grad_(True)
-        x_fake = self.generator(a, p).detach()
+        x_fake = self.generator(a).detach()
         for _ in range(self.critic_steps):
-            logits_real = self.critic(a, p, x_real)
-            logits_fake = self.critic(a, p, x_fake)
+            logits_real = self.critic(a, x_real)
+            logits_fake = self.critic(a, x_fake)
 
             critic_adv_loss = self.adversarial_critic_loss(logits_real, logits_fake)
 
@@ -143,10 +139,10 @@ class Model(pl.LightningModule):
         self.critic.requires_grad_(False)
         self.generator.requires_grad_(True)
         x_real.requires_grad_(False)
-        logits_real = self.critic(a, p, x_real).detach()
+        logits_real = self.critic(a, x_real).detach()
         for _ in range(self.gen_steps):
-            x_fake = self.generator(a, p)
-            logits_fake = self.critic(a, p, x_fake)
+            x_fake = self.generator(a)
+            logits_fake = self.critic(a, x_fake)
             gen_adv_loss = self.adversarial_critic_loss(logits_fake, logits_real)
 
             # reconstruction loss for low frequency structure
@@ -168,7 +164,7 @@ class Model(pl.LightningModule):
             self.plot_sample(batch)
 
     def plot_sample(self, b: Batch):
-        a_tensor, p_tensor, x_tensor = b
+        a_tensor, x_tensor = b
         
         a: Float[np.ndarray, "A L"] = a_tensor[0].cpu().numpy()
 
@@ -177,7 +173,7 @@ class Model(pl.LightningModule):
                 x[0].cpu().numpy()
                 for x in [
                     x_tensor + th.randn_like(x_tensor) * self.real_noise, 
-                    self.generator(a_tensor, p_tensor),
+                    self.generator(a_tensor),
                 ]
             ]
 

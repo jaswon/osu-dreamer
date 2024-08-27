@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from jaxtyping import Float, Int
+from jaxtyping import Float
 
 import torch as th
 from torch import nn, Tensor
@@ -84,7 +84,6 @@ class Generator(nn.Module):
     def forward(
         self, 
         a: Float[Tensor, "B A L"],
-        p: Int[Tensor, "B L"],
         z: Optional[Float[Tensor, "B Z"]] = None,
     ) -> Float[Tensor, "B X L"]:
         if z is None:

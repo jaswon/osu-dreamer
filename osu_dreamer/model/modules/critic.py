@@ -1,7 +1,7 @@
 
 from dataclasses import dataclass
 
-from jaxtyping import Float, Int
+from jaxtyping import Float
 
 import torch as th
 from torch import nn, Tensor
@@ -51,7 +51,6 @@ class Critic(nn.Module):
     def forward(
         self,
         a: Float[Tensor, "B A L"],
-        p: Int[Tensor, "B L"],
         x: Float[Tensor, "B X L"],
     ) -> Float[Tensor, "B l"]:
         return self.net(th.cat([self.a_pre(a),x], dim=1)).squeeze(1)

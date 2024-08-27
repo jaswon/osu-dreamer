@@ -71,7 +71,7 @@ def predict(
     # generate maps
     # ======
     with th.no_grad():
-        pred_signals = model.sample(a, num_samples, sample_steps, show_progress=True).cpu().numpy()
+        pred_signals = model.sample(a, num_samples).cpu().numpy()
 
     # package mapset
     # ======
