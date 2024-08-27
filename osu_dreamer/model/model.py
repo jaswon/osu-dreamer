@@ -87,20 +87,17 @@ class Model(pl.LightningModule):
 
         return [opt_crit, opt_gen]
     
-    def adversarial_loss(
+    def adversarial_critic_loss(
         self, 
         logits_real: Float[Tensor, "B l"], 
         logits_fake: Float[Tensor, "B l"],
-    ) -> tuple[Float[Tensor, ""], Float[Tensor, ""]]:
+    ) -> Float[Tensor, ""]:
         """relativistic average GAN loss"""
 
         real_score = logits_real - logits_fake.mean()
         fake_score = logits_fake - logits_real.mean()
 
-        return (
-            th.stack([real_score+1, fake_score-1]).pow(2).mean(), # generator loss
-            th.stack([real_score-1, fake_score+1]).pow(2).mean(), # critic loss
-        ) # RaLSGAN
+        return th.stack([real_score-1, fake_score+1]).pow(2).mean()
 
     def training_step(self, batch: Batch, batch_idx):
         opt_crit, opt_gen = self.optimizers() # type: ignore
@@ -119,7 +116,7 @@ class Model(pl.LightningModule):
             logits_real = self.critic(a, p, x_real)
             logits_fake = self.critic(a, p, x_fake)
 
-            _, adv_loss_c = self.adversarial_loss(logits_real, logits_fake)
+            critic_adv_loss = self.adversarial_critic_loss(logits_real, logits_fake)
 
             # R1 Regularization
             r1_grad = th.autograd.grad(
@@ -130,7 +127,7 @@ class Model(pl.LightningModule):
             )[0]
             r1_loss = 0.5 * r1_grad.pow(2).sum((1,2)).mean()
 
-            critic_loss = adv_loss_c + r1_loss * self.r1_gamma
+            critic_loss = critic_adv_loss + r1_loss * self.r1_gamma
             if critic_loss.isnan():
                 raise RuntimeError('critic nan loss')
             
@@ -138,7 +135,7 @@ class Model(pl.LightningModule):
             opt_crit.step()
             opt_crit.zero_grad()
 
-        self.log('train/critic/adv', adv_loss_c.detach())
+        self.log('train/critic/adv', critic_adv_loss.detach())
         self.log('train/critic/r1', r1_loss.detach())
 
         #################### Train Generator ####################
@@ -150,12 +147,12 @@ class Model(pl.LightningModule):
         for _ in range(self.gen_steps):
             x_fake = self.generator(a, p)
             logits_fake = self.critic(a, p, x_fake)
-            adv_loss_g, _ = self.adversarial_loss(logits_real, logits_fake)
+            gen_adv_loss = self.adversarial_critic_loss(logits_fake, logits_real)
 
             # reconstruction loss for low frequency structure
             gen_recon_loss = F.mse_loss(x_real, x_fake)
 
-            gen_loss = gen_recon_loss + adv_loss_g * self.gen_adv_factor
+            gen_loss = gen_recon_loss + gen_adv_loss * self.gen_adv_factor
             if gen_loss.isnan():
                 raise RuntimeError('generator nan loss')
             
@@ -163,7 +160,7 @@ class Model(pl.LightningModule):
             opt_gen.step()
             opt_gen.zero_grad()
 
-        self.log('train/gen/adv', adv_loss_g.detach())
+        self.log('train/gen/adv', gen_adv_loss.detach())
         self.log('train/gen/recon', gen_recon_loss.detach())
 
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
