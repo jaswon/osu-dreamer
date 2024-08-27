@@ -6,7 +6,7 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
-from .residual import ResStack
+from .residual import RMSNorm
 from .wavenet import WaveNet, WaveNetArgs
 
 @dataclass
@@ -14,7 +14,6 @@ class CriticArgs:
     h_dim: int
     a_pre_args: WaveNetArgs
     scales: list[int]
-    block_depth: int
 
 class Critic(nn.Module):
     def __init__(
@@ -35,11 +34,9 @@ class Critic(nn.Module):
             *(
                 block for scale in args.scales
                 for block in [
-                    ResStack(args.h_dim, [
-                        nn.Conv1d(args.h_dim, args.h_dim, 1)
-                        for _ in range(args.block_depth)
-                    ]),
                     nn.Conv1d(args.h_dim, args.h_dim, scale, scale),
+                    RMSNorm(args.h_dim),
+                    nn.SiLU(),
                 ]
             ),
             nn.Conv1d(args.h_dim, 1, 1),
