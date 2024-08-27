@@ -6,8 +6,7 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from osu_dreamer.common.residual import ResStack, WaveNet, WaveNetArgs
-
+from .residual import ResStack, WaveNet, WaveNetArgs
 
 @dataclass
 class CriticArgs:

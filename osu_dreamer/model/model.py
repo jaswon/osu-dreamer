@@ -15,8 +15,7 @@ from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.plot import plot_signals
 
-from osu_dreamer.common.adabelief import AdaBelief
-
+from .adabelief import AdaBelief
 from .modules.critic import Critic, CriticArgs
 from .modules.generator import Generator, GeneratorArgs
 

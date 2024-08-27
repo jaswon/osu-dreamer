@@ -7,9 +7,9 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-from osu_dreamer.common.residual import ResStack, WaveNet, WaveNetArgs
-from osu_dreamer.common.unet import UNet
-from osu_dreamer.common.linear_attn import RoPE, LinearAttn, AttnArgs
+from .residual import ResStack, WaveNet, WaveNetArgs
+from .unet import UNet
+from .linear_attn import RoPE, LinearAttn, AttnArgs
 
 class ScaleShift(nn.Module):
     def __init__(self, dim: int, t_dim: int, net: nn.Module):
