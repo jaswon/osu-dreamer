@@ -27,6 +27,7 @@ class ScaleShift(nn.Module):
 @dataclass
 class GeneratorArgs:
     z_dim: int
+    z_h_dim: int
     h_dim: int
     a_pre_args: WaveNetArgs
 
@@ -46,11 +47,11 @@ class Generator(nn.Module):
         self.z_dim = args.z_dim
 
         self.proj_z = nn.Sequential(
-            nn.Linear(args.z_dim, args.z_dim),
-            nn.LayerNorm(args.z_dim),
+            nn.Linear(args.z_dim, args.z_h_dim),
+            nn.LayerNorm(args.z_h_dim),
             nn.SiLU(),
-            nn.Linear(args.z_dim, args.z_dim),
-            nn.LayerNorm(args.z_dim),
+            nn.Linear(args.z_h_dim, args.z_h_dim),
+            nn.LayerNorm(args.z_h_dim),
             nn.SiLU(),
         )
 
@@ -63,15 +64,15 @@ class Generator(nn.Module):
         self.net = UNet(
             args.h_dim, args.scales,
             ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.z_dim, block)
+                ScaleShift(args.h_dim, args.z_h_dim, block)
                 for _ in range(args.stack_depth)
                 for block in [
                     LinearAttn(args.h_dim, self.rope, args.attn_args),
-                    nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
+                    nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
                 ]
             ]),
             lambda: ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.z_dim, nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim))
+                ScaleShift(args.h_dim, args.z_h_dim, nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim))
                 for _ in range(args.block_depth)
             ]),
         )
