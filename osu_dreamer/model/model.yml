@@ -48,8 +48,9 @@ model:
     # model hyperparameters
     critic_args:
         h_dim: 32
-        a_pre_num_blocks: 4
-        a_pre_block_depth: 4
+        a_pre_args:
+            num_blocks: 4
+            block_depth: 4
 
         scales: [2,2,2,2,2,2,2,2,2,2]
         block_depth: 3
@@ -57,8 +58,9 @@ model:
     generator_args:
         z_dim: 64
         h_dim: 64
-        a_pre_num_blocks: 4
-        a_pre_block_depth: 4
+        a_pre_args:
+            num_blocks: 4
+            block_depth: 4
 
         scales: [3,3,3,3]
         block_depth: 4
