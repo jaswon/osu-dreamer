@@ -6,7 +6,8 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
-from .residual import ResStack, WaveNet, WaveNetArgs
+from .residual import ResStack
+from .wavenet import WaveNet, WaveNetArgs
 
 @dataclass
 class CriticArgs:

@@ -7,7 +7,8 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
-from .residual import ResStack, WaveNet, WaveNetArgs
+from .residual import ResStack
+from .wavenet import WaveNet, WaveNetArgs
 from .unet import UNet
 from .linear_attn import RoPE, LinearAttn, AttnArgs
 
