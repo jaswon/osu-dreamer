@@ -97,7 +97,8 @@ class Model(pl.LightningModule):
         real_score = logits_real - logits_fake.mean()
         fake_score = logits_fake - logits_real.mean()
 
-        return th.stack([real_score-1, fake_score+1]).pow(2).mean()
+        # return th.stack([real_score-1, fake_score+1]).pow(2).mean() # LSGAN
+        return F.softplus(th.stack([-real_score, fake_score])).mean() # Softplus adaptation
 
     def training_step(self, batch: Batch, batch_idx):
         opt_crit, opt_gen = self.optimizers() # type: ignore
