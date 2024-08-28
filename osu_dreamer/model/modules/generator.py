@@ -51,9 +51,6 @@ class Generator(nn.Module):
             nn.Linear(args.z_dim, args.z_h_dim),
             nn.LayerNorm(args.z_h_dim),
             nn.SiLU(),
-            nn.Linear(args.z_h_dim, args.z_h_dim),
-            nn.LayerNorm(args.z_h_dim),
-            nn.SiLU(),
         )
 
         self.proj_in = nn.Sequential(
