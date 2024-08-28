@@ -42,7 +42,6 @@ model:
     critic_lr: .0001
     r1_gamma: 10.
     gen_adv_factor: 5.
-    real_noise: .001
     gen_steps: 3
     skip_gen_step_threshold: .5
 
