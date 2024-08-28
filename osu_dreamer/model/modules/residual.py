@@ -13,7 +13,9 @@ class RMSNorm(nn.Module):
         self.gamma = nn.Parameter(th.ones(dim,1))
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
-        return F.normalize(x, dim = 1, eps=1e-8) * self.gamma * self.scale
+        x = x - x.mean(dim=1, keepdim=True)
+        x = F.normalize(x, dim=1, eps=1e-12)
+        return x * self.gamma * self.scale
 
 class ResStack(nn.Module):
     def __init__(
