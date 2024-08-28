@@ -43,7 +43,6 @@ model:
     r1_gamma: 10.
     gen_adv_factor: 5.
     gen_steps: 3
-    skip_gen_step_threshold: .5
 
     # model hyperparameters
     critic_args:
