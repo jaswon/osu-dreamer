@@ -44,6 +44,7 @@ class Critic(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, a=.7338) # gain ~= sqrt(1.3)
                 nn.utils.parametrizations.spectral_norm(m)
 
     def forward(
