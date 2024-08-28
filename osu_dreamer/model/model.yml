@@ -26,7 +26,7 @@ data:
     subseq_density: .2
     
     # size of training batch
-    batch_size: 24
+    batch_size: 16
     
     # number of workers to use for data loading
     num_workers: 6
@@ -38,13 +38,13 @@ data:
     
 model:
     # training parameters
-    gen_lr: .0001
-    critic_lr: .0001
+    gen_lr: .0002
+    critic_lr: .0007
     r1_gamma: 10.
-    gen_adv_factor: 5.
+    gen_adv_factor: 10.
     gen_clamp_factor: 10.
     grad_clip_threshold: 1.
-    gen_steps: 3
+    critic_steps: 3
 
     # model hyperparameters
     critic_args:
@@ -59,13 +59,13 @@ model:
     generator_args:
         z_dim: 8
         z_h_dim: 64
-        h_dim: 64
+        h_dim: 128
         a_pre_args:
             num_blocks: 4
             block_depth: 4
 
-        scales: [3,3,3,3]
-        block_depth: 4
+        scales: [2,2,2,2,2,2,2]
+        block_depth: 2
 
         stack_depth: 12
         attn_args:
