@@ -35,6 +35,7 @@ class Model(pl.LightningModule):
         r1_gamma: float,
         gen_adv_factor: float,
         real_noise: float,
+        skip_gen_step_threshold: float,
         critic_steps: int = 1,
         gen_steps: int = 1,
     ):
@@ -52,6 +53,7 @@ class Model(pl.LightningModule):
         self.gen_adv_factor = gen_adv_factor
         self.r1_gamma = r1_gamma
         self.real_noise = real_noise
+        self.skip_gen_step_threshold = skip_gen_step_threshold
         self.gen_steps = gen_steps
         self.critic_steps = critic_steps
     
@@ -133,6 +135,9 @@ class Model(pl.LightningModule):
 
         self.log('train/critic/adv', critic_adv_loss.detach())
         self.log('train/critic/r1', r1_loss.detach())
+
+        if critic_adv_loss > self.skip_gen_step_threshold > 0:
+            return
 
         #################### Train Generator ####################
 

@@ -44,6 +44,7 @@ model:
     gen_adv_factor: 5.
     real_noise: .001
     gen_steps: 3
+    skip_gen_step_threshold: .5
 
     # model hyperparameters
     critic_args:
