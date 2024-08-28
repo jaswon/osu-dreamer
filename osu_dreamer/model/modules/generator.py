@@ -89,4 +89,4 @@ class Generator(nn.Module):
         
         h = self.proj_in(a)
         o = self.net(h,self.proj_z(z))
-        return self.proj_out(o).clamp(min=-1, max=1)
+        return self.proj_out(o)

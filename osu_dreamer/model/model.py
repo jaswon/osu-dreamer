@@ -34,6 +34,7 @@ class Model(pl.LightningModule):
         gen_lr: float,
         r1_gamma: float,
         gen_adv_factor: float,
+        gen_clamp_factor: float,
         grad_clip_threshold: float,
         critic_steps: int = 1,
         gen_steps: int = 1,
@@ -51,13 +52,14 @@ class Model(pl.LightningModule):
         self.gen_lr = gen_lr
         self.r1_gamma = r1_gamma
         self.gen_adv_factor = gen_adv_factor
+        self.gen_clamp_factor = gen_clamp_factor
         self.grad_clip_threshold = grad_clip_threshold
         self.gen_steps = gen_steps
         self.critic_steps = critic_steps
     
     @th.no_grad()
     def sample(self, a: Float[Tensor, "A L"], num_samples: int = 1) -> Float[Tensor, "B X L"]:
-        return self.generator(repeat(a, 'a l -> b a l', b=num_samples))
+        return self.generator(repeat(a, 'a l -> b a l', b=num_samples)).clamp(min=-1, max=1)
 
 #
 #
@@ -148,8 +150,9 @@ class Model(pl.LightningModule):
 
             # reconstruction loss for low frequency structure
             gen_recon_loss = F.l1_loss(x_real, x_fake)
+            gen_clamp_loss = F.relu(th.abs(x_fake) - 1).mean()
 
-            gen_loss = gen_recon_loss + gen_adv_loss * self.gen_adv_factor
+            gen_loss = gen_recon_loss + gen_adv_loss * self.gen_adv_factor + gen_clamp_loss * self.gen_clamp_factor
             if gen_loss.isnan():
                 raise RuntimeError('generator nan loss')
             
@@ -163,6 +166,7 @@ class Model(pl.LightningModule):
 
         self.log('train/gen/adv', gen_adv_loss.detach())
         self.log('train/gen/recon', gen_recon_loss.detach())
+        self.log('train/gen/clamp', gen_clamp_loss.detach())
 
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         if batch_idx == 0:
