@@ -6,7 +6,6 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
-from .residual import RMSNorm
 from .wavenet import WaveNet, WaveNetArgs
 
 @dataclass
@@ -35,7 +34,7 @@ class Critic(nn.Module):
                 block for scale in args.scales
                 for block in [
                     nn.Conv1d(args.h_dim, args.h_dim, scale, scale),
-                    RMSNorm(args.h_dim),
+                    nn.BatchNorm1d(args.h_dim),
                     nn.SiLU(),
                 ]
             ),
