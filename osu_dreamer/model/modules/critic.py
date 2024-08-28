@@ -13,6 +13,7 @@ class CriticArgs:
     h_dim: int
     a_pre_args: WaveNetArgs
     scales: list[int]
+    batch_norm_momentum: float = .1
 
 class Critic(nn.Module):
     def __init__(
@@ -34,7 +35,7 @@ class Critic(nn.Module):
                 block for scale in args.scales
                 for block in [
                     nn.Conv1d(args.h_dim, args.h_dim, scale, scale),
-                    nn.BatchNorm1d(args.h_dim),
+                    nn.BatchNorm1d(args.h_dim, momentum=args.batch_norm_momentum),
                     nn.SiLU(),
                 ]
             ),
