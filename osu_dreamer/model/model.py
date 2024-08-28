@@ -141,7 +141,7 @@ class Model(pl.LightningModule):
             gen_adv_loss = self.adversarial_critic_loss(logits_fake, logits_real)
 
             # reconstruction loss for low frequency structure
-            gen_recon_loss = F.mse_loss(x_real, x_fake)
+            gen_recon_loss = F.l1_loss(x_real, x_fake)
 
             gen_loss = gen_recon_loss + gen_adv_loss * self.gen_adv_factor
             if gen_loss.isnan():
