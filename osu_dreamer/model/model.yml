@@ -44,8 +44,8 @@ model:
     gen_adv_factor: 10.
     gen_clamp_factor: 100.
     critic_grad_clip: 1.
-    gen_grad_clip: 10.
-    critic_steps: 3
+    gen_grad_clip: 100.
+    critic_steps: 2
 
     # model hyperparameters
     critic_args:
