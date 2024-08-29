@@ -38,12 +38,13 @@ data:
     
 model:
     # training parameters
-    gen_lr: .0002
-    critic_lr: .0007
+    gen_lr: .001
+    critic_lr: .001
     r1_gamma: 10.
     gen_adv_factor: 10.
-    gen_clamp_factor: 10.
-    grad_clip_threshold: 1.
+    gen_clamp_factor: 100.
+    critic_grad_clip: 1.
+    gen_grad_clip: 10.
     critic_steps: 3
 
     # model hyperparameters

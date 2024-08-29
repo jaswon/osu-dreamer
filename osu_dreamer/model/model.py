@@ -35,7 +35,8 @@ class Model(pl.LightningModule):
         r1_gamma: float,
         gen_adv_factor: float,
         gen_clamp_factor: float,
-        grad_clip_threshold: float,
+        gen_grad_clip: float,
+        critic_grad_clip: float,
         critic_steps: int = 1,
         gen_steps: int = 1,
     ):
@@ -53,7 +54,8 @@ class Model(pl.LightningModule):
         self.r1_gamma = r1_gamma
         self.gen_adv_factor = gen_adv_factor
         self.gen_clamp_factor = gen_clamp_factor
-        self.grad_clip_threshold = grad_clip_threshold
+        self.gen_grad_clip = gen_grad_clip
+        self.critic_grad_clip = critic_grad_clip
         self.gen_steps = gen_steps
         self.critic_steps = critic_steps
     
@@ -129,7 +131,7 @@ class Model(pl.LightningModule):
             self.manual_backward(critic_loss)
             self.log('train/critic/grad_norm', th.nn.utils.clip_grad_norm_(
                 self.critic.parameters(), 
-                self.grad_clip_threshold, 
+                self.critic_grad_clip, 
             ).detach())
             opt_crit.step()
             opt_crit.zero_grad()
@@ -159,7 +161,7 @@ class Model(pl.LightningModule):
             self.manual_backward(gen_loss)
             self.log('train/gen/grad_norm', th.nn.utils.clip_grad_norm_(
                 self.generator.parameters(), 
-                self.grad_clip_threshold, 
+                self.gen_grad_clip, 
             ).detach())
             opt_gen.step()
             opt_gen.zero_grad()
@@ -182,7 +184,7 @@ class Model(pl.LightningModule):
                 x[0].cpu().numpy()
                 for x in [
                     x_tensor, 
-                    self.generator(a_tensor),
+                    self.sample(a_tensor[0]),
                 ]
             ]
 
