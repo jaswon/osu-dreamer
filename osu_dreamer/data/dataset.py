@@ -1,7 +1,7 @@
 
 from typing import NamedTuple
 from torch import Tensor
-from jaxtyping import Float, Int
+from jaxtyping import Float
 
 import random
 from collections.abc import Iterator
@@ -18,7 +18,6 @@ from .beatmap.encode import X_DIM
 
 class Batch(NamedTuple):
     audio: Float[Tensor, str(f"{A_DIM} L")]
-    position: Int[Tensor, "L"]
     chart: Float[Tensor, str(f"{X_DIM} L")]
 
 
@@ -58,11 +57,10 @@ class FullSequenceDataset(IterableDataset):
             
     def sample_stream(self, map_file, map_idx) -> Iterator[Batch]:
         audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # [A,L]
-        position = th.arange(audio.size(-1))
         with open(map_file, 'rb') as f:
             chart = th.tensor(np.load(f)).float()
             
-        yield Batch(audio,position,chart)
+        yield Batch(audio,chart)
         
         
 class SubsequenceDataset(FullSequenceDataset):
@@ -83,7 +81,7 @@ class SubsequenceDataset(FullSequenceDataset):
 
 
     def sample_stream(self, map_file, map_idx):
-        audio,position,chart = next(super().sample_stream(map_file, map_idx))
+        audio,chart = next(super().sample_stream(map_file, map_idx))
         L = audio.size(-1)
         if self.seq_len >= L:
             return
@@ -92,4 +90,4 @@ class SubsequenceDataset(FullSequenceDataset):
 
         for idx in th.randperm(L - self.seq_len)[:num_samples]:
             sl = ..., slice(idx,idx+self.seq_len)
-            yield Batch(audio=audio[sl], position=position[sl], chart=chart[sl]) 
+            yield Batch(audio=audio[sl], chart=chart[sl]) 

@@ -3,8 +3,20 @@ from collections.abc import Callable
 from jaxtyping import Float
 
 from torch import nn, Tensor
+import torch.nn.functional as F
 
-from .pad import pad, unpad
+from .filter import AAUpsample1d
+
+def pad(x: Float[Tensor, "... L"], size: int) -> tuple[Float[Tensor, "... Lp"], int]:
+    padding = (size-x.size(-1)%size)%size
+    if padding > 0:
+        x = F.pad(x, (0, padding))
+    return x, padding
+
+def unpad(x: Float[Tensor, "... Lp"], padding: int) -> Float[Tensor, "... L"]:
+    if padding > 0:
+        x = x[...,:-padding]
+    return x
 
 class UNet(nn.Module):
     def __init__(
@@ -24,11 +36,11 @@ class UNet(nn.Module):
 
         for scale in scales:
             self.pre.append(block())
-            self.split.append(nn.Conv1d(dim, 2*dim, 1))
-            self.down.append(nn.Conv1d(dim, dim, scale, scale, groups=dim))
+            self.split.append(nn.Conv1d(dim, dim, scale*2-1, 1, scale-1))
+            self.down.append(nn.Conv1d(dim, dim, scale, scale))
             
             self.post.insert(0, block())
-            self.up.insert(0, nn.ConvTranspose1d(dim, dim, scale, scale, groups=dim))
+            self.up.insert(0, AAUpsample1d(dim, scale))
 
         self.middle = middle
 
@@ -47,15 +59,14 @@ class UNet(nn.Module):
         hs = []
         for pre, split, down in zip(self.pre, self.split, self.down):
             x = pre(x, *args, **kwargs)
-            h, x = split(x).chunk(2, dim=1)
-            hs.append(h)
+            hs.append(split(x))
             x = down(x)
             
         x = self.middle(x, *args, **kwargs)
 
         for up, post in zip(self.up, self.post):
             x = up(x)
-            x = hs.pop() * x
+            x = hs.pop() + x
             x = post(x, *args, **kwargs)
 
         return unpad(x, p)

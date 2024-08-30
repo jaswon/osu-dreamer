@@ -26,7 +26,7 @@ trainer:
                 mode: min
                 patience: 10
 
-    accumulate_grad_batches: 4
+    accumulate_grad_batches: 2
 
     logger: true
     enable_progress_bar: true
@@ -59,25 +59,25 @@ model:
 
     # training parameters
     opt_args:
-        default:
-            lr: .00003
+        lr: .0001
     P_mean: -1.5
     P_std: 1.8
 
     # model hyperparameters
     audio_features: 64
     audio_encoder_args:
-        stack_depth: 16
+        num_blocks: 4
+        block_depth: 4
 
     denoiser_args:
         t_features: 128
         t_dim: 64
         h_dim: 64
 
-        scales: [3,2,2,2]
-        block_depth: 6
+        scales: [2,2,3,3,3]
+        block_depth: 8
 
-        stack_depth: 8
+        stack_depth: 12
         attn_args:
             head_dim: 16
             n_heads: 32

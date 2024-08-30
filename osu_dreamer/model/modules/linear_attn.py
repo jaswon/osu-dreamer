@@ -94,12 +94,12 @@ class LinearAttn(nn.Module):
     def forward(self, x: Float[Tensor, "B D L"], ctx: Optional[Float[Tensor, "B D L"]] = None, eps: float = 1e-5) -> Float[Tensor, "B D L"]:
         q = self.q(x) # b h n d
         k,v = self.kv(x if ctx is None else ctx) # b h n d
-
-        L = x.size(-1)
-        q = exp_taylor_map(self.rope(q) * self.scale * np.log(L)) / L # https://arxiv.org/abs/2202.12172
-        k = exp_taylor_map(self.rope(k)) / L 
         
-        kv = th.einsum('b h n d, b h n e -> b h d e', k, v)
+        L = x.size(-1)
+        q = exp_taylor_map(self.rope(q.float()) * self.scale * np.log(L)) / L # https://arxiv.org/abs/2202.12172
+        k = exp_taylor_map(self.rope(k.float())) / L 
+        
+        kv = th.einsum('b h n d, b h n e -> b h d e', k, v.float())
         qk_inv = th.einsum('b h n d, b h m d -> b h n', q, k).clamp(min = eps).pow(-1)
         attn = th.einsum('b h n d, b h d e, b h n -> b h n e', q, kv, qk_inv)
 

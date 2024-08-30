@@ -1,7 +1,8 @@
 
 from functools import partial
 
-from jaxtyping import Float, Int
+from typing import Any
+from jaxtyping import Float
 
 import numpy as np
 
@@ -17,8 +18,7 @@ from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.plot import plot_signals
 
-from osu_dreamer.common.adabelief import AdaBelief
-
+from .adabelief import AdaBelief
 from .diffusion import Diffusion
 
 from .modules.encoder import Encoder, EncoderArgs
@@ -34,7 +34,7 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
-        opt_args: dict[str, dict],          # optimizer args
+        opt_args: dict[str, Any],          # optimizer args
         P_mean: float,
         P_std: float,
 
@@ -56,18 +56,15 @@ class Model(pl.LightningModule):
         self.val_steps = val_steps
 
         # training params
-        assert 'default' in opt_args, "`default` key for `opt_args` required"
         self.opt_args = opt_args
     
 
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-        position: Int[Tensor, "B L"],
         x: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
-            
-        model = partial(self.denoiser, self.audio_encoder(audio, position), position)
+        model = partial(self.denoiser, self.audio_encoder(audio))
         loss = self.diffusion.loss(model, x)
         return loss, { "diffusion": loss.detach() }
     
@@ -79,15 +76,10 @@ class Model(pl.LightningModule):
         num_steps: int = 0,
         **kwargs,
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        l = audio.size(-1)
-        audio = repeat(audio, 'a l -> b a l', b=num_samples)
-        p = repeat(th.arange(l), 'l -> b l', b=num_samples).to(audio.device)
-
         num_steps = num_steps if num_steps > 0 else self.val_steps
-
-        z = th.randn(num_samples, X_DIM, l, device=audio.device)
-
-        denoiser = partial(self.denoiser, self.audio_encoder(audio, p), p)
+        audio = repeat(audio, 'a l -> b a l', b=num_samples)
+        z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
+        denoiser = partial(self.denoiser, self.audio_encoder(audio))
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
 
 
@@ -100,27 +92,7 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-
-        def get_param_groups(all_params: list[Tensor], opt_args: dict[str, dict]):
-            params = { opt_key: [] for opt_key in opt_args }
-            for p in all_params:
-                opt_key = getattr(p, 'opt_key', 'default')
-                params.get(opt_key, params['default']).append(p)
-            return [
-                { 
-                    'params': params[opt_key], 
-                    **({} if opt_key == "default" else args),
-                }
-                for opt_key, args in opt_args.items()
-            ]
-        
-        return AdaBelief(get_param_groups(
-            [
-                *self.denoiser.parameters(), 
-                *self.audio_encoder.parameters(),
-            ], 
-            self.opt_args,
-        ), **self.opt_args['default'])
+        return AdaBelief(self.parameters(), **self.opt_args)
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(*batch)
@@ -129,19 +101,18 @@ class Model(pl.LightningModule):
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():
-            a,p,x = batch
+            a,x = batch
             bL = self.val_batches * (a.size(-1) // self.val_batches)
             a = rearrange(a[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
-            p = rearrange(p[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
             x = rearrange(x[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
-            _, log_dict = self(a,p,x)
+            _, log_dict = self(a,x)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0:
             self.plot_sample(batch)
 
     def plot_sample(self, b: Batch):
-        a_tensor, _, x_tensor = b
+        a_tensor, x_tensor = b
         
         a: Float[np.ndarray, "A L"] = a_tensor.squeeze(0).cpu().numpy()
 
