@@ -6,6 +6,8 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
+from einops import repeat
+
 from .residual import ResStack
 from .unet import UNet
 from .cbam import CBAM
@@ -18,8 +20,10 @@ class GaussianFourierProjection(nn.Module):
         assert d*2 == dim, '`dim` must be even'
         self.W = nn.Parameter(th.randn(d) * scale, requires_grad=False)
 
-    def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "... E"]:
-        theta = x[:, None] * self.W[None, :] * 2 * th.pi
+    def forward(self, x: Float[Tensor, "... D"]) -> Float[Tensor, "... E"]:
+        k = self.W.size(0) // x.size(-1)
+        assert k * x.size(-1) == self.W.size(0) 
+        theta = repeat(x, '... d -> ... (d k)', k=k) * self.W[None, :] * 2 * th.pi
         return th.cat([theta.sin(), theta.cos()], dim=-1)
 
 class ScaleShift(nn.Module):
@@ -43,8 +47,8 @@ class ScaleShift(nn.Module):
 
 @dataclass
 class DenoiserArgs:
-    t_features: int
-    t_dim: int
+    gf_feats: int # num. gaussian fourier features per condition 
+    ss_dim: int
     h_dim: int
     scales: list[int]
     block_depth: int
@@ -59,10 +63,10 @@ class Denoiser(nn.Module):
     ):
         super().__init__()
 
-        self.proj_t = nn.Sequential(
-            GaussianFourierProjection(args.t_features * 2),
-            nn.Linear(args.t_features * 2, args.t_dim),
-            nn.LayerNorm(args.t_dim),
+        self.proj_cond = nn.Sequential(
+            GaussianFourierProjection(args.gf_feats * 6),
+            nn.Linear(args.gf_feats * 6, args.ss_dim),
+            nn.LayerNorm(args.ss_dim),
             nn.SiLU(),
         )
 
@@ -71,7 +75,7 @@ class Denoiser(nn.Module):
         self.net = UNet(
             args.h_dim, args.scales,
             ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.t_dim, block)
+                ScaleShift(args.h_dim, args.ss_dim, block)
                 for _ in range(args.stack_depth)
                 for block in [
                     nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
@@ -79,7 +83,7 @@ class Denoiser(nn.Module):
                 ]
             ]),
             lambda: ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.t_dim, nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim))
+                ScaleShift(args.h_dim, args.ss_dim, nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim))
                 for _ in range(args.block_depth)
             ]),
         )
@@ -91,10 +95,11 @@ class Denoiser(nn.Module):
     def forward(
         self, 
         a: Float[Tensor, "B A L"],
+        label: Float[Tensor, "B 2"],
         y: Float[Tensor, "B X L"],
         x: Float[Tensor, "B X L"],
         t: Float[Tensor, "B"],
     ) -> Float[Tensor, "B X L"]:
-        t = self.proj_t(t)
+        t = self.proj_cond(th.cat([t[:,None], label], dim=1))
         h = self.proj_h(th.cat([a,x,y], dim=1))
         return self.proj_out(self.net(h,t))

@@ -19,6 +19,7 @@ from .beatmap.encode import X_DIM
 class Batch(NamedTuple):
     audio: Float[Tensor, str(f"{A_DIM} L")]
     chart: Float[Tensor, str(f"{X_DIM} L")]
+    labels: Float[Tensor, "2"]
 
 
 class FullSequenceDataset(IterableDataset):
@@ -59,9 +60,9 @@ class FullSequenceDataset(IterableDataset):
         audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # [A,L]
         with open(map_file, 'rb') as f:
             chart = th.tensor(np.load(f)).float()
+            labels = th.tensor(np.load(f)).float()
             
-        yield Batch(audio,chart)
-        
+        yield Batch(audio,chart,labels)
         
 class SubsequenceDataset(FullSequenceDataset):
     def __init__(self, **kwargs):
@@ -81,7 +82,7 @@ class SubsequenceDataset(FullSequenceDataset):
 
 
     def sample_stream(self, map_file, map_idx):
-        audio,chart = next(super().sample_stream(map_file, map_idx))
+        audio,chart,labels = next(super().sample_stream(map_file, map_idx))
         L = audio.size(-1)
         if self.seq_len >= L:
             return
@@ -90,4 +91,4 @@ class SubsequenceDataset(FullSequenceDataset):
 
         for idx in th.randperm(L - self.seq_len)[:num_samples]:
             sl = ..., slice(idx,idx+self.seq_len)
-            yield Batch(audio=audio[sl], chart=chart[sl]) 
+            yield Batch(audio=audio[sl], chart=chart[sl], labels=labels) 

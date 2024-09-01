@@ -70,11 +70,11 @@ model:
         stack_depth: 5
 
     denoiser_args:
-        t_features: 128
-        t_dim: 64
-        h_dim: 128
+        gf_feats: 32
+        ss_dim: 128
+        h_dim: 160
 
-        scales: [2,2,3,3,3,3]
+        scales: [2,2,3,3,3]
         block_depth: 4
 
         stack_depth: 6

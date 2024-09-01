@@ -34,7 +34,7 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
-        opt_args: dict[str, Any],          # optimizer args
+        opt_args: dict[str, Any],
         P_mean: float,
         P_std: float,
 
@@ -62,24 +62,27 @@ class Model(pl.LightningModule):
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-        x: Float[Tensor, str(f"B {X_DIM} L")],
+        chart: Float[Tensor, str(f"B {X_DIM} L")],
+        labels: Float[Tensor, "B 2"],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
-        model = partial(self.denoiser, self.audio_encoder(audio))
-        loss = self.diffusion.loss(model, x)
+        model = partial(self.denoiser, self.audio_encoder(audio), labels)
+        loss = self.diffusion.loss(model, chart)
         return loss, { "diffusion": loss.detach() }
     
     @th.no_grad()
     def sample(
         self, 
         audio: Float[Tensor, str(f"{A_DIM} L")],
+        label: Float[Tensor, "2"] = th.tensor([4,3]),
         num_samples: int = 1,
         num_steps: int = 0,
         **kwargs,
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         num_steps = num_steps if num_steps > 0 else self.val_steps
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
+        label = repeat(label.to(audio), 'd -> b d', b=num_samples)
         z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
-        denoiser = partial(self.denoiser, self.audio_encoder(audio))
+        denoiser = partial(self.denoiser, self.audio_encoder(audio), label)
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
 
 
@@ -101,27 +104,28 @@ class Model(pl.LightningModule):
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():
-            a,x = batch
+            a,x,l = batch
             bL = self.val_batches * (a.size(-1) // self.val_batches)
             a = rearrange(a[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
             x = rearrange(x[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
-            _, log_dict = self(a,x)
+            l = repeat(l, '1 d -> b d', b = self.val_batches)
+            _, log_dict = self(a,x,l)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0:
             self.plot_sample(batch)
 
     def plot_sample(self, b: Batch):
-        a_tensor, x_tensor = b
+        a_tensor, x_tensor, label_tensor = b
         
-        a: Float[np.ndarray, "A L"] = a_tensor.squeeze(0).cpu().numpy()
+        a: Float[np.ndarray, "A L"] = a_tensor[0].cpu().numpy()
 
         with th.no_grad():
             plots = [
-                x.squeeze(0).cpu().numpy()
+                x[0].cpu().numpy()
                 for x in [
                     x_tensor, 
-                    self.sample(a_tensor.squeeze(0)),
+                    self.sample(a_tensor[0], label=label_tensor[0]),
                 ]
             ]
 

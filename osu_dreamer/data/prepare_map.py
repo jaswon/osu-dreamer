@@ -4,11 +4,13 @@ from pathlib import Path
 
 import numpy as np
 
+import rosu_pp_py as rosu
 from osu_dreamer.osu.beatmap import Beatmap
 
 from .beatmap.encode import encode_beatmap
 from .load_audio import load_audio, get_frame_times
 
+perf = rosu.Performance()
 
 def prepare_map(data_dir: Path, map_file: Path):
     try:
@@ -36,6 +38,10 @@ def prepare_map(data_dir: Path, map_file: Path):
     except Exception as e:
         print(f"{map_file}: {e}")
         return
+    
+    # difficulty calculation
+    diff_attrs = perf.calculate(rosu.Beatmap(path=str(map_file))).difficulty
+    map_labels = np.array([diff_attrs.aim, diff_attrs.speed])
 
     if spec_path.exists():
         for i in range(5):
@@ -74,3 +80,4 @@ def prepare_map(data_dir: Path, map_file: Path):
 
     with open(map_path, "wb") as f:
         np.save(f, x, allow_pickle=False)
+        np.save(f, map_labels, allow_pickle=False)
