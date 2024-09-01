@@ -60,9 +60,6 @@ class Denoiser(nn.Module):
             nn.Linear(args.t_features * 2, args.t_dim),
             nn.LayerNorm(args.t_dim),
             nn.SiLU(),
-            nn.Linear(args.t_dim, args.t_dim),
-            nn.LayerNorm(args.t_dim),
-            nn.SiLU(),
         )
 
         self.proj_h = nn.Conv1d(a_dim+x_dim+x_dim, args.h_dim, 1)
