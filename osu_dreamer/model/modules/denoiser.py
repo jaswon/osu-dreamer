@@ -9,6 +9,7 @@ from torch import nn, Tensor
 from .residual import ResStack
 from .unet import UNet
 from .linear_attn import RoPE, LinearAttn, AttnArgs
+from .cbam import CBAM
     
 class GaussianFourierProjection(nn.Module):
     """Gaussian random features for encoding time steps."""  
@@ -26,6 +27,10 @@ class ScaleShift(nn.Module):
     def __init__(self, dim: int, t_dim: int, net: nn.Module):
         super().__init__()
         self.net = net
+        self.act = nn.Sequential(
+            nn.Conv1d(dim, 2*dim, 1),
+            nn.GLU(dim=1),
+        )
 
         self.norm = nn.GroupNorm(dim, dim, affine=False)
         self.ss = nn.Linear(t_dim, dim*2)
@@ -34,7 +39,8 @@ class ScaleShift(nn.Module):
 
     def forward(self, x: Float[Tensor, "B X L"], t: Float[Tensor, "B T"]):
         scale, shift = self.ss(t)[...,None].chunk(2, dim=1)
-        return self.net(self.norm(x) * (1+scale) + shift)
+        o = self.net(self.norm(x) * (1+scale) + shift)
+        return self.act(o)
 
 @dataclass
 class DenoiserArgs:
@@ -72,19 +78,11 @@ class Denoiser(nn.Module):
                 for _ in range(args.stack_depth)
                 for block in [
                     LinearAttn(args.h_dim, self.rope, args.attn_args),
-                    nn.Sequential(
-                        nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
-                        nn.Conv1d(args.h_dim, args.h_dim*2, 1),
-                        nn.GLU(dim=1),
-                    ),
+                    CBAM(args.h_dim),
                 ]
             ]),
             lambda: ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.t_dim, nn.Sequential(
-                    nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
-                    nn.Conv1d(args.h_dim, args.h_dim*2, 1),
-                    nn.GLU(dim=1),
-                ))
+                ScaleShift(args.h_dim, args.t_dim, CBAM(args.h_dim))
                 for _ in range(args.block_depth)
             ]),
         )
