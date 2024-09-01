@@ -8,7 +8,6 @@ from torch import nn, Tensor
 
 from .residual import ResStack
 from .unet import UNet
-from .linear_attn import RoPE, LinearAttn, AttnArgs
 from .cbam import CBAM
     
 class GaussianFourierProjection(nn.Module):
@@ -50,7 +49,6 @@ class DenoiserArgs:
     scales: list[int]
     block_depth: int
     stack_depth: int
-    attn_args: AttnArgs
 
 class Denoiser(nn.Module):
     def __init__(
@@ -70,19 +68,18 @@ class Denoiser(nn.Module):
 
         self.proj_h = nn.Conv1d(a_dim+x_dim+x_dim, args.h_dim, 1)
         
-        self.rope = RoPE(args.attn_args.head_dim)
         self.net = UNet(
             args.h_dim, args.scales,
             ResStack(args.h_dim, [
                 ScaleShift(args.h_dim, args.t_dim, block)
                 for _ in range(args.stack_depth)
                 for block in [
-                    LinearAttn(args.h_dim, self.rope, args.attn_args),
+                    nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
                     CBAM(args.h_dim),
                 ]
             ]),
             lambda: ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.t_dim, CBAM(args.h_dim))
+                ScaleShift(args.h_dim, args.t_dim, nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim))
                 for _ in range(args.block_depth)
             ]),
         )

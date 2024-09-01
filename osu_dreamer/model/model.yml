@@ -78,7 +78,3 @@ model:
         block_depth: 4
 
         stack_depth: 6
-        attn_args:
-            head_dim: 16
-            n_heads: 32
-            one_kv_head: true
