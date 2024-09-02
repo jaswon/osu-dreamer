@@ -73,16 +73,15 @@ class Model(pl.LightningModule):
     def sample(
         self, 
         audio: Float[Tensor, str(f"{A_DIM} L")],
-        label: Float[Tensor, "1"] = th.tensor([4]),
-        num_samples: int = 1,
+        label: Float[Tensor, "B 1"],
         num_steps: int = 0,
         **kwargs,
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+        num_samples = label.size(0)
         num_steps = num_steps if num_steps > 0 else self.val_steps
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
-        label = repeat(label.to(audio), 'd -> b d', b=num_samples)
         z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
-        denoiser = partial(self.denoiser, self.audio_encoder(audio), label)
+        denoiser = partial(self.denoiser, self.audio_encoder(audio), label.to(audio))
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
 
 
@@ -125,7 +124,7 @@ class Model(pl.LightningModule):
                 x[0].cpu().numpy()
                 for x in [
                     x_tensor, 
-                    self.sample(a_tensor[0], label=label_tensor[0]),
+                    self.sample(a_tensor[0], label=label_tensor),
                 ]
             ]
 

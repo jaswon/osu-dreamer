@@ -1,5 +1,6 @@
 
 from typing import Optional
+from collections.abc import Sequence
 
 from pathlib import Path
 import random
@@ -20,17 +21,15 @@ file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 @click.command()
 @click.option('--model-path',   type=file_option_type, required=True, help='trained model (.ckpt)')
 @click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
-@click.option('--star_rating',           type=float, default=4, help='star rating conditioning')
+@click.option('--sr',           type=float, multiple=True, default=[3,5], help='star rating conditioning (pass once per diff)')
 @click.option('--sample-steps', type=int, default=32, help='number of diffusion steps to sample')
-@click.option('--num-samples',  type=int, default=1 , help='number of maps to generate')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
 @click.option('--artist',       type=str, help='Song artist - required if it cannot be determined from the audio metadata')
 def predict(
     model_path: Path,
     audio_file: Path,
-    star_rating: float,
+    sr: Sequence[float],
     sample_steps: int,
-    num_samples: int,
     title: Optional[str],
     artist: Optional[str],
 ):
@@ -75,8 +74,7 @@ def predict(
     with th.no_grad():
         pred_signals = model.sample(
             a, 
-            label=th.tensor([star_rating]),
-            num_samples=num_samples, 
+            label=th.tensor(sr)[:,None],
             num_steps=sample_steps, 
             show_progress=True,
         ).cpu().numpy()
