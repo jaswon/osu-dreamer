@@ -21,14 +21,14 @@ file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 @click.command()
 @click.option('--model-path',   type=file_option_type, required=True, help='trained model (.ckpt)')
 @click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
-@click.option('--sr',           type=float, multiple=True, default=[3,5], help='star rating conditioning (pass once per diff)')
+@click.option('--diff',         type=(float, float, float, float, float), multiple=True, help='difficulty conditioning (sr, ar, od, cs, hp) (set 0 to omit) ')
 @click.option('--sample-steps', type=int, default=32, help='number of diffusion steps to sample')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
 @click.option('--artist',       type=str, help='Song artist - required if it cannot be determined from the audio metadata')
 def predict(
     model_path: Path,
     audio_file: Path,
-    sr: Sequence[float],
+    diff: Sequence[tuple[float, float, float, float, float]],
     sample_steps: int,
     title: Optional[str],
     artist: Optional[str],
@@ -72,12 +72,14 @@ def predict(
     # generate maps
     # ======
     with th.no_grad():
-        pred_signals = model.sample(
+        pred_signals, pred_labels = model.sample(
             a, 
-            label=th.tensor(sr)[:,None],
+            label=th.tensor(diff),
             num_steps=sample_steps, 
             show_progress=True,
-        ).cpu().numpy()
+        )
+        pred_signals = pred_signals.cpu().numpy()
+        pred_labels = pred_labels.cpu().numpy()
 
     # package mapset
     # ======
@@ -91,12 +93,12 @@ def predict(
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
         
-        for i, pred_signal in enumerate(pred_signals):
+        for i, (pred_label, pred_signal) in enumerate(zip(pred_labels, pred_signals)):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 decode_beatmap(
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    pred_signal, frame_times,
+                    pred_label, pred_signal, frame_times,
                 ),
             )
     

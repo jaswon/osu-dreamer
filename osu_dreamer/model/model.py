@@ -4,8 +4,6 @@ from functools import partial
 from typing import Any
 from jaxtyping import Float
 
-import numpy as np
-
 import torch as th
 from torch import Tensor
 
@@ -16,6 +14,7 @@ import pytorch_lightning as pl
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import X_DIM
+from osu_dreamer.data.prepare_map import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
 from .adabelief import AdaBelief
@@ -23,7 +22,8 @@ from .diffusion import Diffusion
 
 from .modules.encoder import Encoder, EncoderArgs
 from .modules.denoiser import Denoiser, DenoiserArgs
-    
+from .modules.label_gen import LabelGen, LabelGenArgs
+
     
 class Model(pl.LightningModule):
     def __init__(
@@ -39,8 +39,12 @@ class Model(pl.LightningModule):
         P_std: float,
 
         # model hparams
+        label_dim: int,
+        label_gen_args: LabelGenArgs,
+
         audio_features: int,
         audio_encoder_args: EncoderArgs,
+
         denoiser_args: DenoiserArgs,
     ):
         super().__init__()
@@ -49,7 +53,8 @@ class Model(pl.LightningModule):
         # model
         self.diffusion = Diffusion(P_mean, P_std)
         self.audio_encoder = Encoder(audio_features, audio_encoder_args, in_dim=A_DIM)
-        self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
+        self.denoiser = Denoiser(X_DIM, audio_features, label_dim, denoiser_args)
+        self.label_gen = LabelGen(label_dim, label_gen_args)
 
         # validation params
         self.val_batches = val_batches
@@ -63,26 +68,43 @@ class Model(pl.LightningModule):
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
         chart: Float[Tensor, str(f"B {X_DIM} L")],
-        labels: Float[Tensor, "B 1"],
+        labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
-        model = partial(self.denoiser, self.audio_encoder(audio), labels)
-        loss = self.diffusion.loss(model, chart)
-        return loss, { "diffusion": loss.detach() }
+        c, loss_label = self.label_gen(labels)
+        model = partial(self.denoiser, self.audio_encoder(audio), c)
+        loss_diffusion = self.diffusion.loss(model, chart)
+
+        loss = loss_label + loss_diffusion
+        return loss, {
+            "diffusion": loss_diffusion.detach(),
+            "label": loss_label.detach(),
+        }
     
     @th.no_grad()
     def sample(
         self, 
         audio: Float[Tensor, str(f"{A_DIM} L")],
-        label: Float[Tensor, "B 1"],
+        label: Float[Tensor, str(f"B {NUM_LABELS}")],
         num_steps: int = 0,
         **kwargs,
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        num_samples = label.size(0)
+    ) -> tuple[
+        Float[Tensor, str(f"B {X_DIM} L")],
+        Float[Tensor, str(f"B {NUM_LABELS}")],
+    ]:
         num_steps = num_steps if num_steps > 0 else self.val_steps
+
+        num_samples = label.size(0)
+        label_embs = self.label_gen.embedding(label).to(audio)
+        pred_labels = self.label_gen.decoder(label_embs)
+        
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
+
         z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
-        denoiser = partial(self.denoiser, self.audio_encoder(audio), label.to(audio))
-        return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
+
+        denoiser = partial(self.denoiser, self.audio_encoder(audio), label_embs)
+        pred_signal = self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
+
+        return pred_signal, pred_labels
 
 
 #
@@ -116,17 +138,15 @@ class Model(pl.LightningModule):
 
     def plot_sample(self, b: Batch):
         a_tensor, x_tensor, label_tensor = b
-        
-        a: Float[np.ndarray, "A L"] = a_tensor[0].cpu().numpy()
 
         with th.no_grad():
             plots = [
                 x[0].cpu().numpy()
                 for x in [
                     x_tensor, 
-                    self.sample(a_tensor[0], label=label_tensor),
+                    self.sample(a_tensor[0], label=label_tensor)[0],
                 ]
             ]
 
-        with plot_signals(a, plots) as fig:
+        with plot_signals(a_tensor[0].cpu().numpy(), plots) as fig:
             self.logger.experiment.add_figure("samples", fig, global_step=self.global_step) # type: ignore

@@ -35,10 +35,10 @@ Version: {{version}}
 Tags: osu_dreamer
 
 [Difficulty]
-HPDrainRate: 0
-CircleSize: 4.1
-OverallDifficulty: 0
-ApproachRate: 9.5
+HPDrainRate: {{hp}}
+CircleSize: {{cs}}
+OverallDifficulty: {{od}}
+ApproachRate: {{ar}}
 SliderMultiplier: 1
 SliderTickRate: 1
 
@@ -80,7 +80,7 @@ def slider_decoder(
 ONSET_TOL = 2
 DEFAULT_BEAT_LEN = 60000/100 # 100 bpm
 
-def decode_beatmap(metadata: Metadata, enc: EncodedBeatmap, frame_times: FrameTimes) -> str:
+def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, "5"], enc: EncodedBeatmap, frame_times: FrameTimes) -> str:
 
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
     cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
@@ -184,6 +184,10 @@ def decode_beatmap(metadata: Metadata, enc: EncodedBeatmap, frame_times: FrameTi
 
     return map_template.format(
         **asdict(metadata), 
+        ar=labels[0],
+        od=labels[1],
+        cs=labels[2],
+        hp=labels[3],
         timing_points="\n".join(tps), 
         hit_objects="\n".join(hos),
     )

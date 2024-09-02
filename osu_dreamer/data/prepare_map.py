@@ -10,6 +10,8 @@ from osu_dreamer.osu.beatmap import Beatmap
 from .beatmap.encode import encode_beatmap
 from .load_audio import load_audio, get_frame_times
 
+NUM_LABELS = 5
+
 perf = rosu.Performance()
 
 def prepare_map(data_dir: Path, map_file: Path):
@@ -41,7 +43,8 @@ def prepare_map(data_dir: Path, map_file: Path):
     
     # difficulty calculation
     diff_attrs = perf.calculate(rosu.Beatmap(path=str(map_file))).difficulty
-    map_labels = np.array([diff_attrs.stars])
+    map_labels = np.array([diff_attrs.stars, bm.ar, bm.od, bm.cs, bm.hp])
+    assert len(map_labels) == NUM_LABELS
 
     if spec_path.exists():
         for i in range(5):
