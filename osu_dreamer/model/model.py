@@ -63,7 +63,7 @@ class Model(pl.LightningModule):
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
         chart: Float[Tensor, str(f"B {X_DIM} L")],
-        labels: Float[Tensor, "B 2"],
+        labels: Float[Tensor, "B 1"],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]: 
         model = partial(self.denoiser, self.audio_encoder(audio), labels)
         loss = self.diffusion.loss(model, chart)
@@ -73,7 +73,7 @@ class Model(pl.LightningModule):
     def sample(
         self, 
         audio: Float[Tensor, str(f"{A_DIM} L")],
-        label: Float[Tensor, "2"] = th.tensor([4,3]),
+        label: Float[Tensor, "1"] = th.tensor([4]),
         num_samples: int = 1,
         num_steps: int = 0,
         **kwargs,

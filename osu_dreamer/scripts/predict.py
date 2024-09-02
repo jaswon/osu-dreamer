@@ -20,6 +20,7 @@ file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 @click.command()
 @click.option('--model-path',   type=file_option_type, required=True, help='trained model (.ckpt)')
 @click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
+@click.option('--star_rating',           type=float, default=4, help='star rating conditioning')
 @click.option('--sample-steps', type=int, default=32, help='number of diffusion steps to sample')
 @click.option('--num-samples',  type=int, default=1 , help='number of maps to generate')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
@@ -27,6 +28,7 @@ file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 def predict(
     model_path: Path,
     audio_file: Path,
+    star_rating: float,
     sample_steps: int,
     num_samples: int,
     title: Optional[str],
@@ -71,7 +73,13 @@ def predict(
     # generate maps
     # ======
     with th.no_grad():
-        pred_signals = model.sample(a, num_samples, sample_steps, show_progress=True).cpu().numpy()
+        pred_signals = model.sample(
+            a, 
+            label=th.tensor([star_rating]),
+            num_samples=num_samples, 
+            num_steps=sample_steps, 
+            show_progress=True,
+        ).cpu().numpy()
 
     # package mapset
     # ======

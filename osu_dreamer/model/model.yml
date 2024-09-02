@@ -42,7 +42,7 @@ data:
     subseq_density: .5
     
     # size of training batch
-    batch_size: 16
+    batch_size: 12
     
     # number of workers to use for data loading
     num_workers: 6
@@ -70,8 +70,9 @@ model:
         stack_depth: 5
 
     denoiser_args:
-        gf_feats: 32
-        ss_dim: 128
+        t_feats: 32
+        sr_feats: 32
+        ss_dim: 160
         h_dim: 160
 
         scales: [2,2,3,3,3]

@@ -19,7 +19,7 @@ from .beatmap.encode import X_DIM
 class Batch(NamedTuple):
     audio: Float[Tensor, str(f"{A_DIM} L")]
     chart: Float[Tensor, str(f"{X_DIM} L")]
-    labels: Float[Tensor, "2"]
+    labels: Float[Tensor, "1"]
 
 
 class FullSequenceDataset(IterableDataset):

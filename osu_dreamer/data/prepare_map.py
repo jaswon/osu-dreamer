@@ -41,7 +41,7 @@ def prepare_map(data_dir: Path, map_file: Path):
     
     # difficulty calculation
     diff_attrs = perf.calculate(rosu.Beatmap(path=str(map_file))).difficulty
-    map_labels = np.array([diff_attrs.aim, diff_attrs.speed])
+    map_labels = np.array([diff_attrs.stars])
 
     if spec_path.exists():
         for i in range(5):
