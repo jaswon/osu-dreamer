@@ -37,20 +37,19 @@ def predict(
     
     # read metadata from audio file
     # ======
-    import mutagen
-    tags: mutagen.FileType = mutagen.File(audio_file, easy=True) # type: ignore
+    from tinytag import TinyTag
+    tags = TinyTag.get(audio_file)
+    assert isinstance(tags, TinyTag)
     
     if title is None:
-        try:
-            title = tags['title'][0]
-        except KeyError:
+        if tags.title is None:
             raise ValueError('no title provided, and unable to determine title from audio metadata')
+        title = tags.title
         
     if artist is None:
-        try:
-            artist = tags['artist'][0]
-        except KeyError:
+        if tags.artist is None:
             raise ValueError('no artist provided, and unable to determine artist from audio metadata')
+        artist = tags.artist
             
     # load model
     # ======

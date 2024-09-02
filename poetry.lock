@@ -1718,17 +1718,6 @@ files = [
 ]
 
 [[package]]
-name = "mutagen"
-version = "1.47.0"
-description = "read and write audio tags for many formats"
-optional = false
-python-versions = ">=3.7"
-files = [
-    {file = "mutagen-1.47.0-py3-none-any.whl", hash = "sha256:edd96f50c5907a9539d8e5bba7245f62c9f520aef333d13392a79a4f70aca719"},
-    {file = "mutagen-1.47.0.tar.gz", hash = "sha256:719fadef0a978c31b4cf3c956261b3c58b6948b32023078a2117b1de09f0fc99"},
-]
-
-[[package]]
 name = "nest-asyncio"
 version = "1.6.0"
 description = "Patch asyncio to allow nested event loops"
@@ -2884,6 +2873,20 @@ files = [
 ]
 
 [[package]]
+name = "tinytag"
+version = "1.10.1"
+description = "Read music meta data and length of MP3, OGG, OPUS, MP4, M4A, FLAC, WMA and Wave files"
+optional = false
+python-versions = ">=2.7"
+files = [
+    {file = "tinytag-1.10.1-py3-none-any.whl", hash = "sha256:e437654d04c966fbbbdbf807af61eb9759f1d80e4173a7d26202506b37cfdaf0"},
+    {file = "tinytag-1.10.1.tar.gz", hash = "sha256:122a63b836f85094aacca43fc807aaee3290be3de17d134f5f4a08b509ae268f"},
+]
+
+[package.extras]
+tests = ["flake8", "pytest", "pytest-cov"]
+
+[[package]]
 name = "torch"
 version = "2.4.0"
 description = "Tensors and Dynamic neural networks in Python with strong GPU acceleration"
@@ -3249,4 +3252,4 @@ test = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more-it
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "3281909a1df1298605eec3c45ee95d9bcb9a4e4b562dc46b51d971c347a02a30"
+content-hash = "2976a52237362ea7013552ba83830de1835a643742c733f7213a0442649ac35b"
