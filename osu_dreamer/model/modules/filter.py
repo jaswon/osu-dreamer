@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import scipy.signal as signal
 
 class AAUpsample1d(nn.Module):
-    """up samples a signal via zero-padding + vanilla convolution + anti-aliasing"""
+    """up samples a signal via zero-padding + vanilla convolution + anti-aliasing + projection"""
 
     def __init__(self, dim: int, scale: int, kernel_size: int = 17):
         super().__init__()
@@ -20,14 +20,10 @@ class AAUpsample1d(nn.Module):
 
         # sinc filter w/kaiser window
         beta = signal.kaiser_beta(signal.kaiser_atten(kernel_size, scale ** -1))
-        x = th.arange(kernel_size) - kernel_size // 2
-        sinc = th.sinc(x/scale)
         kaiser = th.tensor(signal.windows.kaiser(kernel_size, beta))
-        kernel = sinc * kaiser
-        kernel = kernel / kernel.sum()
-
-        self.kernel: Float[Tensor, "K"]
-        self.register_buffer('kernel', kernel)
+        x = th.arange(kernel_size) - kernel_size // 2
+        kernel = th.sinc(x/scale) * kaiser
+        self.kernel = kernel / kernel.sum()
 
     def forward(self, x: Float[Tensor, "B D l"]) -> Float[Tensor, "B D L"]:
         b,d,l = x.size()
