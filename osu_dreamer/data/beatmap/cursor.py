@@ -45,7 +45,8 @@ def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> CursorSignal:
         elif isinstance(cur, Slider):
             cur_t = frame_times[(frame_times >= cur.t) & (frame_times < cur.end_time())]
             cur_f = (cur_t - cur.t) % (cur.slide_duration * 2) / cur.slide_duration
-            pos.extend(cur.lerp(np.where(cur_f < 1, cur_f, 2 - cur_f)))
+            if len(cur_f) > 0:
+                pos.extend(cur.lerp(np.where(cur_f < 1, cur_f, 2 - cur_f)))
 
         if nxt is None:
             # end of map
