@@ -18,7 +18,7 @@ class GaussianFourierProjection(nn.Module):
         super().__init__()
         d = dim // 2
         assert d*2 == dim, '`dim` must be even'
-        self.W = nn.Parameter(th.randn(d) * scale, requires_grad=False)
+        self.W = nn.Parameter(th.exp(th.randn(d) * scale), requires_grad=False)
 
     def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "... E"]:
         theta = x[..., None] * self.W * 2 * th.pi
