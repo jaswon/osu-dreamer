@@ -21,7 +21,7 @@ file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 @click.command()
 @click.option('--model-path',   type=file_option_type, required=True, help='trained model (.ckpt)')
 @click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
-@click.option('--diff',         type=(float, float, float, float, float), multiple=True, help='difficulty conditioning (sr, ar, od, cs, hp) (set 0 to omit) ')
+@click.option('--diff',         type=(float, float, float, float, float), multiple=True, help='difficulty conditioning (sr, ar, od, cs, hp)')
 @click.option('--sample-steps', type=int, default=32, help='number of diffusion steps to sample')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
 @click.option('--artist',       type=str, help='Song artist - required if it cannot be determined from the audio metadata')
@@ -65,7 +65,8 @@ def predict(
     # ======
     dev = next(model.parameters()).device
     a = th.tensor(load_audio(audio_file), device=dev)
-    label = th.tensor(diff, device=dev)
+    c = th.tensor(diff, device=dev)
+    star_rating, diff_labels = c[:,:1], c[:,1:]
 
     frame_times = get_frame_times(a)
     
@@ -73,7 +74,7 @@ def predict(
     # ======
     with th.no_grad():
         pred_signals, pred_labels = model.sample(
-            a, label,
+            a, star_rating, diff_labels,
             num_steps=sample_steps, 
             show_progress=True,
         )

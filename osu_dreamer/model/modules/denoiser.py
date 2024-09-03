@@ -6,6 +6,8 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
+from osu_dreamer.data.prepare_map import NUM_LABELS
+
 from .residual import ResStack
 from .unet import UNet
 from .cbam import CBAM
@@ -43,7 +45,7 @@ class ScaleShift(nn.Module):
 
 @dataclass
 class DenoiserArgs:
-    t_feats: int
+    t_dim: int
     ss_dim: int
     h_dim: int
     scales: list[int]
@@ -55,16 +57,20 @@ class Denoiser(nn.Module):
         self,
         x_dim: int,
         a_dim: int,
-        label_dim: int,
         args: DenoiserArgs,
     ):
         super().__init__()
 
-        self.proj_t = GaussianFourierProjection(args.t_feats)
+        self.proj_t = nn.Sequential(
+            GaussianFourierProjection(args.t_dim),
+            nn.Linear(args.t_dim, args.t_dim),
+            nn.SiLU(),
+        )
 
         self.proj_cond = nn.Sequential(
-            nn.Linear(args.t_feats + label_dim, args.ss_dim),
-            nn.LayerNorm(args.ss_dim),
+            nn.Linear(args.t_dim + 1 + NUM_LABELS, args.ss_dim),
+            nn.SiLU(),
+            nn.Linear(args.ss_dim, args.ss_dim),
             nn.SiLU(),
         )
 
@@ -93,14 +99,13 @@ class Denoiser(nn.Module):
     def forward(
         self, 
         a: Float[Tensor, "B A L"],
-        label: Float[Tensor, "B Z"],
+        star_rating: Float[Tensor, "B 1"],
+        diff_labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+        # --- diffusion args --- #
         y: Float[Tensor, "B X L"],
         x: Float[Tensor, "B X L"],
         t: Float[Tensor, "B"],
     ) -> Float[Tensor, "B X L"]:
-        c = self.proj_cond(th.cat([
-            self.proj_t(t),
-            label,
-        ], dim=1))
+        c = self.proj_cond(th.cat([self.proj_t(t),star_rating,diff_labels], dim=1))
         h = self.proj_h(th.cat([a,x,y], dim=1))
         return self.proj_out(self.net(h,c))

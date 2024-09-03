@@ -10,7 +10,7 @@ from osu_dreamer.osu.beatmap import Beatmap
 from .beatmap.encode import encode_beatmap
 from .load_audio import load_audio, get_frame_times
 
-NUM_LABELS = 5
+NUM_LABELS = 4
 
 perf = rosu.Performance()
 
@@ -43,8 +43,9 @@ def prepare_map(data_dir: Path, map_file: Path):
     
     # difficulty calculation
     diff_attrs = perf.calculate(rosu.Beatmap(path=str(map_file))).difficulty
-    map_labels = np.array([diff_attrs.stars, bm.ar, bm.od, bm.cs, bm.hp])
-    assert len(map_labels) == NUM_LABELS
+    star_rating = np.array([diff_attrs.stars])
+    diff_labels = np.array([bm.ar, bm.od, bm.cs, bm.hp])
+    assert len(diff_labels) == NUM_LABELS
 
     if spec_path.exists():
         for i in range(5):
@@ -82,5 +83,5 @@ def prepare_map(data_dir: Path, map_file: Path):
         raise RuntimeError('failed to encode beatmap')
 
     with open(map_path, "wb") as f:
-        np.save(f, x, allow_pickle=False)
-        np.save(f, map_labels, allow_pickle=False)
+        for obj in [x, star_rating, diff_labels]:
+            np.save(f, obj, allow_pickle=False)
