@@ -73,13 +73,13 @@ def predict(
     # generate maps
     # ======
     with th.no_grad():
-        pred_signals, pred_labels = model.sample(
+        pred_signals = model.sample(
             a, star_rating, diff_labels,
             num_steps=sample_steps, 
             show_progress=True,
         )
         pred_signals = pred_signals.cpu().numpy()
-        pred_labels = pred_labels.cpu().numpy()
+        diff_labels = diff_labels.cpu().numpy()
 
     # package mapset
     # ======
@@ -93,12 +93,12 @@ def predict(
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
         
-        for i, (pred_label, pred_signal) in enumerate(zip(pred_labels, pred_signals)):
+        for i, (diff_label, pred_signal) in enumerate(zip(diff_labels, pred_signals)):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 decode_beatmap(
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    pred_label, pred_signal, frame_times,
+                    diff_label, pred_signal, frame_times,
                 ),
             )
     

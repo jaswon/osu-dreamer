@@ -6,6 +6,8 @@ from jaxtyping import Float
 import numpy as np
 from numpy import ndarray
 
+from osu_dreamer.data.prepare_map import NUM_LABELS
+
 from .fit_bezier import segment_length, Point, fit_bezier
 from .encode import FrameTimes, EncodedBeatmap, BeatmapEncoding
 from .hit import decode_extents, decode_onsets
@@ -80,7 +82,7 @@ def slider_decoder(
 ONSET_TOL = 2
 DEFAULT_BEAT_LEN = 60000/100 # 100 bpm
 
-def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, "5"], enc: EncodedBeatmap, frame_times: FrameTimes) -> str:
+def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap, frame_times: FrameTimes) -> str:
 
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
     cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
