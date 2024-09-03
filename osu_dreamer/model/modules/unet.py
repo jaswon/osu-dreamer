@@ -7,7 +7,6 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from .filter import AAUpsample1d
-from .cbam import CBAM
 
 def pad(x: Float[Tensor, "... L"], size: int) -> tuple[Float[Tensor, "... Lp"], int]:
     padding = (size-x.size(-1)%size)%size
@@ -34,7 +33,6 @@ class UNet(nn.Module):
         self.split = nn.ModuleList()
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
-        self.mix = nn.ModuleList()
         self.post = nn.ModuleList()
 
         for scale in scales:
@@ -43,10 +41,6 @@ class UNet(nn.Module):
             self.down.append(nn.Conv1d(dim, dim, scale, scale))
             
             self.up.insert(0, AAUpsample1d(dim, scale))
-            self.mix.insert(0, nn.Sequential(
-                CBAM(dim*2),
-                nn.Conv1d(dim*2, dim, 1),
-            ))
             self.post.insert(0, block())
 
         self.middle = middle
@@ -71,9 +65,9 @@ class UNet(nn.Module):
             
         x = self.middle(x, *args, **kwargs)
 
-        for up, mix, post in zip(self.up, self.mix, self.post):
+        for up, post in zip(self.up, self.post):
             x = up(x)
-            x = mix(th.cat([hs.pop(), x], dim=1))
+            x = hs.pop() * x
             x = post(x, *args, **kwargs)
 
         return unpad(x, p)

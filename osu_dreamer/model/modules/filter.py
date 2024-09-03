@@ -16,6 +16,7 @@ class AAUpsample1d(nn.Module):
         self.dim = dim
         self.scale = scale
         self.conv = nn.Conv1d(dim, dim, scale*2-1, 1, scale-1)
+        self.proj_out = nn.Conv1d(dim, dim, 1)
 
         # sinc filter w/kaiser window
         beta = signal.kaiser_beta(signal.kaiser_atten(kernel_size, scale ** -1))
@@ -36,8 +37,10 @@ class AAUpsample1d(nn.Module):
         x = self.conv(upsampled)
 
         kernel = self.kernel[None,None,:].repeat(self.dim, 1, 1).to(x) # D 1 K
-        return F.conv1d(
+        filtered = F.conv1d(
             x, kernel,
             padding=kernel.size(-1) // 2,
             groups=self.dim,
         )
+
+        return self.proj_out(filtered)
