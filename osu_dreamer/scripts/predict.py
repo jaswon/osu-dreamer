@@ -65,6 +65,7 @@ def predict(
     # ======
     dev = next(model.parameters()).device
     a = th.tensor(load_audio(audio_file), device=dev)
+    label = th.tensor(diff, device=dev)
 
     frame_times = get_frame_times(a)
     
@@ -72,8 +73,7 @@ def predict(
     # ======
     with th.no_grad():
         pred_signals, pred_labels = model.sample(
-            a, 
-            label=th.tensor(diff),
+            a, label,
             num_steps=sample_steps, 
             show_progress=True,
         )
