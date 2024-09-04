@@ -12,16 +12,15 @@ from .residual import ResStack
 from .unet import UNet
 from .cbam import CBAM
     
-class GaussianFourierProjection(nn.Module):
-    """Gaussian random features for encoding scalars."""  
-    def __init__(self, dim, scale=30.):
+class RandomFourierFeatures(nn.Module):
+    def __init__(self, in_dim, out_dim, scale=30):
         super().__init__()
-        d = dim // 2
-        assert d*2 == dim, '`dim` must be even'
-        self.W = nn.Parameter(th.exp(th.randn(d) * scale), requires_grad=False)
+        d = out_dim // 2
+        assert d*2 == out_dim, '`out_dim` must be even'
+        self.W = nn.Parameter(th.randn(in_dim, d) * scale, requires_grad=False)
 
-    def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "... E"]:
-        theta = x[..., None] * self.W * 2 * th.pi
+    def forward(self, x: Float[Tensor, "... D"]) -> Float[Tensor, "... E"]:
+        theta = x @ self.W * 2 * th.pi
         return th.cat([theta.sin(), theta.cos()], dim=-1)
 
 class ScaleShift(nn.Module):
@@ -45,7 +44,7 @@ class ScaleShift(nn.Module):
 
 @dataclass
 class DenoiserArgs:
-    t_dim: int
+    rff_dim: int
     ss_dim: int
     h_dim: int
     scales: list[int]
@@ -61,16 +60,9 @@ class Denoiser(nn.Module):
     ):
         super().__init__()
 
-        self.proj_t = nn.Sequential(
-            GaussianFourierProjection(args.t_dim),
-            nn.Linear(args.t_dim, args.t_dim),
-            nn.SiLU(),
-        )
-
         self.proj_cond = nn.Sequential(
-            nn.Linear(args.t_dim + 1 + NUM_LABELS, args.ss_dim),
-            nn.SiLU(),
-            nn.Linear(args.ss_dim, args.ss_dim),
+            RandomFourierFeatures(2 + NUM_LABELS, args.rff_dim),
+            nn.Linear(args.rff_dim, args.ss_dim),
             nn.SiLU(),
         )
 
@@ -106,6 +98,6 @@ class Denoiser(nn.Module):
         x: Float[Tensor, "B X L"],
         t: Float[Tensor, "B"],
     ) -> Float[Tensor, "B X L"]:
-        c = self.proj_cond(th.cat([self.proj_t(t),star_rating,diff_labels], dim=1))
+        c = self.proj_cond(th.cat([t[:,None],star_rating,diff_labels], dim=1))
         h = self.proj_h(th.cat([a,x,y], dim=1))
         return self.proj_out(self.net(h,c))

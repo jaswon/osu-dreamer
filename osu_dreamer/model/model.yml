@@ -39,7 +39,7 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .5
+    subseq_density: .4
     
     # size of training batch
     batch_size: 12
@@ -64,15 +64,15 @@ model:
     P_std: 1.8
 
     # model hyperparameters
-    audio_features: 128
+    audio_features: 256
     audio_encoder_args:
         num_stacks: 2
         stack_depth: 5
 
     denoiser_args:
-        t_dim: 64
-        ss_dim: 128
-        h_dim: 196
+        rff_dim: 1024
+        ss_dim: 256
+        h_dim: 256
 
         scales: [2,2,3,3,3]
         block_depth: 3
