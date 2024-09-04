@@ -15,18 +15,19 @@ from .cbam import CBAM
 class RandomFourierFeatures(nn.Module):
     def __init__(
         self,
-        n_feats: int,
         in_dim: int, 
-        out_dim: int,
+        n_feats: int,
         scale: float = 10.,
     ):
         super().__init__()
-        self.W = nn.Parameter(th.randn(in_dim, n_feats) * scale, requires_grad=False)
-        self.proj = nn.Linear(n_feats * 2, out_dim)
+        self.W = nn.Parameter(
+            th.randn(in_dim, n_feats) * scale, 
+            requires_grad=False,
+        )
 
     def forward(self, x: Float[Tensor, "... D"]) -> Float[Tensor, "... E"]:
         theta = (x * 2 * th.pi) @ self.W
-        return self.proj(th.cat([theta.sin(), theta.cos()], dim=-1))
+        return th.cat([theta.sin(), theta.cos()], dim=-1)
 
 class ScaleShift(nn.Module):
     def __init__(self, dim: int, t_dim: int, net: nn.Module):
@@ -49,8 +50,8 @@ class ScaleShift(nn.Module):
 
 @dataclass
 class DenoiserArgs:
-    c_n_feats: int
-    c_rff_dim: int
+    n_c_feats: int
+    c_dim: int
     h_dim: int
     scales: list[int]
     block_depth: int
@@ -66,7 +67,8 @@ class Denoiser(nn.Module):
         super().__init__()
 
         self.proj_cond = nn.Sequential(
-            RandomFourierFeatures(args.c_n_feats, 2 + NUM_LABELS, args.c_rff_dim),
+            RandomFourierFeatures(2 + NUM_LABELS, args.n_c_feats),
+            nn.Linear(args.n_c_feats * 2, args.c_dim),
             nn.SiLU(),
         )
 
@@ -75,7 +77,7 @@ class Denoiser(nn.Module):
         self.net = UNet(
             args.h_dim, args.scales,
             ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.c_rff_dim, block)
+                ScaleShift(args.h_dim, args.c_dim, block)
                 for _ in range(args.stack_depth)
                 for block in [
                     nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
@@ -83,7 +85,7 @@ class Denoiser(nn.Module):
                 ]
             ]),
             lambda: ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.c_rff_dim, nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim))
+                ScaleShift(args.h_dim, args.c_dim, nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim))
                 for _ in range(args.block_depth)
             ]),
         )
@@ -97,6 +99,7 @@ class Denoiser(nn.Module):
         a: Float[Tensor, "B A L"],
         star_rating: Float[Tensor, "B 1"],
         diff_labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+        
         # --- diffusion args --- #
         y: Float[Tensor, "B X L"],
         x: Float[Tensor, "B X L"],

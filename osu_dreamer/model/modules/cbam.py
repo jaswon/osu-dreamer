@@ -8,7 +8,7 @@ class CBAM(nn.Module):
     def __init__(
         self,
         dim: int,
-        reduction: int = 2,
+        reduction: int = 8,
     ):
         super().__init__()
 
@@ -18,7 +18,7 @@ class CBAM(nn.Module):
             nn.Linear(dim//reduction, dim),
         )
 
-        self.sp_map = nn.Conv1d(2,1,5,1,2)
+        self.sp_map = nn.Conv1d(2,1,7,1,3)
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
         ch_attn = self.ch_map(th.stack([
