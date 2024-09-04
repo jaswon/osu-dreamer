@@ -59,19 +59,20 @@ model:
 
     # training parameters
     opt_args:
-        lr: .0001
+        lr: .00007
     P_mean: -1.5
     P_std: 1.8
 
     # model hyperparameters
     audio_features: 256
     audio_encoder_args:
-        num_stacks: 2
-        stack_depth: 5
+        num_stacks: 1
+        stack_depth: 6
 
     denoiser_args:
-        rff_dim: 1024
-        ss_dim: 256
+        c_n_feats: 256
+        c_rff_dim: 256
+
         h_dim: 256
 
         scales: [2,2,3,3,3]

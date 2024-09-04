@@ -13,15 +13,20 @@ from .unet import UNet
 from .cbam import CBAM
     
 class RandomFourierFeatures(nn.Module):
-    def __init__(self, in_dim, out_dim, scale=30):
+    def __init__(
+        self,
+        n_feats: int,
+        in_dim: int, 
+        out_dim: int,
+        scale: float = 10.,
+    ):
         super().__init__()
-        d = out_dim // 2
-        assert d*2 == out_dim, '`out_dim` must be even'
-        self.W = nn.Parameter(th.randn(in_dim, d) * scale, requires_grad=False)
+        self.W = nn.Parameter(th.randn(in_dim, n_feats) * scale, requires_grad=False)
+        self.proj = nn.Linear(n_feats * 2, out_dim)
 
     def forward(self, x: Float[Tensor, "... D"]) -> Float[Tensor, "... E"]:
-        theta = x @ self.W * 2 * th.pi
-        return th.cat([theta.sin(), theta.cos()], dim=-1)
+        theta = (x * 2 * th.pi) @ self.W
+        return self.proj(th.cat([theta.sin(), theta.cos()], dim=-1))
 
 class ScaleShift(nn.Module):
     def __init__(self, dim: int, t_dim: int, net: nn.Module):
@@ -44,8 +49,8 @@ class ScaleShift(nn.Module):
 
 @dataclass
 class DenoiserArgs:
-    rff_dim: int
-    ss_dim: int
+    c_n_feats: int
+    c_rff_dim: int
     h_dim: int
     scales: list[int]
     block_depth: int
@@ -61,17 +66,16 @@ class Denoiser(nn.Module):
         super().__init__()
 
         self.proj_cond = nn.Sequential(
-            RandomFourierFeatures(2 + NUM_LABELS, args.rff_dim),
-            nn.Linear(args.rff_dim, args.ss_dim),
+            RandomFourierFeatures(args.c_n_feats, 2 + NUM_LABELS, args.c_rff_dim),
             nn.SiLU(),
         )
 
-        self.proj_h = nn.Conv1d(a_dim+x_dim+x_dim, args.h_dim, 1)
+        self.proj_h = nn.Conv1d(a_dim + x_dim + x_dim, args.h_dim, 1)
         
         self.net = UNet(
             args.h_dim, args.scales,
             ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.ss_dim, block)
+                ScaleShift(args.h_dim, args.c_rff_dim, block)
                 for _ in range(args.stack_depth)
                 for block in [
                     nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
@@ -79,7 +83,7 @@ class Denoiser(nn.Module):
                 ]
             ]),
             lambda: ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.ss_dim, nn.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim))
+                ScaleShift(args.h_dim, args.c_rff_dim, nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim))
                 for _ in range(args.block_depth)
             ]),
         )
