@@ -35,7 +35,7 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 4096 # ~33s @ 8ms/frame
+    seq_len: 2048 # ~16s @ 8ms/frame
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
@@ -64,17 +64,17 @@ model:
     P_std: 1.8
 
     # model hyperparameters
-    audio_features: 256
+    audio_features: 384
     audio_encoder_args:
         num_stacks: 2
         stack_depth: 5
 
     denoiser_args:
-        n_c_feats: 256
-        c_dim: 256
+        n_c_feats: 384
+        c_dim: 384
 
-        h_dim: 256
+        h_dim: 384
 
         scales: [2,2,3,3,3]
-        block_depth: 3
+        block_depth: 4
         stack_depth: 6
