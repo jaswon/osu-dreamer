@@ -20,8 +20,7 @@ from osu_dreamer.data.plot import plot_signals
 from .adabelief import AdaBelief
 from .diffusion import Diffusion
 
-from .modules.encoder import Encoder, EncoderArgs
-from .modules.denoiser import Denoiser, DenoiserArgs
+from .denoiser import Denoiser, DenoiserArgs
 
     
 class Model(pl.LightningModule):
@@ -38,9 +37,6 @@ class Model(pl.LightningModule):
         P_std: float,
 
         # model hparams
-        audio_features: int,
-        audio_encoder_args: EncoderArgs,
-
         denoiser_args: DenoiserArgs,
     ):
         super().__init__()
@@ -48,8 +44,7 @@ class Model(pl.LightningModule):
 
         # model
         self.diffusion = Diffusion(P_mean, P_std)
-        self.audio_encoder = Encoder(audio_features, audio_encoder_args, in_dim=A_DIM)
-        self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
+        self.denoiser = Denoiser(denoiser_args)
 
         # validation params
         self.val_batches = val_batches
@@ -68,7 +63,7 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         model = partial(
             self.denoiser, 
-            self.audio_encoder(audio),
+            self.denoiser.encode_audio(audio),
             star_rating,
             diff_labels,
         )
@@ -95,7 +90,7 @@ class Model(pl.LightningModule):
 
         denoiser = partial(
             self.denoiser, 
-            self.audio_encoder(audio),
+            self.denoiser.encode_audio(audio),
             star_rating, 
             diff_labels,
         )
