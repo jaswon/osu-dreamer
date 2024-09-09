@@ -26,7 +26,7 @@ trainer:
                 mode: min
                 patience: 10
 
-    accumulate_grad_batches: 4
+    accumulate_grad_batches: 2
 
     logger: true
     enable_progress_bar: true
@@ -59,8 +59,8 @@ model:
 
     # training parameters
     opt_args:
-        lr: .0002
-    P_mean: -1.5
+        lr: .0001
+    P_mean: -1.0
     P_std: 1.8
 
     # model hyperparameters

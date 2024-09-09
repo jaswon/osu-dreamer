@@ -23,14 +23,12 @@ class Diffusion:
         self,
         P_mean: float,
         P_std: float,
-        std_data: float = .5,
+        std_data: float = .8,
     ):
         super().__init__()
 
         self.std_data = std_data
-        self.t_min = np.exp(P_mean - 3 * P_std)
-        self.t_max = np.exp(P_mean + 3 * P_std)
-        self.sample_t = lambda *shape: th.exp(P_mean + th.randn(shape) * P_std)
+        self.tZ = lambda Z: th.exp(P_mean + Z * P_std)
 
     def pred_x0(self, model: Model, y: X, x_t: X, std: T) -> X:
         """https://arxiv.org/pdf/2206.00364.pdf#section.5"""
@@ -48,7 +46,7 @@ class Diffusion:
     def loss(self, model: Model, x0: X) -> Float[Tensor, ""]:
         """sample denoised predictions of training data for denoising score matching objective"""
 
-        t = self.sample_t(x0.size(0),1,1).to(x0.device)
+        t = self.tZ(th.randn(x0.size(0),1,1)).to(x0.device)
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
         x_t = x0 + th.randn_like(x0) * t
 
@@ -67,19 +65,20 @@ class Diffusion:
         z: X,
         show_progress: bool = False,
 
-        S_churn: float = 10.,
-        S_min: float = 0,
-        S_max: float = float('inf'),
+        s_min: float = .002,
+        s_max: float = 80.,
+        rho: float = 7.,
+        S_churn: float = 40.,
+        S_tmin: float = 0.05,
+        S_tmax: float = 50.,
         S_noise: float = 1.003,
     ) -> X:
         """https://github.com/NVlabs/edm/blob/62072d2612c7da05165d6233d13d17d71f213fee/generate.py#L25"""
 
-        t = th.linspace(1, 0, num_steps)
-        sigmas = th.exp( np.log(self.t_min) + t * (np.log(self.t_max) - np.log(self.t_min)) )
+        sigmas = th.linspace(s_max ** (1/rho), s_min ** (1/rho), num_steps) ** rho
         sigmas = th.tensor([*sigmas.tolist(), 0], device=z.device)
         sigmas = repeat(sigmas, 's -> s b 1 1', b = z.size(0))
-
-        x_t = z * self.t_max
+        x_t = z * sigmas[0]
 
         loop = zip(sigmas[:-1], sigmas[1:])
         if show_progress:
@@ -105,7 +104,7 @@ class Diffusion:
         for t_cur, t_nxt in loop:
 
             # increase noise temporarily
-            gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur[0,0,0] <= S_max else 0
+            gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_tmin <= t_cur[0,0,0] <= S_tmax else 0
             t_hat = t_cur + gamma * t_cur
             x_hat = x_t + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * th.randn_like(x_t)
 
