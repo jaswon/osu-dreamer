@@ -12,10 +12,7 @@ class RandomFourierFeatures(nn.Module):
         scale: float = 10.,
     ):
         super().__init__()
-        self.W = nn.Parameter(
-            th.randn(in_dim, n_feats) * scale, 
-            requires_grad=False,
-        )
+        self.register_buffer('W', th.randn(in_dim, n_feats) * scale)
 
     def forward(self, x: Float[Tensor, "... D"]) -> Float[Tensor, "... E"]:
         theta = (x * 2 * th.pi) @ self.W
