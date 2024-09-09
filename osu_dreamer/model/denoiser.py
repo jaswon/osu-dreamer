@@ -43,7 +43,6 @@ class Denoiser(nn.Module):
             nn.Sequential(
                 nn.ZeroPad1d((1,0) if d==0 else 2**(d-1)),
                 nn.Conv1d(args.a_features, args.a_features, 2, dilation=2**d),
-                nn.SiLU(),
             )
             for _ in range(args.a_num_stacks)
             for d in range(args.a_stack_depth)
@@ -87,10 +86,10 @@ class Denoiser(nn.Module):
         diff_labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #
-        y: Float[Tensor, str(f"B {X_DIM} L")],  # previous denoiser output
+        y: Float[Tensor, str(f"B {X_DIM} L")],  # previous pred_x0
         x: Float[Tensor, str(f"B {X_DIM} L")],  # noised input
-        t: Float[Tensor, "B"],                  # denoising step
+        t: Float[Tensor, "B"],                  # (log) denoising step
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        c = self.c_map(th.cat([t[:,None],star_rating,diff_labels], dim=1))
+        c = self.c_map(th.cat([ t[:,None], star_rating, diff_labels ], dim=1))
         h = self.proj_h(th.cat([audio,x,y], dim=1))
         return self.proj_out(self.net(h,c))

@@ -13,7 +13,14 @@ class ResStack(nn.Module):
     ):
         super().__init__()
         self.blocks = nn.ModuleList(blocks)
-        self.outs = nn.ModuleList([ nn.Conv1d(dim, 2*dim, 1) for _ in blocks ])
+        self.outs = nn.ModuleList([ 
+            nn.Sequential(
+                nn.Conv1d(dim, 2*dim, 1),
+                nn.GLU(dim=1),
+                nn.Conv1d(dim, 2*dim, 1),
+            )
+            for _ in blocks
+        ])
 
     def forward(
         self,

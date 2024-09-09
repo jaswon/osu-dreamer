@@ -2,7 +2,6 @@
 from collections.abc import Callable
 from jaxtyping import Float
 
-import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
