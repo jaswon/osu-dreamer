@@ -5,7 +5,7 @@ from jaxtyping import Float
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from .filter import AAUpsample1d
+from .filter import AAUpsample1D, AADownsample1D
 
 def pad(x: Float[Tensor, "... L"], size: int) -> tuple[Float[Tensor, "... Lp"], int]:
     padding = (size-x.size(-1)%size)%size
@@ -37,9 +37,9 @@ class UNet(nn.Module):
         for scale in scales:
             self.pre.append(block())
             self.split.append(nn.Conv1d(dim, dim, scale*2-1, 1, scale-1))
-            self.down.append(nn.Conv1d(dim, dim, scale, scale))
+            self.down.append(AADownsample1D(dim, scale))
             
-            self.up.insert(0, AAUpsample1d(dim, scale))
+            self.up.insert(0, AAUpsample1D(dim, scale))
             self.post.insert(0, block())
 
         self.middle = middle
