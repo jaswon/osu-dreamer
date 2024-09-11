@@ -10,15 +10,47 @@ from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
-from .modules.scaleshift import ScaleShift
 from .modules.residual import ResStack
 from .modules.unet import UNet
 from .modules.cbam import CBAM
 from .modules.rff import RandomFourierFeatures
 
+class VarSequential(nn.Sequential):
+    def forward(self, x, *args, **kwargs):
+        for module in self:
+            x = module(x, *args, **kwargs)
+        return x
+
+class DenoiserUNetBlock(nn.Module):
+    def __init__(self, dim: int, t_dim: int, expand: int, net: nn.Module):
+        super().__init__()
+        h_dim = dim * expand
+        self.proj_in = nn.Sequential(
+            nn.Conv1d(dim, h_dim, 1),
+            nn.Conv1d(h_dim, h_dim, 5,1,2, groups=h_dim)
+        )
+
+        # AdaGN
+        self.norm = nn.GroupNorm(h_dim, h_dim, affine=False)
+        self.ss = nn.Linear(t_dim, h_dim*2)
+        nn.init.zeros_(self.ss.weight)
+        nn.init.zeros_(self.ss.bias)
+
+        self.proj_out = nn.Sequential(
+            nn.SiLU(),
+            net,
+            nn.Conv1d(h_dim, dim, 1)
+        )
+
+    def forward(self, x: Float[Tensor, "B D L"], t: Float[Tensor, "B T"]) -> Float[Tensor, "B D L"]:
+        scale, shift = self.ss(t)[...,None].chunk(2, dim=1)
+        h = self.norm(self.proj_in(x)) * (1+scale) + shift
+        return ( x + self.proj_out(h) ) * 2 ** -.5
+
 @dataclass
 class DenoiserArgs:
     h_dim: int
+    cbam_reduction: int
 
     c_features: int
     c_dim: int
@@ -28,8 +60,9 @@ class DenoiserArgs:
     a_stack_depth: int
 
     scales: list[int]
-    block_depth: int
     stack_depth: int
+    block_depth: int
+    expand: int
 
 class Denoiser(nn.Module):
     def __init__(
@@ -58,18 +91,20 @@ class Denoiser(nn.Module):
         
         self.net = UNet(
             args.h_dim, args.scales,
-            ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.c_dim, block)
+            VarSequential(*(
+                DenoiserUNetBlock(
+                    args.h_dim, args.c_dim, args.expand, 
+                    CBAM(args.h_dim * args.expand, args.cbam_reduction),
+                )
                 for _ in range(args.stack_depth)
-                for block in [
-                    nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim),
-                    CBAM(args.h_dim),
-                ]
-            ]),
-            lambda: ResStack(args.h_dim, [
-                ScaleShift(args.h_dim, args.c_dim, nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim))
+            )),
+            lambda: VarSequential(*(
+                DenoiserUNetBlock(
+                    args.h_dim, args.c_dim, args.expand,
+                    nn.Identity(),
+                )
                 for _ in range(args.block_depth)
-            ]),
+            )),
         )
 
         self.proj_out = nn.Conv1d(args.h_dim, X_DIM, 1)
