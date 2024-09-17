@@ -82,7 +82,7 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_h = nn.Conv1d(X_DIM + X_DIM + args.a_dim, args.h_dim, 1)
+        self.proj_h = nn.Conv1d(X_DIM + args.a_dim, args.h_dim, 1)
         self.net = UNet(
             args.h_dim, args.scales,
             VarSequential(*(
@@ -112,10 +112,9 @@ class Denoiser(nn.Module):
         label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #
-        y: Float[Tensor, str(f"B {X_DIM} L")],  # previous pred_x0
         x: Float[Tensor, str(f"B {X_DIM} L")],  # noised input
         t: Float[Tensor, "B"],                  # (log) denoising step
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         c = self.c_map(th.cat([ t[:,None], label ], dim=1))
-        h = self.proj_h(th.cat([audio_features,x,y], dim=1))
+        h = self.proj_h(th.cat([audio_features,x], dim=1))
         return self.proj_out(self.net(h,c))
