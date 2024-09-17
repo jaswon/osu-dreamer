@@ -64,22 +64,21 @@ def predict(
     # load audio
     # ======
     dev = next(model.parameters()).device
-    a = th.tensor(load_audio(audio_file), device=dev)
-    c = th.tensor(diff, device=dev)
-    star_rating, diff_labels = c[:,:1], c[:,1:]
+    audio = th.tensor(load_audio(audio_file), device=dev)
+    labels = th.tensor(diff, device=dev)
 
-    frame_times = get_frame_times(a)
+    frame_times = get_frame_times(audio)
     
     # generate maps
     # ======
     with th.no_grad():
         pred_signals = model.sample(
-            a, star_rating, diff_labels,
+            audio, labels,
             num_steps=sample_steps, 
             show_progress=True,
         )
         pred_signals = pred_signals.cpu().numpy()
-        diff_labels = diff_labels.cpu().numpy()
+        labels = labels.cpu().numpy()
 
     # package mapset
     # ======
@@ -93,12 +92,12 @@ def predict(
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
         
-        for i, (diff_label, pred_signal) in enumerate(zip(diff_labels, pred_signals)):
+        for i, (label, pred_signal) in enumerate(zip(labels, pred_signals)):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 decode_beatmap(
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    diff_label, pred_signal, frame_times,
+                    label, pred_signal, frame_times,
                 ),
             )
     

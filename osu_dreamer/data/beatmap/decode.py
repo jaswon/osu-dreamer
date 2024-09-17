@@ -186,10 +186,10 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
 
     return map_template.format(
         **asdict(metadata), 
-        ar=labels[0],
-        od=labels[1],
-        cs=labels[2],
-        hp=labels[3],
+        ar=labels[1],
+        od=labels[2],
+        cs=labels[3],
+        hp=labels[4],
         timing_points="\n".join(tps), 
         hit_objects="\n".join(hos),
     )

@@ -49,7 +49,7 @@ class Denoiser(nn.Module):
         ]) # receptive field = 1+s*(2**d-1)
 
         self.c_map = nn.Sequential(
-            RandomFourierFeatures(2 + NUM_LABELS, args.c_features),
+            RandomFourierFeatures(1 + NUM_LABELS, args.c_features),
             nn.Linear(args.c_features * 2, args.c_dim),
             nn.SiLU(),
         )
@@ -82,14 +82,13 @@ class Denoiser(nn.Module):
     def forward(
         self, 
         audio: Float[Tensor, "B A L"],
-        star_rating: Float[Tensor, "B 1"],
-        diff_labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+        label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #
         y: Float[Tensor, str(f"B {X_DIM} L")],  # previous pred_x0
         x: Float[Tensor, str(f"B {X_DIM} L")],  # noised input
         t: Float[Tensor, "B"],                  # (log) denoising step
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        c = self.c_map(th.cat([ t[:,None], star_rating, diff_labels ], dim=1))
+        c = self.c_map(th.cat([ t[:,None], label ], dim=1))
         h = self.proj_h(th.cat([audio,x,y], dim=1))
         return self.proj_out(self.net(h,c))
