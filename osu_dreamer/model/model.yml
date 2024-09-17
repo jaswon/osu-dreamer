@@ -78,6 +78,9 @@ model:
         a_num_stacks: 2
         a_stack_depth: 5
 
+        pos_features: 32
+        pos_dim: 64
+
         scales: [2,2,3,3,3]
         stack_depth: 4
         block_depth: 2
