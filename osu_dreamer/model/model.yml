@@ -30,6 +30,7 @@ trainer:
         class_path: pytorch_lightning.loggers.TensorBoardLogger
         init_args:
             save_dir: runs
+            name: 
 
     accumulate_grad_batches: 2
     enable_progress_bar: true
@@ -67,21 +68,23 @@ model:
     P_std: 1.9
 
     # model hyperparameters
-    denoiser_args:
-        h_dim: 256
-        cbam_reduction: 8
-
-        c_features: 256
-        c_dim: 1024
-
-        a_dim: 256
-        a_num_stacks: 2
-        a_stack_depth: 5
-
+    a_features: 256
+    audio_feature_args:
         pos_features: 32
         pos_dim: 64
 
+        num_stacks: 2
+        stack_depth: 5
+        expand: 2
+
+    denoiser_args:
+        h_dim: 256
+
+        c_features: 128
+        c_dim: 1024
+
         scales: [2,2,3,3,3]
         stack_depth: 4
+        cbam_reduction: 8
         block_depth: 2
-        expand: 4
+        expand: 2

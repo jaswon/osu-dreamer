@@ -7,13 +7,11 @@ import torch as th
 from torch import nn, Tensor
 
 from osu_dreamer.data.beatmap.encode import X_DIM
-from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
-from .modules.wavenet import WaveNet
 from .modules.unet import UNet
 from .modules.cbam import CBAM
-from .modules.rff import RandomFourierFeatures, RandomFourierFeatures1d
+from .modules.rff import RandomFourierFeatures
 
 class VarSequential(nn.Sequential):
     def forward(self, x, *args, **kwargs):
@@ -55,13 +53,6 @@ class DenoiserArgs:
     c_features: int
     c_dim: int
 
-    a_dim: int
-    a_num_stacks: int
-    a_stack_depth: int
-
-    pos_features: int
-    pos_dim: int
-
     scales: list[int]
     stack_depth: int
     block_depth: int
@@ -70,22 +61,17 @@ class DenoiserArgs:
 class Denoiser(nn.Module):
     def __init__(
         self,
+        a_dim: int,
         args: DenoiserArgs,
     ):
         super().__init__()
-
-        self.audio_features = nn.Sequential(
-            nn.Conv1d(A_DIM, args.a_dim, 1),
-            WaveNet(args.a_dim, args.a_num_stacks, args.a_stack_depth),
-        )
-
+        
         self.proj_c = nn.Sequential(
             RandomFourierFeatures(1 + NUM_LABELS, args.c_features, args.c_dim),
             nn.SiLU(),
         )
 
-        self.pos_map = RandomFourierFeatures1d(1, args.pos_features, args.pos_dim)
-        self.proj_h = nn.Conv1d(args.a_dim + args.pos_dim + X_DIM, args.h_dim, 1)
+        self.proj_h = nn.Conv1d(a_dim + X_DIM, args.h_dim, 1)
 
         self.net = UNet(
             args.h_dim, args.scales,
@@ -112,7 +98,6 @@ class Denoiser(nn.Module):
     def forward(
         self, 
         audio_features: Float[Tensor, "B A L"],
-        positions: Float[Tensor, "B L"],
         label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #
@@ -120,5 +105,5 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],                  # (log) denoising step
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         c = self.proj_c(th.cat([t[:,None], label], dim=1))
-        h = self.proj_h(th.cat([ audio_features, self.pos_map(positions[:,None]), x ], dim=1))
+        h = self.proj_h(th.cat([ audio_features, x ], dim=1))
         return self.proj_out(self.net(h,c))

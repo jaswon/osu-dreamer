@@ -21,6 +21,7 @@ from osu_dreamer.data.plot import plot_signals
 from .adabelief import AdaBelief
 from .diffusion import Diffusion
 from .denoiser import Denoiser, DenoiserArgs
+from .audio_features import AudioFeatures, AudioFeatureArgs
 
     
 class Model(pl.LightningModule):
@@ -37,14 +38,17 @@ class Model(pl.LightningModule):
         P_std: float,
 
         # model hparams
+        a_features: int,
         denoiser_args: DenoiserArgs,
+        audio_feature_args: AudioFeatureArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
 
         # model
         self.diffusion = Diffusion(P_mean, P_std)
-        self.denoiser = Denoiser(denoiser_args)
+        self.denoiser = Denoiser(a_features,denoiser_args)
+        self.audio_features = AudioFeatures(a_features, audio_feature_args)
 
         # validation params
         self.val_batches = val_batches
@@ -63,9 +67,8 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         denoiser = partial(
             self.denoiser,
-            self.denoiser.audio_features(audio),
-            positions, 
-            labels, 
+            self.audio_features(audio, positions),
+            labels,
         )
         loss = self.diffusion.loss(denoiser, chart)
         return loss, { "loss": loss.detach() }
@@ -90,8 +93,7 @@ class Model(pl.LightningModule):
         return self.diffusion.sample(
             partial(
                 self.denoiser,
-                self.denoiser.audio_features(audio),
-                positions, 
+                self.audio_features(audio, positions),
                 labels,
             ), 
             num_steps, z,
