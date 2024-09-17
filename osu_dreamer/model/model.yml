@@ -16,19 +16,22 @@ trainer:
         - # keep the best performing checkpoint
             class_path: pytorch_lightning.callbacks.ModelCheckpoint
             init_args:
-                monitor: val/diffusion
+                monitor: val/loss
                 mode: min
                 save_top_k: 1
         - # early stopping
             class_path: pytorch_lightning.callbacks.EarlyStopping
             init_args:
-                monitor: val/diffusion
+                monitor: val/loss
                 mode: min
                 patience: 10
 
-    accumulate_grad_batches: 2
+    logger:
+        class_path: pytorch_lightning.loggers.TensorBoardLogger
+        init_args:
+            save_dir: runs
 
-    logger: true
+    accumulate_grad_batches: 2
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true

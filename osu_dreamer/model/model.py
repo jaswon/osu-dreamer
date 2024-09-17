@@ -68,7 +68,7 @@ class Model(pl.LightningModule):
             labels, 
         )
         loss = self.diffusion.loss(denoiser, chart)
-        return loss, { "diffusion": loss.detach() }
+        return loss, { "loss": loss.detach() }
     
     @th.no_grad()
     def sample(

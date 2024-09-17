@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 /data*/
 lightning_logs*/
+runs*/
 *.ckpt
 *.ipynb
 build/
