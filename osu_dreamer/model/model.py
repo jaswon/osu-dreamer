@@ -10,6 +10,7 @@ from torch import Tensor
 from einops import repeat, rearrange
 
 import pytorch_lightning as pl
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
@@ -19,7 +20,6 @@ from osu_dreamer.data.plot import plot_signals
 
 from .adabelief import AdaBelief
 from .diffusion import Diffusion
-
 from .denoiser import Denoiser, DenoiserArgs
 
     
@@ -130,13 +130,8 @@ class Model(pl.LightningModule):
         _, a, x, label = b
 
         with th.no_grad():
-            plots = [
-                x[0].cpu().numpy()
-                for x in [
-                    x_tensor, 
-                    self.sample(a_tensor[0], label_tensor),
-                ]
-            ]
+            plots = [ x[0].cpu().numpy() for x in [ x, self.sample(a[0], label) ] ]
 
-        with plot_signals(a_tensor[0].cpu().numpy(), plots) as fig:
-            self.logger.experiment.add_figure("samples", fig, global_step=self.global_step) # type: ignore
+        with plot_signals(a[0].cpu().numpy(), plots) as fig:
+            exp: SummaryWriter = self.logger.experiment # type: ignore
+            exp.add_figure("samples", fig, global_step=self.global_step)
