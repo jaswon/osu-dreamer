@@ -63,8 +63,8 @@ model:
     # training parameters
     opt_args:
         lr: .0001
-    P_mean: -1.0
-    P_std: 1.8
+    P_mean: -1.3
+    P_std: 1.9
 
     # model hyperparameters
     denoiser_args:
@@ -72,9 +72,9 @@ model:
         cbam_reduction: 8
 
         c_features: 256
-        c_dim: 2048
+        c_dim: 1024
 
-        a_features: 512
+        a_dim: 256
         a_num_stacks: 2
         a_stack_depth: 5
 
