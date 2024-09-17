@@ -10,7 +10,7 @@ from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
-from .modules.residual import ResStack
+from .modules.wavenet import WaveNet
 from .modules.unet import UNet
 from .modules.cbam import CBAM
 from .modules.rff import RandomFourierFeatures
@@ -55,7 +55,7 @@ class DenoiserArgs:
     c_features: int
     c_dim: int
 
-    a_features: int
+    a_dim: int
     a_num_stacks: int
     a_stack_depth: int
 
@@ -71,15 +71,10 @@ class Denoiser(nn.Module):
     ):
         super().__init__()
 
-        self.proj_a = nn.Conv1d(A_DIM, args.a_features, 1)
-        self.a_map = ResStack(args.a_features, [
-            nn.Sequential(
-                nn.ZeroPad1d((1,0) if d==0 else 2**(d-1)),
-                nn.Conv1d(args.a_features, args.a_features, 2, dilation=2**d),
-            )
-            for _ in range(args.a_num_stacks)
-            for d in range(args.a_stack_depth)
-        ]) # receptive field = 1+s*(2**d-1)
+        self.audio_features = nn.Sequential(
+            nn.Conv1d(A_DIM, args.a_dim, 1),
+            WaveNet(args.a_dim, args.a_num_stacks, args.a_stack_depth),
+        )
 
         self.c_map = nn.Sequential(
             RandomFourierFeatures(1 + NUM_LABELS, args.c_features),
@@ -87,8 +82,7 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_h = nn.Conv1d(X_DIM + X_DIM + args.a_features, args.h_dim, 1)
-        
+        self.proj_h = nn.Conv1d(X_DIM + X_DIM + args.a_dim, args.h_dim, 1)
         self.net = UNet(
             args.h_dim, args.scales,
             VarSequential(*(
@@ -111,12 +105,9 @@ class Denoiser(nn.Module):
         th.nn.init.zeros_(self.proj_out.weight)
         th.nn.init.zeros_(self.proj_out.bias) # type: ignore
 
-    def encode_audio(self, audio: Float[Tensor, str(f"B {A_DIM} L")]) -> Float[Tensor, "B A L"]:
-        return self.a_map(self.proj_a(audio))
-
     def forward(
         self, 
-        audio: Float[Tensor, "B A L"],
+        audio_features: Float[Tensor, "B A L"],
         positions: Float[Tensor, "B L"],
         label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
@@ -126,5 +117,5 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],                  # (log) denoising step
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         c = self.c_map(th.cat([ t[:,None], label ], dim=1))
-        h = self.proj_h(th.cat([audio,x,y], dim=1))
+        h = self.proj_h(th.cat([audio_features,x,y], dim=1))
         return self.proj_out(self.net(h,c))

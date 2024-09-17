@@ -61,13 +61,13 @@ class Model(pl.LightningModule):
         chart: Float[Tensor, str(f"B {X_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
-        model = partial(
-            self.denoiser, 
-            self.denoiser.encode_audio(audio),
-            positions,
-            labels
+        denoiser = partial(
+            self.denoiser,
+            self.denoiser.audio_features(audio),
+            positions, 
+            labels, 
         )
-        loss = self.diffusion.loss(model, chart)
+        loss = self.diffusion.loss(denoiser, chart)
         return loss, { "diffusion": loss.detach() }
     
     @th.no_grad()
@@ -87,13 +87,16 @@ class Model(pl.LightningModule):
 
         z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
 
-        denoiser = partial(
-            self.denoiser, 
-            self.denoiser.encode_audio(audio),
-            positions,
-            labels,
+        return self.diffusion.sample(
+            partial(
+                self.denoiser,
+                self.denoiser.audio_features(audio),
+                positions, 
+                labels,
+            ), 
+            num_steps, z,
+            **kwargs,
         )
-        return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
 
 
 #
