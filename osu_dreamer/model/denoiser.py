@@ -82,6 +82,7 @@ class Denoiser(nn.Module):
     def forward(
         self, 
         audio: Float[Tensor, "B A L"],
+        positions: Float[Tensor, "B L"],
         label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #

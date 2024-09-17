@@ -56,6 +56,7 @@ class Model(pl.LightningModule):
 
     def forward(
         self,
+        positions: Float[Tensor, "B L"],
         audio: Float[Tensor, str(f"B {A_DIM} L")],
         chart: Float[Tensor, str(f"B {X_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
@@ -63,6 +64,7 @@ class Model(pl.LightningModule):
         model = partial(
             self.denoiser, 
             self.denoiser.encode_audio(audio),
+            positions,
             labels
         )
         loss = self.diffusion.loss(model, chart)
@@ -81,12 +83,14 @@ class Model(pl.LightningModule):
         num_samples = labels.size(0)
         
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
+        positions = repeat(th.linspace(0, 1, audio.size(-1)).to(audio), 'l -> b l', b=num_samples)
 
         z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
 
         denoiser = partial(
             self.denoiser, 
             self.denoiser.encode_audio(audio),
+            positions,
             labels,
         )
         return self.diffusion.sample(denoiser, None, num_steps, z, **kwargs)
@@ -110,19 +114,20 @@ class Model(pl.LightningModule):
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():
-            a,x,l = batch
+            p,a,x,l = batch
             bL = self.val_batches * (a.size(-1) // self.val_batches)
+            p = rearrange(p[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
             a = rearrange(a[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
             x = rearrange(x[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
             l = repeat(l, '1 d -> b d', b = self.val_batches)
-            _, log_dict = self(a,x,l)
+            _, log_dict = self(p,a,x,l)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0:
             self.plot_sample(batch)
 
     def plot_sample(self, b: Batch):
-        a_tensor, x_tensor, label_tensor = b
+        _, a, x, label = b
 
         with th.no_grad():
             plots = [

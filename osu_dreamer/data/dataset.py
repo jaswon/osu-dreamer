@@ -18,6 +18,7 @@ from .prepare_map import NUM_LABELS
 
 
 class Batch(NamedTuple):
+    positions: Float[Tensor, "L"]
     audio: Float[Tensor, str(f"{A_DIM} L")]
     chart: Float[Tensor, str(f"{X_DIM} L")]
     labels: Float[Tensor, str(f"{NUM_LABELS}")]
@@ -64,8 +65,9 @@ class FullSequenceDataset(IterableDataset):
             star_rating = th.tensor(np.load(f)).float()
             diff_labels = th.tensor(np.load(f)).float()
             
+        positions = th.linspace(0, 1, audio.size(-1))
         labels = th.cat([ star_rating, diff_labels ])
-        yield Batch(audio,chart,labels)
+        yield Batch(positions,audio,chart,labels)
         
 class SubsequenceDataset(FullSequenceDataset):
     def __init__(self, **kwargs):
@@ -85,7 +87,7 @@ class SubsequenceDataset(FullSequenceDataset):
 
 
     def sample_stream(self, map_file, map_idx):
-        audio,chart,labels = next(super().sample_stream(map_file, map_idx))
+        positions,audio,chart,labels = next(super().sample_stream(map_file, map_idx))
         L = audio.size(-1)
         if self.seq_len >= L:
             return
@@ -94,4 +96,4 @@ class SubsequenceDataset(FullSequenceDataset):
 
         for idx in th.randperm(L - self.seq_len)[:num_samples]:
             sl = ..., slice(idx,idx+self.seq_len)
-            yield Batch(audio[sl], chart[sl], labels) 
+            yield Batch(positions[sl], audio[sl], chart[sl], labels) 
