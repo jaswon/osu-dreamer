@@ -2,10 +2,12 @@
 from collections.abc import Callable
 from jaxtyping import Float
 
+import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from .filter import AAUpsample1D, AADownsample1D
+import scipy.signal as signal
+from einops import repeat
 
 def pad(x: Float[Tensor, "... L"], size: int) -> tuple[Float[Tensor, "... Lp"], int]:
     padding = (size-x.size(-1)%size)%size
@@ -18,6 +20,25 @@ def unpad(x: Float[Tensor, "... Lp"], padding: int) -> Float[Tensor, "... L"]:
         x = x[...,:-padding]
     return x
 
+def make_lpf(dim: int, scale: int, kernel_size: int = 17):
+    assert kernel_size % 2 == 1
+
+    # sinc filter w/kaiser window
+    beta = signal.kaiser_beta(signal.kaiser_atten(kernel_size, scale ** -1))
+    kaiser = th.tensor(signal.windows.kaiser(kernel_size, beta))
+    X = th.arange(kernel_size) - kernel_size // 2
+    K = th.sinc(X/scale) * kaiser
+    K = K / K.sum()
+
+    def lpf(x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
+        return F.conv1d(
+            x, repeat(K.to(x), 'k -> d 1 k', d=dim),
+            padding=kernel_size // 2,
+            groups=dim,
+        )
+
+    return lpf
+
 class UNet(nn.Module):
     def __init__(
         self,
@@ -29,24 +50,31 @@ class UNet(nn.Module):
         super().__init__()
 
         self.pre = nn.ModuleList()
-        self.split = nn.ModuleList()
-        self.down = nn.ModuleList()
-        self.up = nn.ModuleList()
+        self.skip = nn.ModuleList()
+        self.down = []
+        self.up = []
         self.post = nn.ModuleList()
-
-        for scale in scales:
-            self.pre.append(block())
-            self.split.append(nn.Conv1d(dim, dim, scale*2-1, 1, scale-1))
-            self.down.append(AADownsample1D(dim, scale))
-            
-            self.up.insert(0, AAUpsample1D(dim, scale))
-            self.post.insert(0, block())
-
-        self.middle = middle
+        
+        def make_down_up(scale: int):
+            lpf = make_lpf(dim, scale)
+            return (
+                lambda x: F.avg_pool1d(lpf(x), scale, scale),
+                lambda x: lpf(repeat(x, 'b d l -> b d (l s)', s=scale)),
+            )
 
         self.chunk_size = 1
         for scale in scales:
             self.chunk_size *= scale
+            down, up = make_down_up(scale)
+
+            self.pre.append(block())
+            self.skip.append(nn.Conv1d(dim, dim, scale*2-1, 1, scale-1))
+            self.down.append(down)
+
+            self.up.insert(0, up)
+            self.post.insert(0, block())
+
+        self.middle = middle
 
     def forward(
         self,
@@ -57,16 +85,16 @@ class UNet(nn.Module):
         x, p = pad(x, self.chunk_size)
 
         hs = []
-        for pre, split, down in zip(self.pre, self.split, self.down):
+        for pre, skip, down in zip(self.pre, self.skip, self.down):
             x = pre(x, *args, **kwargs)
-            hs.append(split(x))
+            hs.append(skip(x))
             x = down(x)
             
         x = self.middle(x, *args, **kwargs)
 
         for up, post in zip(self.up, self.post):
             x = up(x)
-            x = hs.pop() * x
+            x = hs.pop() + x
             x = post(x, *args, **kwargs)
 
         return unpad(x, p)

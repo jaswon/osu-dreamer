@@ -70,7 +70,7 @@ model:
     # model hyperparameters
     a_features: 256
     audio_feature_args:
-        pos_features: 32
+        pos_features: 16
         pos_dim: 64
 
         num_stacks: 2
@@ -85,6 +85,6 @@ model:
 
         scales: [2,2,3,3,3]
         stack_depth: 4
-        cbam_reduction: 8
+        cbam_reduction: 16
         block_depth: 2
-        expand: 2
+        expand: 1

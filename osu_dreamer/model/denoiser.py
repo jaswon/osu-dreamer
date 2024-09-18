@@ -24,18 +24,18 @@ class DenoiserUNetBlock(nn.Module):
         super().__init__()
         h_dim = dim * expand
         self.proj_in = nn.Sequential(
-            nn.Conv1d(dim, h_dim, 1),
-            nn.Conv1d(h_dim, h_dim, 5,1,2, groups=h_dim)
+            nn.Conv1d(dim, h_dim*2, 5,1,2, groups=dim),
+            nn.Conv1d(h_dim*2, h_dim*2, 1),
         )
 
         # AdaGN
-        self.norm = nn.GroupNorm(h_dim, h_dim, affine=False)
-        self.ss = nn.Linear(t_dim, h_dim*2)
+        self.norm = nn.GroupNorm(h_dim*2, h_dim*2, affine=False)
+        self.ss = nn.Linear(t_dim, h_dim*2*2)
         nn.init.zeros_(self.ss.weight)
         nn.init.zeros_(self.ss.bias)
 
         self.proj_out = nn.Sequential(
-            nn.SiLU(),
+            nn.GLU(dim=1),
             net,
             nn.Conv1d(h_dim, dim, 1)
         )
