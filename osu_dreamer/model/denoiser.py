@@ -19,32 +19,6 @@ class VarSequential(nn.Sequential):
             x = module(x, *args, **kwargs)
         return x
 
-class DenoiserUNetBlock(nn.Module):
-    def __init__(self, dim: int, t_dim: int, expand: int, net: nn.Module):
-        super().__init__()
-        h_dim = dim * expand
-        self.proj_in = nn.Sequential(
-            nn.Conv1d(dim, h_dim*2, 5,1,2, groups=dim),
-            nn.Conv1d(h_dim*2, h_dim*2, 1),
-        )
-
-        # AdaGN
-        self.norm = nn.GroupNorm(h_dim*2, h_dim*2, affine=False)
-        self.ss = nn.Linear(t_dim, h_dim*2*2)
-        nn.init.zeros_(self.ss.weight)
-        nn.init.zeros_(self.ss.bias)
-
-        self.proj_out = nn.Sequential(
-            nn.GLU(dim=1),
-            net,
-            nn.Conv1d(h_dim, dim, 1)
-        )
-
-    def forward(self, x: Float[Tensor, "B D L"], t: Float[Tensor, "B T"]) -> Float[Tensor, "B D L"]:
-        scale, shift = self.ss(t)[...,None].chunk(2, dim=1)
-        h = self.norm(self.proj_in(x)) * (1+scale) + shift
-        return ( x + self.proj_out(h) ) * 2 ** -.5
-
 @dataclass
 class DenoiserArgs:
     h_dim: int
@@ -73,20 +47,42 @@ class Denoiser(nn.Module):
 
         self.proj_h = nn.Conv1d(a_dim + X_DIM, args.h_dim, 1)
 
+        class DenoiserUNetBlock(nn.Module):
+            def __init__(self, net: nn.Module):
+                super().__init__()
+                h_dim = args.h_dim * args.expand
+                self.proj_in = nn.Sequential(
+                    nn.Conv1d(args.h_dim, h_dim, 5,1,2, groups=args.h_dim),
+                    nn.Conv1d(h_dim, h_dim, 1),
+                )
+
+                # AdaGN
+                self.norm = nn.GroupNorm(h_dim, h_dim, affine=False)
+                self.ss = nn.Linear(args.c_dim, h_dim*2)
+                self.drop = nn.Dropout(p=.1)
+                nn.init.zeros_(self.ss.weight)
+                nn.init.zeros_(self.ss.bias)
+
+                self.proj_out = nn.Sequential(
+                    nn.Conv1d(h_dim, h_dim*2, 1),
+                    nn.GLU(dim=1),
+                    net,
+                    nn.Conv1d(h_dim, args.h_dim, 1),
+                )
+
+            def forward(self, x: Float[Tensor, "B D L"], t: Float[Tensor, "B T"]) -> Float[Tensor, "B D L"]:
+                scale, shift = self.drop(self.ss(t))[...,None].chunk(2, dim=1)
+                h = self.norm(self.proj_in(x)) * (1+scale) + shift
+                return x + self.proj_out(h)
+
         self.net = UNet(
             args.h_dim, args.scales,
             VarSequential(*(
-                DenoiserUNetBlock(
-                    args.h_dim, args.c_dim, args.expand, 
-                    CBAM(args.h_dim * args.expand, args.cbam_reduction),
-                )
+                DenoiserUNetBlock(CBAM(args.h_dim * args.expand, args.cbam_reduction))
                 for _ in range(args.stack_depth)
             )),
             lambda: VarSequential(*(
-                DenoiserUNetBlock(
-                    args.h_dim, args.c_dim, args.expand,
-                    nn.Identity(),
-                )
+                DenoiserUNetBlock(nn.Identity())
                 for _ in range(args.block_depth)
             )),
         )
