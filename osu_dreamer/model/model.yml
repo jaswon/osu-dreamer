@@ -82,6 +82,7 @@ model:
 
         c_features: 128
         c_dim: 512
+        c_dropout: .1
 
         scales: [2,2,3,3,3]
         stack_depth: 4

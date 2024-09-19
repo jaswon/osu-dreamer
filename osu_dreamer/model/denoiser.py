@@ -27,6 +27,7 @@ class DenoiserArgs:
 
     c_features: int
     c_dim: int
+    c_dropout: float
 
     scales: list[int]
     drop_block_args: DropBlockArgs
@@ -46,7 +47,7 @@ class Denoiser(nn.Module):
             RandomFourierFeatures(1 + NUM_LABELS, args.c_features),
             nn.Linear(args.c_features, args.c_dim),
             nn.SiLU(),
-            nn.Dropout(p=.1),
+            nn.Dropout(p=args.c_dropout),
         )
 
         self.proj_h = nn.Conv1d(a_dim + X_DIM, args.h_dim, 1)
