@@ -12,6 +12,7 @@ from osu_dreamer.data.prepare_map import NUM_LABELS
 from .modules.unet import UNet
 from .modules.cbam import CBAM
 from .modules.rff import RandomFourierFeatures
+from .modules.dropblock import DropBlock1d, DropBlockArgs
 
 class VarSequential(nn.Sequential):
     def forward(self, x, *args, **kwargs):
@@ -28,6 +29,7 @@ class DenoiserArgs:
     c_dim: int
 
     scales: list[int]
+    drop_block_args: DropBlockArgs
     stack_depth: int
     block_depth: int
     expand: int
@@ -43,42 +45,42 @@ class Denoiser(nn.Module):
         self.proj_c = nn.Sequential(
             RandomFourierFeatures(1 + NUM_LABELS, args.c_features, args.c_dim),
             nn.SiLU(),
+            nn.Dropout(p=.1),
         )
 
         self.proj_h = nn.Conv1d(a_dim + X_DIM, args.h_dim, 1)
 
+        hh_dim = args.h_dim * args.expand
         class DenoiserUNetBlock(nn.Module):
             def __init__(self, net: nn.Module):
                 super().__init__()
-                h_dim = args.h_dim * args.expand
                 self.proj_in = nn.Sequential(
-                    nn.Conv1d(args.h_dim, h_dim, 5,1,2, groups=args.h_dim),
-                    nn.Conv1d(h_dim, h_dim, 1),
+                    nn.Conv1d(args.h_dim, hh_dim, 5,1,2, groups=args.h_dim),
+                    nn.Conv1d(hh_dim, hh_dim, 1),
+                    nn.GroupNorm(hh_dim, hh_dim, affine=False),
                 )
 
                 # AdaGN
-                self.norm = nn.GroupNorm(h_dim, h_dim, affine=False)
-                self.ss = nn.Linear(args.c_dim, h_dim*2)
-                self.drop = nn.Dropout(p=.1)
+                self.ss = nn.Linear(args.c_dim, hh_dim*2)
                 nn.init.zeros_(self.ss.weight)
                 nn.init.zeros_(self.ss.bias)
 
                 self.proj_out = nn.Sequential(
-                    nn.Conv1d(h_dim, h_dim*2, 1),
-                    nn.GLU(dim=1),
+                    nn.SiLU(),
+                    DropBlock1d(args.drop_block_args),
                     net,
-                    nn.Conv1d(h_dim, args.h_dim, 1),
+                    nn.Conv1d(hh_dim, args.h_dim, 1),
                 )
 
             def forward(self, x: Float[Tensor, "B D L"], t: Float[Tensor, "B T"]) -> Float[Tensor, "B D L"]:
-                scale, shift = self.drop(self.ss(t))[...,None].chunk(2, dim=1)
-                h = self.norm(self.proj_in(x)) * (1+scale) + shift
+                scale, shift = self.ss(t)[...,None].chunk(2, dim=1)
+                h = self.proj_in(x) * (1+scale) + shift
                 return x + self.proj_out(h)
 
         self.net = UNet(
             args.h_dim, args.scales,
             VarSequential(*(
-                DenoiserUNetBlock(CBAM(args.h_dim * args.expand, args.cbam_reduction))
+                DenoiserUNetBlock(CBAM(hh_dim, args.cbam_reduction))
                 for _ in range(args.stack_depth)
             )),
             lambda: VarSequential(*(
