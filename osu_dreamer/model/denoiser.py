@@ -43,7 +43,8 @@ class Denoiser(nn.Module):
         super().__init__()
         
         self.proj_c = nn.Sequential(
-            RandomFourierFeatures(1 + NUM_LABELS, args.c_features, args.c_dim),
+            RandomFourierFeatures(1 + NUM_LABELS, args.c_features),
+            nn.Linear(args.c_features, args.c_dim),
             nn.SiLU(),
             nn.Dropout(p=.1),
         )

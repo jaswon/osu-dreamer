@@ -13,7 +13,6 @@ from .modules.rff import RandomFourierFeatures1d
 @dataclass
 class AudioFeatureArgs:
     pos_features: int
-    pos_dim: int
 
     num_stacks: int
     stack_depth: int
@@ -27,8 +26,8 @@ class AudioFeatures(nn.Module):
     ):
         super().__init__()
 
-        self.pos_map = RandomFourierFeatures1d(1, args.pos_features, args.pos_dim)
-        self.proj_h = nn.Conv1d(A_DIM + args.pos_dim, dim, 1)
+        self.pos_map = RandomFourierFeatures1d(1, args.pos_features)
+        self.proj_h = nn.Conv1d(A_DIM + args.pos_features, dim, 1)
 
         # wavenet receptive field: 1+s*(2**d-1))
         self.blocks = nn.ModuleList()
