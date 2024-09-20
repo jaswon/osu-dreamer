@@ -8,12 +8,8 @@ from torch import nn, Tensor
 
 from osu_dreamer.data.load_audio import A_DIM
 
-from .modules.rff import RandomFourierFeatures1d
-
 @dataclass
 class AudioFeatureArgs:
-    pos_features: int
-
     num_stacks: int
     stack_depth: int
     expand: int
@@ -26,8 +22,7 @@ class AudioFeatures(nn.Module):
     ):
         super().__init__()
 
-        self.pos_map = RandomFourierFeatures1d(1, args.pos_features)
-        self.proj_h = nn.Conv1d(A_DIM + args.pos_features, dim, 1)
+        self.proj_h = nn.Conv1d(A_DIM, dim, 1)
 
         # wavenet receptive field: 1+s*(2**d-1))
         self.blocks = nn.ModuleList()
@@ -43,9 +38,8 @@ class AudioFeatures(nn.Module):
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-        positions: Float[Tensor, "B L"],
     ) -> Float[Tensor, "B A L"]:
-        x = self.proj_h(th.cat([audio, self.pos_map(positions[:,None])], dim=1))
+        x = self.proj_h(audio)
         o = th.zeros_like(x)
         for block in self.blocks:
             res, skip = block(x).chunk(2, dim=1)

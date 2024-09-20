@@ -70,8 +70,6 @@ model:
     # model hyperparameters
     a_features: 256
     audio_feature_args:
-        pos_features: 16
-
         num_stacks: 2
         stack_depth: 5
         expand: 2
