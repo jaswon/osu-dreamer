@@ -9,9 +9,9 @@ from torch import nn, Tensor
 from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
-from .modules.unet import UNet
-from .modules.cbam import CBAM
-from .modules.rff import RandomFourierFeatures
+from osu_dreamer.modules.unet import UNet
+from osu_dreamer.modules.cbam import CBAM
+from osu_dreamer.modules.rff import RandomFourierFeatures
 
 class VarSequential(nn.Sequential):
     def forward(self, x, *args, **kwargs):

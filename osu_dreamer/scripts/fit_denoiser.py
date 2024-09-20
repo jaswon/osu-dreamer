@@ -9,17 +9,17 @@ from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from pytorch_lightning import Trainer
 
 from osu_dreamer.data.module import Data
-from osu_dreamer.model.model import Model
+from osu_dreamer.diffusion_model.model import Model
 
 file_option_type = click.Path(exists=True, dir_okay=False)
 
-default_config_path = './osu_dreamer/model/model.yml'
+default_config_path = './osu_dreamer/diffusion_model/model.yml'
 
 @click.command()
 @click.option('-c', '--config', type=file_option_type, default=default_config_path, help='config file')
 @click.option(   '--ckpt-path', type=file_option_type, help='if provided, checkpoint from which to resume training')
-def fit(config: str, ckpt_path: Optional[str]):
-    """begin a training run."""
+def fit_denoiser(config: str, ckpt_path: Optional[str]):
+    """begin a training run for the diffusion model."""
 
     parser = LightningArgumentParser()
     parser.add_argument('seed_everything', type=Union[int, bool])

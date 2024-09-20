@@ -18,7 +18,8 @@ from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.prepare_map import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
-from .adabelief import AdaBelief
+from osu_dreamer.modules.adabelief import AdaBelief
+
 from .diffusion import Diffusion
 from .denoiser import Denoiser, DenoiserArgs
 from .audio_features import AudioFeatures, AudioFeatureArgs
