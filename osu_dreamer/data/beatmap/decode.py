@@ -10,7 +10,7 @@ from osu_dreamer.data.prepare_map import NUM_LABELS
 
 from .fit_bezier import segment_length, Point, fit_bezier
 from .encode import FrameTimes, EncodedBeatmap, BeatmapEncoding
-from .hit import decode_extents, decode_onsets
+from .hit import decode_extents, decode_events
 
 @dataclass
 class Metadata:
@@ -87,14 +87,14 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
     cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
 
-    onset_locs = decode_onsets(enc[BeatmapEncoding.ONSET])
+    onset_locs = decode_events(enc[BeatmapEncoding.ONSET])
     onset_loc2idx = np.full_like(frame_times, -1, dtype=int)
     for i, onset_idx in enumerate(onset_locs):
         onset_loc2idx[onset_idx-ONSET_TOL:onset_idx+ONSET_TOL+1] = i
 
     new_combos = [False] * len(onset_locs)
-    for combo_start in decode_extents(enc[BeatmapEncoding.COMBO])[0]:
-        onset_idx = onset_loc2idx[combo_start]
+    for new_combo in decode_events(enc[BeatmapEncoding.COMBO]):
+        onset_idx = onset_loc2idx[new_combo]
         if onset_idx == -1:
             continue
         new_combos[onset_idx] = True

@@ -14,9 +14,9 @@ from enum import IntEnum
 BeatmapEncoding = IntEnum('BeatmapEncoding', [
     # hit signals
     "ONSET",
+    "COMBO",
     "SUSTAIN",
     "SLIDER",
-    "COMBO",
 
     # cursor signals
     "X",
@@ -26,9 +26,9 @@ X_DIM = len(BeatmapEncoding)
 
 HitSignals = [
     BeatmapEncoding.ONSET,
+    BeatmapEncoding.COMBO,
     BeatmapEncoding.SUSTAIN,
     BeatmapEncoding.SLIDER,
-    BeatmapEncoding.COMBO,
 ]
 HIT_DIM = len(HitSignals)
 
