@@ -32,7 +32,7 @@ trainer:
             save_dir: runs
             name: latent
 
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 1
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
@@ -43,13 +43,13 @@ data:
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: 1
+    subseq_density: .5
     
     # size of training batch
-    batch_size: 128
+    batch_size: 64
     
     # number of workers to use for data loading
-    num_workers: 6
+    num_workers: 4
     
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
@@ -62,9 +62,12 @@ model:
         lr: .0001
 
     vae_args:
-        beta: 1
+        beta: .01
 
         latent_dim: 16
         h_dim: 128
 
-        scales: [2,2,3,3]
+        wavenet_args:
+            num_stacks: 3
+            stack_depth: 5
+            expand: 1

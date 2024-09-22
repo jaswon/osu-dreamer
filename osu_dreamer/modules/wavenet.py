@@ -1,4 +1,5 @@
 
+from typing import Callable
 from jaxtyping import Float
 
 from dataclasses import dataclass
@@ -17,15 +18,18 @@ class WaveNet(nn.Module):
         self,
         dim: int,
         args: WaveNetArgs,
+        block: Callable[[int], nn.Module],
+        transpose: bool = False,
     ):
         super().__init__()
+        conv = nn.ConvTranspose1d if transpose else nn.Conv1d
         self.blocks = nn.ModuleList() # wavenet receptive field: 1+s*(2**d-1))
         for _ in range(args.num_stacks):
             for d in range(args.stack_depth):
                 self.blocks.append(nn.Sequential(
-                    nn.ZeroPad1d((1,0) if d==0 else 2**(d-1)),
-                    nn.Conv1d(dim, 2*dim*args.expand, 2, dilation=2**d),
+                    conv(dim, 2*dim*args.expand, 3, dilation=2**d, padding=2**d),
                     nn.GLU(dim=1),
+                    block(dim*args.expand),
                     nn.Conv1d(dim*args.expand, 2*dim, 1),
                 ))
 
