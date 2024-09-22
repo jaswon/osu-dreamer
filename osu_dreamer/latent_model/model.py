@@ -1,13 +1,9 @@
 
-from functools import partial
-
 from typing import Any
 from jaxtyping import Float
 
 import torch as th
 from torch import Tensor
-
-from einops import repeat, rearrange
 
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -78,8 +74,9 @@ class Model(pl.LightningModule):
         a, x, label = b
 
         with th.no_grad():
-            x_hat = self.vae.decode(self.vae.encode(x))
-            plots = [ x[0].cpu().numpy() for x in [ x, x_hat ] ]
+            z = self.vae.encode(x)
+            x_hat = self.vae.decode(z)
+            plots = [ x[0].cpu().numpy() for x in [ x, x_hat, z ] ]
 
         with plot_signals(a[0].cpu().numpy(), plots) as fig:
             exp: SummaryWriter = self.logger.experiment # type: ignore
