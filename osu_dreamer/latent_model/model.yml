@@ -59,10 +59,10 @@ data:
 model:
     # training parameters
     opt_args:
-        lr: .0001
+        lr: .0002
 
     vae_args:
-        beta: .01
+        beta: .003
 
         latent_dim: 16
         h_dim: 128

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import torch as th
 from torch import nn, Tensor
 
-from osu_dreamer.data.beatmap.encode import X_DIM
+from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals
 
 from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
 
@@ -83,15 +83,20 @@ class VAE(nn.Module):
         z = self._reparam(mean, logvar)
         x_hat = self._decoder(z)
 
+        x_cursor_diff = x[:, CursorSignals, 1:] - x[:, CursorSignals, :-1]
+        x_hat_cursor_diff = x_hat[:, CursorSignals, 1:] - x_hat[:, CursorSignals, :-1]
+
         recon_loss = th.mean((x - x_hat) ** 2)
+        cursor_diff_loss = th.mean((x_cursor_diff - x_hat_cursor_diff) ** 2)
         bound_loss = th.mean((x_hat.abs().clamp(min=1) - 1) ** 2)
         kl_loss = .5 * (mean ** 2 + logvar.exp() - logvar - 1).sum(dim=1).mean()
 
-        loss = recon_loss + bound_loss + self.beta * kl_loss
+        loss = recon_loss + cursor_diff_loss + bound_loss + self.beta * kl_loss
 
         return loss, {
             'loss': loss.detach(),
             'recon': recon_loss.detach(),
+            'cursor': cursor_diff_loss.detach(),
             'bound': bound_loss.detach(),
             'kl': kl_loss.detach(),
         }
