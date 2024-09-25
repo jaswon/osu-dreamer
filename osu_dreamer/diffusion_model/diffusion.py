@@ -17,14 +17,16 @@ class Diffusion:
 
     def __init__(
         self,
-        P_mean: float,
         P_std: float,
         std_data: float = .8,
     ):
         super().__init__()
 
         self.std_data = std_data
-        self.tZ = lambda Z: th.exp(P_mean + Z * P_std)
+
+        def sample_t(x: X) -> T:
+            return std_data * th.exp(P_std * th.randn(x.size(0)).to(x.device))
+        self.sample_t = sample_t
 
     def pred_x0(self, model: Denoiser, x_t: X, std: T) -> X:
         """https://arxiv.org/pdf/2206.00364.pdf#section.5"""
@@ -41,7 +43,7 @@ class Diffusion:
 
     def loss(self, model: Denoiser, x0: X) -> Float[Tensor, ""]:
         """sample denoised predictions of training data for denoising score matching objective"""
-        t = self.tZ(th.randn(x0.size(0),1,1)).to(x0.device)
+        t = self.sample_t(x0)
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
         x_t = x0 + th.randn_like(x0) * t
 
@@ -58,9 +60,9 @@ class Diffusion:
         s_min: float = .001,
         s_max: float = 50.,
         rho: float = 7.,
-        S_churn: float = 0.,
+        S_churn: float = 40.,
         S_tmin: float = 0.05,
-        S_tmax: float = 50.,
+        S_tmax: float = 20.,
         S_noise: float = 1.003,
     ) -> X:
         """https://github.com/NVlabs/edm/blob/62072d2612c7da05165d6233d13d17d71f213fee/generate.py#L25"""
@@ -74,7 +76,7 @@ class Diffusion:
             from tqdm import tqdm
             loop = tqdm(loop, total=num_steps)
 
-        def compute_score(x, t):
+        def dx_dt(x: X, t: T):
             """
             https://arxiv.org/pdf/2011.13456.pdf#section.5
             
@@ -84,7 +86,8 @@ class Diffusion:
                 = (pred_x0 - xt) / t**2 + ∇logp(y|xt)
             """
             x0_hat = self.pred_x0(denoiser, x, t)
-            return (x0_hat - x) / t ** 2
+            score = (x0_hat - x) / t ** 2
+            return -t * score
 
         x_t = z * s_max
         for t_cur, t_nxt in loop:
@@ -94,12 +97,12 @@ class Diffusion:
             x_hat = x_t + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * th.randn_like(x_t)
 
             # euler step
-            d_cur = -t_hat * compute_score(x_hat, t_hat)
+            d_cur = dx_dt(x_hat, t_hat)
             x_t = x_hat + (t_nxt - t_hat) * d_cur
 
             # 2nd order correction (Huen's method)
             if t_nxt[0,0,0] > 0:
-                d_prime = -t_nxt * compute_score(x_t, t_nxt)
+                d_prime = dx_dt(x_t, t_nxt)
                 x_t = x_hat + 0.5 * (t_nxt - t_hat) * (d_cur + d_prime)
 
         return x_t

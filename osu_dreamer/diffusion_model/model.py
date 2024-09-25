@@ -35,7 +35,6 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        P_mean: float,
         P_std: float,
 
         # model hparams
@@ -47,7 +46,7 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # model
-        self.diffusion = Diffusion(P_mean, P_std)
+        self.diffusion = Diffusion(P_std)
         self.denoiser = Denoiser(a_features,denoiser_args)
         self.audio_features = AudioFeatures(a_features, audio_feature_args)
 
