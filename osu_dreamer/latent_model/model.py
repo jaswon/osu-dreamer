@@ -43,6 +43,7 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
+        latent_noise: float, 
 
         # model hparams
         args: VAEArgs,
@@ -53,6 +54,7 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
+        self.latent_noise = latent_noise
 
         # model
         self.beta = args.beta
@@ -105,7 +107,7 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         mean, logvar = self._encoder(x)
         z = self._reparam(mean, logvar)
-        x_hat = self._decoder(z)
+        x_hat = self._decoder(z + th.randn_like(z) * self.latent_noise)
 
         x_cursor_diff = x[:, CursorSignals, 1:] - x[:, CursorSignals, :-1]
         x_hat_cursor_diff = x_hat[:, CursorSignals, 1:] - x_hat[:, CursorSignals, :-1]
