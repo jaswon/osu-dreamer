@@ -18,14 +18,14 @@ class Diffusion:
     def __init__(
         self,
         P_std: float,
-        std_data: float = .8,
+        std_data: float = 1.,
     ):
         super().__init__()
 
         self.std_data = std_data
 
         def sample_t(x: X) -> T:
-            return std_data * th.exp(P_std * th.randn(x.size(0)).to(x.device))
+            return std_data * th.exp(P_std * th.randn(x.size(0),1,1).to(x.device))
         self.sample_t = sample_t
 
     def pred_x0(self, model: Denoiser, x_t: X, std: T) -> X:
@@ -38,16 +38,15 @@ class Diffusion:
         c_in = 1 / hyp
         c_noise = th.log(std)[:,0,0]
 
-        pred_x0 = c_skip * x_t + c_out * model(c_in * x_t, c_noise)
-        return pred_x0.clamp(min=-1, max=1)
+        return c_skip * x_t + c_out * model(c_in * x_t, c_noise)
 
-    def loss(self, model: Denoiser, x0: X) -> Float[Tensor, ""]:
-        """sample denoised predictions of training data for denoising score matching objective"""
+    def training_sample(self, model: Denoiser, x0: X) -> tuple[X,T]:
+        """sample denoised predictions and per-batch loss weights"""
         t = self.sample_t(x0)
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
         x_t = x0 + th.randn_like(x0) * t
 
-        return th.mean( loss_weight * ( self.pred_x0(model, x_t, t) - x0 ) ** 2 )
+        return self.pred_x0(model, x_t, t), loss_weight
     
     @th.no_grad()
     def sample(
@@ -57,7 +56,7 @@ class Diffusion:
         z: X,
 
         show_progress: bool = False,
-        s_min: float = .001,
+        s_min: float = .01,
         s_max: float = 50.,
         rho: float = 7.,
         S_churn: float = 40.,

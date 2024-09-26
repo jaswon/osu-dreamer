@@ -6,7 +6,6 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
-from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
 from osu_dreamer.modules.unet import UNet
@@ -47,10 +46,12 @@ class DenoiserArgs:
     stack_depth: int
     block_depth: int
     expand: int
+    block_kernel_size: int
 
 class Denoiser(nn.Module):
     def __init__(
         self,
+        dim: int,
         a_dim: int,
         args: DenoiserArgs,
     ):
@@ -62,7 +63,7 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_h = nn.Conv1d(a_dim + X_DIM, args.h_dim, 1)
+        self.proj_h = nn.Conv1d(a_dim + dim, args.h_dim, 1)
 
         hh_dim = args.h_dim * args.expand
         class DenoiserUNetBlock(nn.Module):
@@ -85,6 +86,10 @@ class Denoiser(nn.Module):
                 h = self.norm(self.proj_in(x), t)
                 return x + self.proj_out(h)
 
+        k = args.block_kernel_size
+        p = k // 2
+        assert p * 2 + 1 == k
+
         self.net = UNet(
             args.h_dim, args.scales,
             VarSequential(*(
@@ -92,12 +97,12 @@ class Denoiser(nn.Module):
                 for _ in range(args.stack_depth)
             )),
             lambda: VarSequential(*(
-                DenoiserUNetBlock(nn.Conv1d(hh_dim, hh_dim, 5,1,2, groups=hh_dim))
+                DenoiserUNetBlock(nn.Conv1d(hh_dim, hh_dim, k,1,p, groups=hh_dim))
                 for _ in range(args.block_depth)
             )),
         )
 
-        self.proj_out = nn.Conv1d(args.h_dim, X_DIM, 1)
+        self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
         th.nn.init.zeros_(self.proj_out.bias) # type: ignore
 
@@ -107,9 +112,9 @@ class Denoiser(nn.Module):
         label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #
-        x: Float[Tensor, str(f"B {X_DIM} L")],  # noised input
-        t: Float[Tensor, "B"],                  # (log) denoising step
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+        x: Float[Tensor, "B X L"],  # noised input
+        t: Float[Tensor, "B"],      # (log) denoising step
+    ) -> Float[Tensor, "B X L"]:
         c = self.proj_c(th.cat([t[:,None], label], dim=1))
         h = self.proj_h(th.cat([ audio_features, x ], dim=1))
         return self.proj_out(self.net(h,c))

@@ -67,6 +67,8 @@ model:
     P_std: 1.5
 
     # model hyperparameters
+    latent_model_path: ./latent.ckpt
+
     a_features: 128
     audio_feature_args:
         num_stacks: 2
@@ -74,8 +76,8 @@ model:
         expand: 2
 
     denoiser_args:
-        h_dim: 128
-        expand: 2
+        h_dim: 1024
+        expand: 1
         cbam_reduction: 16
 
         c_features: 128
@@ -83,4 +85,5 @@ model:
 
         scales: [2,2,3,3,3]
         stack_depth: 4
-        block_depth: 4
+        block_depth: 2
+        block_kernel_size: 7

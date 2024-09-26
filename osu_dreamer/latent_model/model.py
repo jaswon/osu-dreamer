@@ -33,11 +33,17 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # model
+        self.dim = vae_args.latent_dim
         self.vae = VAE(vae_args)
 
         # training params
         self.opt_args = opt_args
     
+    def encode(self, x):
+        return self.vae.encode(x)
+    
+    def decode(self, z):
+        return self.vae.decode(z)
 
     def forward(
         self,
