@@ -58,16 +58,17 @@ data:
     
 model:
     # training parameters
+    latent_noise: .01
     opt_args:
         lr: .0002
 
-    vae_args:
+    args:
         beta: .003
 
         latent_dim: 16
         h_dim: 128
 
         wavenet_args:
-            num_stacks: 3
-            stack_depth: 5
+            num_stacks: 4
+            stack_depth: 4
             expand: 1
