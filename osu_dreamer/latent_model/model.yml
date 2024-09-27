@@ -59,6 +59,7 @@ data:
 model:
     # training parameters
     latent_noise: .01
+    slider_importance_factor: 100.
     opt_args:
         lr: .0002
 

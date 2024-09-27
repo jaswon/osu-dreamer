@@ -12,7 +12,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals
+from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals, BeatmapEncoding
 from osu_dreamer.data.prepare_map import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
@@ -44,6 +44,7 @@ class Model(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         latent_noise: float, 
+        slider_importance_factor: float,
 
         # model hparams
         args: VAEArgs,
@@ -55,6 +56,7 @@ class Model(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.latent_noise = latent_noise
+        self.slider_importance_factor = slider_importance_factor
 
         # model
         self.beta = args.beta
@@ -106,19 +108,22 @@ class Model(pl.LightningModule):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         mean, logvar = self._encoder(x)
+        kl_loss = .5 * (mean ** 2 + logvar.exp() - logvar - 1).sum(dim=1).mean()
+
         z = self._reparam(mean, logvar)
         x_hat = self._decoder(z + th.randn_like(z) * self.latent_noise)
+        recon_loss = th.mean((x - x_hat) ** 2)
+        bound_loss = th.mean((x_hat.abs().clamp(min=1) - 1) ** 2)
 
         x_cursor_diff = x[:, CursorSignals, 1:] - x[:, CursorSignals, :-1]
         x_hat_cursor_diff = x_hat[:, CursorSignals, 1:] - x_hat[:, CursorSignals, :-1]
 
-        recon_loss = th.mean((x - x_hat) ** 2)
-        cursor_diff_loss = th.mean((x_cursor_diff - x_hat_cursor_diff) ** 2)
-        bound_loss = th.mean((x_hat.abs().clamp(min=1) - 1) ** 2)
-        kl_loss = .5 * (mean ** 2 + logvar.exp() - logvar - 1).sum(dim=1).mean()
+        # cursor diffs are more important during sustains
+        sustaining = (x[:,[BeatmapEncoding.SUSTAIN],1:]+1)/2
+        cursor_diff_factor = 1 + (self.slider_importance_factor-1) * sustaining
+        cursor_diff_loss = th.mean(cursor_diff_factor * (x_cursor_diff - x_hat_cursor_diff) ** 2)
 
         loss = recon_loss + cursor_diff_loss + bound_loss + self.beta * kl_loss
-
         return loss, {
             'loss': loss.detach(),
             'recon': recon_loss.detach(),
