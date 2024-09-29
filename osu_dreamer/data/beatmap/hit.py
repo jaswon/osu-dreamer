@@ -33,19 +33,15 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     """
 
     return np.stack([
-        events(onsets(bm), frame_times),
-        events(new_combos(bm), frame_times),
+        events([ ho.t for ho in bm.hit_objects                 ], frame_times),
+        events([ ho.t for ho in bm.hit_objects if ho.new_combo ], frame_times),
         extents([ (ho.t, ho.end_time())            for ho in bm.hit_objects if isinstance(ho, (Slider, Spinner)) ], frame_times),
         extents([ (ho.t, ho.t + ho.slide_duration) for ho in bm.hit_objects if isinstance(ho, Slider)            ], frame_times),
     ]) * 2 - 1
 
 Real = Union[int, float]
 
-def onsets(bm: Beatmap) -> list[Real]:
-    return [ ho.t for ho in bm.hit_objects]
-
-def new_combos(bm: Beatmap) -> list[Real]:
-    return [ ho.t for ho in bm.hit_objects if ho.new_combo ]
+# == events ==
 
 def events(ts: list[Real], frame_times: FrameTimes) -> Float[ndarray, "L"]:
     """returns time (in log ms) since last event, scaled+shifted to [0,1]"""
@@ -63,6 +59,8 @@ def events(ts: list[Real], frame_times: FrameTimes) -> Float[ndarray, "L"]:
 
 def decode_events(events: Float[ndarray, "L"]) -> list[int]:
     return find_peaks(-events, height=0.6, distance=4)[0].tolist()
+
+# == extents ==
 
 def extents(regions: list[tuple[Real, Real]], frame_times: FrameTimes) -> Float[ndarray, "L"]:
     """1 within extents, 0 everywhere else"""
