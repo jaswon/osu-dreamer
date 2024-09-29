@@ -56,18 +56,18 @@ class Diffusion:
         z: X,
 
         show_progress: bool = False,
-        s_min: float = .01,
-        s_max: float = 50.,
-        rho: float = 7.,
+        snr_scale: float = 2.5,
+        snr_offset: float = 1e-1,
         S_churn: float = 40.,
-        S_tmin: float = 0.05,
-        S_tmax: float = 20.,
+        S_tmin: float = 1e-1,
+        S_tmax: float = 1e1,
         S_noise: float = 1.003,
     ) -> X:
         """https://github.com/NVlabs/edm/blob/62072d2612c7da05165d6233d13d17d71f213fee/generate.py#L25"""
-
-        sigmas = th.linspace(s_max ** (1/rho), s_min ** (1/rho), num_steps) ** rho
-        sigmas = th.tensor([*sigmas.tolist(), 0], device=z.device)
+        
+        t = th.linspace(snr_offset, 1, num_steps+1, device=z.device)
+        log_snr = snr_scale * th.sign(0.5 - t) * th.log(1 - 2 * th.abs(0.5 - t)) # laplace 
+        sigmas = th.exp(-.5 * log_snr)
         sigmas = repeat(sigmas, 's -> s b 1 1', b = z.size(0))
 
         loop = zip(sigmas[:-1], sigmas[1:])
@@ -88,7 +88,7 @@ class Diffusion:
             score = (x0_hat - x) / t ** 2
             return -t * score
 
-        x_t = z * s_max
+        x_t = z * sigmas[0,0,0,0]
         for t_cur, t_nxt in loop:
             # increase noise temporarily
             gamma = min(S_churn / num_steps, 2**.5 - 1) if S_tmin <= t_cur[0,0,0] <= S_tmax else 0
