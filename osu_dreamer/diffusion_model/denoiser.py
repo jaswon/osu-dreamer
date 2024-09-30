@@ -22,17 +22,17 @@ class AdaGN(nn.Module):
     def __init__(self, dim: int, t_dim: int):
         super().__init__()
         self.norm = nn.GroupNorm(dim, dim, affine=False)
-        self.ss = nn.Linear(t_dim, dim*2)
-        nn.init.zeros_(self.ss.weight)
-        nn.init.zeros_(self.ss.bias)
+        self.scale = nn.Linear(t_dim, dim)
+        self.shift = nn.Linear(t_dim, dim)
 
     def forward(
         self, 
         x: Float[Tensor, "B D L"], 
         t: Float[Tensor, "B T"],
     ) -> Float[Tensor, "B D L"]:
-        scale, shift = self.ss(t)[...,None].chunk(2, dim=1)
-        return self.norm(x) * (1+scale) + shift
+        scale = self.scale(t)[:,:,None]
+        shift = self.shift(t)[:,:,None] 
+        return self.norm(x) * scale + shift
 
 @dataclass
 class DenoiserArgs:
@@ -75,7 +75,6 @@ class Denoiser(nn.Module):
                     nn.SiLU(),
                     net,
                     nn.Conv1d(hh_dim, args.h_dim, 1),
-                    nn.SiLU(),
                 )
 
             def forward(
