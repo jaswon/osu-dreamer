@@ -53,7 +53,19 @@ class UNet(nn.Module):
         self.skip = nn.ModuleList()
         self.down = []
         self.up = []
+        self.mix = nn.ModuleList()
         self.post = nn.ModuleList()
+
+        class Mix(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(
+                self, 
+                up: Float[Tensor, "B D L"], 
+                skip: Float[Tensor, "B D L"],
+            ) -> Float[Tensor, "B D L"]:
+                return up * th.tanh(skip)
         
         def make_down_up(scale: int):
             lpf = make_lpf(dim, scale)
@@ -72,6 +84,7 @@ class UNet(nn.Module):
             self.down.append(down)
 
             self.up.insert(0, up)
+            self.mix.insert(0, Mix())
             self.post.insert(0, block())
 
         self.middle = middle
@@ -92,9 +105,9 @@ class UNet(nn.Module):
             
         x = self.middle(x, *args, **kwargs)
 
-        for up, post in zip(self.up, self.post):
+        for up, mix, post in zip(self.up, self.mix, self.post):
             x = up(x)
-            x = hs.pop() + x
+            x = mix(x, hs.pop())
             x = post(x, *args, **kwargs)
 
         return unpad(x, p)
