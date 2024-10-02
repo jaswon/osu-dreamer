@@ -58,15 +58,16 @@ data:
     
 model:
     # training parameters
-    latent_noise: .01
-    slider_importance_factor: 100.
+    slider_importance_factor: 1000.
     opt_args:
         lr: .0002
 
-    args:
-        beta: .003
+    start_beta: 1e1
+    end_beta: 1e-6
+    beta_steps: 10000
 
-        latent_dim: 16
+    args:
+        latent_dim: 4
         h_dim: 128
 
         wavenet_args:

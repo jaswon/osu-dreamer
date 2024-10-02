@@ -30,8 +30,6 @@ class Residual(nn.Module):
 
 @dataclass
 class VAEArgs:
-    beta: float
-
     latent_dim: int
     h_dim: int
     
@@ -43,8 +41,11 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        latent_noise: float, 
         slider_importance_factor: float,
+
+        start_beta: float,
+        end_beta: float,
+        beta_steps: int,
 
         # model hparams
         args: VAEArgs,
@@ -55,11 +56,12 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
-        self.latent_noise = latent_noise
         self.slider_importance_factor = slider_importance_factor
 
         # model
-        self.beta = args.beta
+        self.start_beta = start_beta
+        self.end_beta = end_beta
+        self.beta_steps = beta_steps
 
         block = lambda dim: Residual(nn.Sequential(
             nn.Conv1d(dim, dim, 3,1,1, groups=dim),
@@ -67,10 +69,13 @@ class Model(pl.LightningModule):
             nn.Conv1d(dim, dim, 1),
         ))
 
+        enc_out = nn.Conv1d(args.h_dim, args.latent_dim * 2, 1)
+        th.nn.init.zeros_(enc_out.weight)
+        th.nn.init.zeros_(enc_out.bias) # type: ignore
         self.encoder = nn.Sequential(
             nn.Conv1d(X_DIM, args.h_dim, 1),
             WaveNet(args.h_dim, args.wavenet_args, block, transpose=False),
-            nn.Conv1d(args.h_dim, args.latent_dim * 2, 1),
+            enc_out,
         )
 
         self.decoder = nn.Sequential(
@@ -111,7 +116,7 @@ class Model(pl.LightningModule):
         kl_loss = .5 * (mean ** 2 + logvar.exp() - logvar - 1).sum(dim=1).mean()
 
         z = self._reparam(mean, logvar)
-        x_hat = self._decoder(z + th.randn_like(z) * self.latent_noise)
+        x_hat = self._decoder(z)
         recon_loss = th.mean((x - x_hat) ** 2)
         bound_loss = th.mean((x_hat.abs().clamp(min=1) - 1) ** 2)
 
@@ -123,7 +128,9 @@ class Model(pl.LightningModule):
         cursor_diff_factor = 1 + (self.slider_importance_factor-1) * sustaining
         cursor_diff_loss = th.mean(cursor_diff_factor * (x_cursor_diff - x_hat_cursor_diff) ** 2)
 
-        loss = recon_loss + cursor_diff_loss + bound_loss + self.beta * kl_loss
+        beta_t = min(self.global_step / self.beta_steps, 1)
+        beta = self.start_beta * (self.end_beta / self.start_beta) ** beta_t
+        loss = recon_loss + cursor_diff_loss + bound_loss + beta * kl_loss
         return loss, {
             'loss': loss.detach(),
             'recon': recon_loss.detach(),
