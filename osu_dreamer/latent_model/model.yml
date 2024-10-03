@@ -60,7 +60,7 @@ model:
     # training parameters
     slider_importance_factor: 1000.
     opt_args:
-        lr: .0002
+        lr: .0003
 
     start_beta: 1e1
     end_beta: 1e-6
@@ -71,6 +71,6 @@ model:
         h_dim: 128
 
         wavenet_args:
-            num_stacks: 4
-            stack_depth: 4
+            num_stacks: 3
+            stack_depth: 3
             expand: 1

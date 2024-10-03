@@ -123,13 +123,14 @@ class Model(pl.LightningModule):
         x_cursor_diff = x[:, CursorSignals, 1:] - x[:, CursorSignals, :-1]
         x_hat_cursor_diff = x_hat[:, CursorSignals, 1:] - x_hat[:, CursorSignals, :-1]
 
-        # cursor diffs are more important during sliders
-        sustaining = (x[:,[BeatmapEncoding.SLIDER],1:]+1)/2
-        cursor_diff_factor = 1 + (self.slider_importance_factor-1) * sustaining
+        # cursor diffs are only important during sliders
+        cursor_diff_factor = self.slider_importance_factor * (x[:,[BeatmapEncoding.SLIDER],1:]+1)/2
         cursor_diff_loss = th.mean(cursor_diff_factor * (x_cursor_diff - x_hat_cursor_diff) ** 2)
 
+        # anneal kl importance
         beta_t = min(self.global_step / self.beta_steps, 1)
         beta = self.start_beta * (self.end_beta / self.start_beta) ** beta_t
+        
         loss = recon_loss + cursor_diff_loss + bound_loss + beta * kl_loss
         return loss, {
             'loss': loss.detach(),
