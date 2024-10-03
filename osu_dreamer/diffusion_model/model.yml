@@ -64,7 +64,7 @@ model:
     # training parameters
     opt_args:
         lr: .0001
-    P_std: 1.5
+    P_std: 6.
 
     # model hyperparameters
     latent_model_path: ./latent.ckpt

@@ -24,10 +24,6 @@ class Diffusion:
         self.P_std = P_std
         self.std_data = std_data
 
-        def sample_t(x: X) -> T:
-            return std_data * th.exp(P_std * th.randn(x.size(0),1,1).to(x.device))
-        self.sample_t = sample_t
-
     def pred_x0(self, model: Denoiser, x_t: X, std: T) -> X:
         """https://arxiv.org/pdf/2206.00364.pdf#section.5"""
 
@@ -42,7 +38,8 @@ class Diffusion:
 
     def training_sample(self, model: Denoiser, x0: X) -> tuple[X,T]:
         """sample denoised predictions and per-batch loss weights"""
-        t = self.sample_t(x0)
+        log_snr = self.P_std * th.randn(x0.size(0),1,1).to(x0.device)
+        t = self.std_data * th.exp(-.5 * log_snr)
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
         x_t = x0 + th.randn_like(x0) * t
 
@@ -56,7 +53,7 @@ class Diffusion:
         z: X,
 
         show_progress: bool = False,
-        snr_scale: float = 2.5,
+        snr_scale: float = 5.,
         snr_offset: float = 1e-1,
         S_churn: float = 40.,
         S_tmin: float = 1e-1,
@@ -67,7 +64,7 @@ class Diffusion:
         
         t = th.linspace(snr_offset, 1, num_steps+1, device=z.device)
         log_snr = snr_scale * th.sign(0.5 - t) * th.log(1 - 2 * th.abs(0.5 - t)) # laplace 
-        sigmas = th.exp(-.5 * log_snr)
+        sigmas = self.std_data * th.exp(-.5 * log_snr)
         sigmas = repeat(sigmas, 's -> s b 1 1', b = z.size(0))
 
         loop = zip(sigmas[:-1], sigmas[1:])
@@ -88,7 +85,7 @@ class Diffusion:
             score = (x0_hat - x) / t ** 2
             return -t * score
 
-        x_t = z * sigmas[0,0,0,0]
+        x_t = z * (sigmas[0,0,0,0] ** 2 + self.std_data ** 2) ** .5
         for t_cur, t_nxt in loop:
             # increase noise temporarily
             gamma = min(S_churn / num_steps, 2**.5 - 1) if S_tmin <= t_cur[0,0,0] <= S_tmax else 0
