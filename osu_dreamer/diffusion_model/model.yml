@@ -68,6 +68,7 @@ model:
 
     # model hyperparameters
     latent_model_path: ./latent.ckpt
+    std_data: 1.5
 
     a_features: 128
     audio_feature_args:

@@ -37,6 +37,7 @@ class Model(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         P_std: float,
+        std_data: float,
 
         # model hparams
         latent_model_path: str, 
@@ -50,7 +51,7 @@ class Model(pl.LightningModule):
         # model
         self.latent = LatentModel.load_from_checkpoint(latent_model_path)
         self.latent.freeze()
-        self.diffusion = Diffusion(P_std)
+        self.diffusion = Diffusion(P_std, std_data)
         self.denoiser = Denoiser(self.latent.dim, a_features, denoiser_args)
         self.audio_features = AudioFeatures(a_features, audio_feature_args)
 

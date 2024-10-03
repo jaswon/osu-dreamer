@@ -18,10 +18,10 @@ class Diffusion:
     def __init__(
         self,
         P_std: float,
-        std_data: float = 1.,
+        std_data: float,
     ):
         super().__init__()
-
+        self.P_std = P_std
         self.std_data = std_data
 
         def sample_t(x: X) -> T:
