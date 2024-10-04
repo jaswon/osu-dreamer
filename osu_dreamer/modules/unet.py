@@ -59,13 +59,19 @@ class UNet(nn.Module):
         class Mix(nn.Module):
             def __init__(self):
                 super().__init__()
+                self.gate = nn.Sequential(
+                    nn.Conv1d(2*dim, dim, 1),
+                    nn.SiLU(),
+                    nn.Conv1d(dim, dim, 1),
+                    nn.Sigmoid(),
+                )
 
             def forward(
                 self, 
                 up: Float[Tensor, "B D L"], 
                 skip: Float[Tensor, "B D L"],
             ) -> Float[Tensor, "B D L"]:
-                return up * th.tanh(skip)
+                return up + skip * self.gate(th.cat([up, skip], dim=1))
         
         def make_down_up(scale: int):
             lpf = make_lpf(dim, scale)
