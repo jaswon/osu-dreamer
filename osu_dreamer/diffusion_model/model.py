@@ -23,7 +23,6 @@ from osu_dreamer.modules.adabelief import AdaBelief
 from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
 from .audio_features import AudioFeatures, AudioFeatureArgs
-from ..latent_model.model import Model as LatentModel
 
     
 class Model(pl.LightningModule):
@@ -38,7 +37,6 @@ class Model(pl.LightningModule):
         opt_args: dict[str, Any],
 
         # model hparams
-        latent_model_path: str, 
         diffusion_args: DiffusionArgs,
         a_features: int,
         denoiser_args: DenoiserArgs,
@@ -48,10 +46,8 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # model
-        self.latent = LatentModel.load_from_checkpoint(latent_model_path)
-        self.latent.freeze()
         self.diffusion = Diffusion(diffusion_args)
-        self.denoiser = Denoiser(self.latent.dim, a_features, denoiser_args)
+        self.denoiser = Denoiser(X_DIM, a_features, denoiser_args)
         self.audio_features = AudioFeatures(a_features, audio_feature_args)
 
         # validation params
@@ -74,9 +70,8 @@ class Model(pl.LightningModule):
             labels,
         )
         
-        z0 = self.latent.encode(chart)
-        pred_z0, loss_weight = self.diffusion.training_sample(denoiser, z0)
-        loss = (loss_weight * (pred_z0 - z0) ** 2).mean()
+        pred_chart, loss_weight = self.diffusion.training_sample(denoiser, chart)
+        loss = (loss_weight * (pred_chart - chart) ** 2).mean()
         return loss, { "loss": loss.detach() }
     
     @th.no_grad()
@@ -90,18 +85,18 @@ class Model(pl.LightningModule):
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
-        z = th.randn(num_samples, self.latent.dim, audio.size(-1), device=audio.device)
+        z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
         denoiser = partial(
             self.denoiser,
             self.audio_features(audio),
             labels,
         )
 
-        return self.latent.decode(self.diffusion.sample(
+        return self.diffusion.sample(
             denoiser, 
             num_steps, z,
             **kwargs,
-        ))
+        )
 
 
 #
