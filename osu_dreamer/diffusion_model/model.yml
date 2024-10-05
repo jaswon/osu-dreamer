@@ -64,11 +64,13 @@ model:
     # training parameters
     opt_args:
         lr: .0001
-    P_std: 6.
 
     # model hyperparameters
     latent_model_path: ./latent.ckpt
-    std_data: 1.5
+    diffusion_args:
+        log_snr_scale: 3.
+        log_snr_bound: 3e-2
+        std_data: 1.5
 
     a_features: 128
     audio_feature_args:

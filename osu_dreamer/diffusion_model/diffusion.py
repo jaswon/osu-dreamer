@@ -2,6 +2,8 @@
 from collections.abc import Callable
 from jaxtyping import Float
 
+from dataclasses import dataclass
+
 import torch as th
 from torch import Tensor
 
@@ -12,17 +14,26 @@ T = Float[Tensor, "B 1 1"]              # diffusion step
 X = Float[Tensor, "B D N"]              # sequence
 Denoiser = Callable[[ X, T ], X]        # p(x0 | xt, t)
 
+@dataclass
+class DiffusionArgs:
+    log_snr_scale: float
+    log_snr_bound: float
+    std_data: float
+
 class Diffusion:
     """https://arxiv.org/pdf/2206.00364.pdf"""
 
     def __init__(
         self,
-        P_std: float,
-        std_data: float,
+        args: DiffusionArgs,
     ):
         super().__init__()
-        self.P_std = P_std
-        self.std_data = std_data
+        def std_noise(t):
+            t = .5 + (t-.5) * (1-args.log_snr_bound*2) # [0,1] -> [b,1-b]
+            log_snr = args.log_snr_scale * th.sign(0.5 - t) * th.log(1 - 2 * th.abs(0.5 - t)) # laplace 
+            return args.std_data * th.exp(-.5 * log_snr)
+        self.std_noise = std_noise
+        self.std_data = args.std_data
 
     def pred_x0(self, model: Denoiser, x_t: X, std: T) -> X:
         """https://arxiv.org/pdf/2206.00364.pdf#section.5"""
@@ -38,8 +49,7 @@ class Diffusion:
 
     def training_sample(self, model: Denoiser, x0: X) -> tuple[X,T]:
         """sample denoised predictions and per-batch loss weights"""
-        log_snr = self.P_std * th.randn(x0.size(0),1,1).to(x0.device)
-        t = self.std_data * th.exp(-.5 * log_snr)
+        t = self.std_noise(th.rand(x0.size(0),1,1).to(x0.device))
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
         x_t = x0 + th.randn_like(x0) * t
 
@@ -53,8 +63,6 @@ class Diffusion:
         z: X,
 
         show_progress: bool = False,
-        snr_scale: float = 5.,
-        snr_offset: float = 1e-1,
         S_churn: float = 40.,
         S_tmin: float = 1e-1,
         S_tmax: float = 1e1,
@@ -62,9 +70,8 @@ class Diffusion:
     ) -> X:
         """https://github.com/NVlabs/edm/blob/62072d2612c7da05165d6233d13d17d71f213fee/generate.py#L25"""
         
-        t = th.linspace(snr_offset, 1, num_steps+1, device=z.device)
-        log_snr = snr_scale * th.sign(0.5 - t) * th.log(1 - 2 * th.abs(0.5 - t)) # laplace 
-        sigmas = self.std_data * th.exp(-.5 * log_snr)
+        sigmas = self.std_noise(th.linspace(0, 1, num_steps))
+        sigmas = th.tensor([*sigmas.tolist(), 0], device=z.device)
         sigmas = repeat(sigmas, 's -> s b 1 1', b = z.size(0))
 
         loop = zip(sigmas[:-1], sigmas[1:])

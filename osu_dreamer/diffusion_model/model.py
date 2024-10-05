@@ -20,7 +20,7 @@ from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.adabelief import AdaBelief
 
-from .diffusion import Diffusion
+from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
 from .audio_features import AudioFeatures, AudioFeatureArgs
 from ..latent_model.model import Model as LatentModel
@@ -36,11 +36,10 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        P_std: float,
-        std_data: float,
 
         # model hparams
         latent_model_path: str, 
+        diffusion_args: DiffusionArgs,
         a_features: int,
         denoiser_args: DenoiserArgs,
         audio_feature_args: AudioFeatureArgs,
@@ -51,7 +50,7 @@ class Model(pl.LightningModule):
         # model
         self.latent = LatentModel.load_from_checkpoint(latent_model_path)
         self.latent.freeze()
-        self.diffusion = Diffusion(P_std, std_data)
+        self.diffusion = Diffusion(diffusion_args)
         self.denoiser = Denoiser(self.latent.dim, a_features, denoiser_args)
         self.audio_features = AudioFeatures(a_features, audio_feature_args)
 
