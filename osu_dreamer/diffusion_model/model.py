@@ -22,7 +22,6 @@ from osu_dreamer.modules.adabelief import AdaBelief
 
 from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
-from .audio_features import AudioFeatures, AudioFeatureArgs
 
     
 class Model(pl.LightningModule):
@@ -39,17 +38,14 @@ class Model(pl.LightningModule):
 
         # model hparams
         diffusion_args: DiffusionArgs,
-        a_features: int,
         denoiser_args: DenoiserArgs,
-        audio_feature_args: AudioFeatureArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
 
         # model
         self.diffusion = Diffusion(diffusion_args)
-        self.denoiser = Denoiser(X_DIM, a_features, denoiser_args)
-        self.audio_features = AudioFeatures(a_features, audio_feature_args)
+        self.denoiser = Denoiser(X_DIM, A_DIM, denoiser_args)
 
         # validation params
         self.val_batches = val_batches
@@ -66,11 +62,7 @@ class Model(pl.LightningModule):
         chart: Float[Tensor, str(f"B {X_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
-        denoiser = partial(
-            self.denoiser,
-            self.audio_features(audio),
-            labels,
-        )
+        denoiser = partial(self.denoiser,audio,labels)
         
         pred_chart, loss_weight = self.diffusion.training_sample(denoiser, chart)
         pixel_loss = (loss_weight * (pred_chart - chart) ** 2).mean()
@@ -99,11 +91,7 @@ class Model(pl.LightningModule):
         num_samples = labels.size(0)
         audio = repeat(audio, 'a l -> b a l', b=num_samples)
         z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
-        denoiser = partial(
-            self.denoiser,
-            self.audio_features(audio),
-            labels,
-        )
+        denoiser = partial(self.denoiser,audio,labels)
 
         return self.diffusion.sample(
             denoiser, 

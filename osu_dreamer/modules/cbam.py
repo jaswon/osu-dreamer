@@ -25,12 +25,12 @@ class CBAM(nn.Module):
             x.max(dim=2).values, 
             x.mean(dim=2),
         ])).sum(dim=0)[...,None]
-        x = x * F.sigmoid(ch_attn)
+        x = x * F.tanh(ch_attn)
 
         sp_attn = self.sp_map(th.cat([
             x.max(dim=1, keepdim=True).values,
             x.mean(dim=1, keepdim=True),
         ], dim=1))
-        x = x * F.sigmoid(sp_attn)
+        x = x * F.tanh(sp_attn)
 
         return x

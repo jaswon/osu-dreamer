@@ -11,32 +11,33 @@ from torch import nn, Tensor
 class WaveNetArgs:
     num_stacks: int
     stack_depth: int
-    expand: int
 
 class WaveNet(nn.Module):
+    """wavenet receptive field: 1+s*(2**d-1))"""
     def __init__(
         self,
         dim: int,
         args: WaveNetArgs,
         block: Callable[[int], nn.Module],
-        transpose: bool = False,
     ):
         super().__init__()
-        conv = nn.ConvTranspose1d if transpose else nn.Conv1d
-        self.blocks = nn.ModuleList() # wavenet receptive field: 1+s*(2**d-1))
+        self.blocks = nn.ModuleList()
+        self.proj_in = nn.ModuleList()
+        self.proj_out = nn.ModuleList()
         for _ in range(args.num_stacks):
             for d in range(args.stack_depth):
-                self.blocks.append(nn.Sequential(
-                    conv(dim, 2*dim*args.expand, 3, dilation=2**d, padding=2**d),
+                self.proj_in.append(nn.Sequential(
+                    nn.Conv1d(dim, dim*2, 3, dilation=2**d, padding=2**d),
                     nn.GLU(dim=1),
-                    block(dim*args.expand),
-                    nn.Conv1d(dim*args.expand, 2*dim, 1),
                 ))
+                self.blocks.append(block(dim))
+                self.proj_out.append(nn.Conv1d(dim, 2*dim, 1))
 
-    def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
+    def forward(self, x: Float[Tensor, "B D L"], *args, **kwargs) -> Float[Tensor, "B D L"]:
         o = th.zeros_like(x)
-        for block in self.blocks:
-            res, skip = block(x).chunk(2, dim=1)
+        for proj_in, block, proj_out in zip(self.proj_in, self.blocks, self.proj_out):
+            h = block(proj_in(x), *args, **kwargs)
+            res, skip = proj_out(h).chunk(2, dim=1)
             x = (x + res) * 2 ** -0.5
             o = o + skip
         return o * len(self.blocks) ** -0.5
