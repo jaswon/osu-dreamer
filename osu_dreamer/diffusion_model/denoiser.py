@@ -28,8 +28,6 @@ class DenoiserArgs:
     c_dim: int
 
     scales: list[int]
-    stack_depth: int
-    block_depth: int
     block_kernel_size: int
 
 class Denoiser(nn.Module):
@@ -52,8 +50,9 @@ class Denoiser(nn.Module):
         class DenoiserUNetBlock(nn.Module):
             def __init__(self, net: nn.Module):
                 super().__init__()
-                self.proj_in = nn.Conv1d(args.h_dim, args.h_dim, 1)
-                self.norm = FiLM(args.h_dim, args.c_dim)
+                self.norm1 = FiLM(args.h_dim, args.c_dim)
+                self.proj_in = nn.Sequential( nn.SiLU(), nn.Conv1d(args.h_dim, args.h_dim, 1) )
+                self.norm2 = FiLM(args.h_dim, args.c_dim)
                 self.proj_out = nn.Sequential( nn.SiLU(), net )
 
             def forward(
@@ -61,7 +60,8 @@ class Denoiser(nn.Module):
                 x: Float[Tensor, "B D L"], 
                 t: Float[Tensor, "B T"],
             ) -> Float[Tensor, "B D L"]:
-                return x + self.proj_out(self.norm(self.proj_in(x), t))
+                h = self.proj_in(self.norm1(x, t))
+                return x + self.proj_out(self.norm2(h, t))
 
         k = args.block_kernel_size
         p = k // 2
@@ -71,15 +71,14 @@ class Denoiser(nn.Module):
             args.h_dim, args.c_dim, args.scales,
             VarSequential(*(
                 DenoiserUNetBlock(block)
-                for _ in range(args.stack_depth)
                 for block in [
                     nn.Conv1d(args.h_dim, args.h_dim, k,1,p),
                     CBAM(args.h_dim, args.cbam_reduction),
+                    nn.Conv1d(args.h_dim, args.h_dim, k,1,p),
                 ]
             )),
             lambda: VarSequential(*(
                 DenoiserUNetBlock(block) 
-                for _ in range(args.block_depth)
                 for block in [
                     nn.Conv1d(args.h_dim, args.h_dim, k,1,p),
                     CBAM(args.h_dim, args.cbam_reduction),

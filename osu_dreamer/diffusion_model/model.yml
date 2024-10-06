@@ -62,7 +62,7 @@ model:
     val_batches: 64
 
     # training parameters
-    slider_importance_factor: 1e3
+    slider_importance_factor: 1e1
     opt_args:
         lr: .0001
 
@@ -80,12 +80,10 @@ model:
 
     denoiser_args:
         h_dim: 256
-        cbam_reduction: 16
+        cbam_reduction: 8
 
         c_features: 256
         c_dim: 512
 
-        scales: [2,2,3,3,3]
-        stack_depth: 2
-        block_depth: 2
+        scales: [2,2,2,3,3,3]
         block_kernel_size: 3
