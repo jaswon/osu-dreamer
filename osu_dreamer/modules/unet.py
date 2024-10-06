@@ -9,16 +9,7 @@ import torch.nn.functional as F
 import scipy.signal as signal
 from einops import repeat
 
-def pad(x: Float[Tensor, "... L"], size: int) -> tuple[Float[Tensor, "... Lp"], int]:
-    padding = (size-x.size(-1)%size)%size
-    if padding > 0:
-        x = F.pad(x, (0, padding))
-    return x, padding
-
-def unpad(x: Float[Tensor, "... Lp"], padding: int) -> Float[Tensor, "... L"]:
-    if padding > 0:
-        x = x[...,:-padding]
-    return x
+from osu_dreamer.modules.film import FiLM
 
 def make_lpf(dim: int, scale: int, kernel_size: int = 17):
     assert kernel_size % 2 == 1
@@ -39,81 +30,85 @@ def make_lpf(dim: int, scale: int, kernel_size: int = 17):
 
     return lpf
 
+class UNetLayer(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        t_dim: int,
+        scale: int,
+        pre: nn.Module,
+        middle: nn.Module,
+    ):
+        super().__init__()
+
+        self.pre = pre
+            
+        self.norm1 = FiLM(dim, t_dim)
+        self.skip = nn.Conv1d(dim, dim, scale*2-1, 1, scale-1)
+
+        self.down = nn.AvgPool1d(scale, scale)
+
+        self.norm2 = FiLM(dim, t_dim)
+        self.middle = middle
+        
+        lpf = make_lpf(dim, scale)
+        self.up = lambda x: lpf(repeat(x, 'b d l -> b d (l s)', s=scale))
+        
+        self.norm3 = FiLM(2*dim, t_dim)
+        self.gate = nn.Sequential(
+            nn.Conv1d(2*dim, dim, 1),
+            nn.SiLU(),
+            nn.Conv1d(dim, dim, 1),
+        )
+        
+        self.norm4 = FiLM(2*dim, t_dim)
+        self.out = nn.Conv1d(2*dim, dim, 1)
+
+    def forward(
+        self,
+        x: Float[Tensor, "B D L"],
+        t: Float[Tensor, "B T"],
+    ) -> Float[Tensor, "B D L"]:
+        x = self.pre(x, t)
+        skip = self.skip(self.norm1(x, t))
+        down = self.down(x)
+        middle = self.middle(self.norm2(down, t), t)
+        up = self.up(middle)
+        gate = self.gate(self.norm3(th.cat([up, skip], dim=1), t))
+        mix = skip * gate
+        return self.out(self.norm4(th.cat([up, mix], dim=1), t))
+        
+
 class UNet(nn.Module):
     def __init__(
         self,
         dim: int,
+        t_dim: int,
         scales: list[int],
         middle: nn.Module,
         block: Callable[[], nn.Module],
     ):
         super().__init__()
 
-        self.pre = nn.ModuleList()
-        self.skip = nn.ModuleList()
-        self.down = []
-        self.up = []
-        self.mix = nn.ModuleList()
-        self.post = nn.ModuleList()
-
-        class Mix(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.gate = nn.Sequential(
-                    nn.Conv1d(2*dim, dim, 1),
-                    nn.SiLU(),
-                    nn.Conv1d(dim, dim, 1),
-                    nn.Sigmoid(),
-                )
-
-            def forward(
-                self, 
-                up: Float[Tensor, "B D L"], 
-                skip: Float[Tensor, "B D L"],
-            ) -> Float[Tensor, "B D L"]:
-                return up + skip * self.gate(th.cat([up, skip], dim=1))
-        
-        def make_down_up(scale: int):
-            lpf = make_lpf(dim, scale)
-            return (
-                lambda x: F.avg_pool1d(lpf(x), scale, scale),
-                lambda x: lpf(repeat(x, 'b d l -> b d (l s)', s=scale)),
-            )
-
+        net = middle
         self.chunk_size = 1
         for scale in scales:
             self.chunk_size *= scale
-            down, up = make_down_up(scale)
+            net = UNetLayer(dim, t_dim, scale, block(), net)
 
-            self.pre.append(block())
-            self.skip.append(nn.Conv1d(dim, dim, scale*2-1, 1, scale-1))
-            self.down.append(down)
-
-            self.up.insert(0, up)
-            self.mix.insert(0, Mix())
-            self.post.insert(0, block())
-
-        self.middle = middle
+        self.net = net
 
     def forward(
         self,
         x: Float[Tensor, "B D L"],
-        *args, **kwargs,
+        t: Float[Tensor, "B T"],
     ) -> Float[Tensor, "B D L"]:
-        
-        x, p = pad(x, self.chunk_size)
+        padding = (self.chunk_size-x.size(-1)%self.chunk_size)%self.chunk_size
+        if padding > 0:
+            x = F.pad(x, (0, padding))
 
-        hs = []
-        for pre, skip, down in zip(self.pre, self.skip, self.down):
-            x = pre(x, *args, **kwargs)
-            hs.append(skip(x))
-            x = down(x)
-            
-        x = self.middle(x, *args, **kwargs)
+        x = self.net(x, t)
 
-        for up, mix, post in zip(self.up, self.mix, self.post):
-            x = up(x)
-            x = mix(x, hs.pop())
-            x = post(x, *args, **kwargs)
-
-        return unpad(x, p)
+        if padding > 0:
+            x = x[...,:-padding]
+        return x

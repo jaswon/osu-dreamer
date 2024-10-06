@@ -11,28 +11,13 @@ from osu_dreamer.data.prepare_map import NUM_LABELS
 from osu_dreamer.modules.unet import UNet
 from osu_dreamer.modules.cbam import CBAM
 from osu_dreamer.modules.rff import RandomFourierFeatures
+from osu_dreamer.modules.film import FiLM
 
 class VarSequential(nn.Sequential):
     def forward(self, x, *args, **kwargs):
         for module in self:
             x = module(x, *args, **kwargs)
         return x
-    
-class AdaGN(nn.Module):
-    def __init__(self, dim: int, t_dim: int):
-        super().__init__()
-        self.norm = nn.GroupNorm(dim, dim, affine=False)
-        self.scale = nn.Linear(t_dim, dim)
-        self.shift = nn.Linear(t_dim, dim)
-
-    def forward(
-        self, 
-        x: Float[Tensor, "B D L"], 
-        t: Float[Tensor, "B T"],
-    ) -> Float[Tensor, "B D L"]:
-        scale = self.scale(t)[:,:,None]
-        shift = self.shift(t)[:,:,None] 
-        return self.norm(x) * scale + shift
 
 @dataclass
 class DenoiserArgs:
@@ -45,7 +30,6 @@ class DenoiserArgs:
     scales: list[int]
     stack_depth: int
     block_depth: int
-    expand: int
     block_kernel_size: int
 
 class Denoiser(nn.Module):
@@ -65,39 +49,41 @@ class Denoiser(nn.Module):
 
         self.proj_h = nn.Conv1d(a_dim + dim, args.h_dim, 1)
 
-        hh_dim = args.h_dim * args.expand
         class DenoiserUNetBlock(nn.Module):
             def __init__(self, net: nn.Module):
                 super().__init__()
-                self.proj_in = nn.Conv1d(args.h_dim, hh_dim, 1)
-                self.norm = AdaGN(hh_dim, args.c_dim)
-                self.proj_out = nn.Sequential(
-                    nn.SiLU(),
-                    net,
-                    nn.Conv1d(hh_dim, args.h_dim, 1),
-                )
+                self.proj_in = nn.Conv1d(args.h_dim, args.h_dim, 1)
+                self.norm = FiLM(args.h_dim, args.c_dim)
+                self.proj_out = nn.Sequential( nn.SiLU(), net )
 
             def forward(
                 self, 
                 x: Float[Tensor, "B D L"], 
                 t: Float[Tensor, "B T"],
             ) -> Float[Tensor, "B D L"]:
-                h = self.norm(self.proj_in(x), t)
-                return x + self.proj_out(h)
+                return x + self.proj_out(self.norm(self.proj_in(x), t))
 
         k = args.block_kernel_size
         p = k // 2
         assert p * 2 + 1 == k
 
         self.net = UNet(
-            args.h_dim, args.scales,
+            args.h_dim, args.c_dim, args.scales,
             VarSequential(*(
-                DenoiserUNetBlock(CBAM(hh_dim, args.cbam_reduction))
+                DenoiserUNetBlock(block)
                 for _ in range(args.stack_depth)
+                for block in [
+                    nn.Conv1d(args.h_dim, args.h_dim, k,1,p),
+                    CBAM(args.h_dim, args.cbam_reduction),
+                ]
             )),
             lambda: VarSequential(*(
-                DenoiserUNetBlock(nn.Conv1d(hh_dim, hh_dim, k,1,p, groups=hh_dim))
+                DenoiserUNetBlock(block) 
                 for _ in range(args.block_depth)
+                for block in [
+                    nn.Conv1d(args.h_dim, args.h_dim, k,1,p),
+                    CBAM(args.h_dim, args.cbam_reduction),
+                ]
             )),
         )
 
