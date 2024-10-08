@@ -7,7 +7,11 @@ class FiLM(nn.Module):
     def __init__(self, dim: int, t_dim: int):
         super().__init__()
         self.norm = nn.GroupNorm(dim, dim, affine=False)
-        self.ss = nn.Linear(t_dim, dim*2)
+        self.ss = nn.Sequential(
+            nn.Linear(t_dim, t_dim),
+            nn.SiLU(),
+            nn.Linear(t_dim, dim*2),
+        )
 
     def forward(
         self, 

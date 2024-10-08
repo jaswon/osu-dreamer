@@ -67,17 +67,17 @@ model:
 
     # model hyperparameters
     diffusion_args:
-        log_snr_scale: 3.
-        log_snr_bound: 3e-2
+        log_snr_scale: 5.
+        log_snr_bound: 5e-2
         std_data: .73
 
     denoiser_args:
-        h_dim: 256
+        h_dim: 144
         cbam_reduction: 8
 
-        c_features: 256
-        c_dim: 256
+        c_features: 144
+        c_dim: 144
 
         wavenet_args:
-            num_stacks: 6
-            stack_depth: 6
+            num_stacks: 7
+            stack_depth: 7

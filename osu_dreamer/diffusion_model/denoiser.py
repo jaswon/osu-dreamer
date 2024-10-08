@@ -12,7 +12,7 @@ from osu_dreamer.modules.cbam import CBAM
 from osu_dreamer.modules.rff import RandomFourierFeatures
 from osu_dreamer.modules.film import FiLM
 from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
-
+    
 @dataclass
 class DenoiserArgs:
     h_dim: int
@@ -34,8 +34,6 @@ class Denoiser(nn.Module):
         
         self.proj_c = nn.Sequential(
             RandomFourierFeatures(1 + NUM_LABELS, args.c_features),
-            nn.Linear(args.c_dim, args.c_dim),
-            nn.SiLU(),
             nn.Linear(args.c_features, args.c_dim),
             nn.SiLU(),
         )
