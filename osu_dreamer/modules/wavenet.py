@@ -27,6 +27,7 @@ class WaveNet(nn.Module):
         for _ in range(args.num_stacks):
             for d in range(args.stack_depth):
                 self.proj_in.append(nn.Sequential(
+                    nn.GroupNorm(1, dim),
                     nn.Conv1d(dim, dim*2, 3, dilation=2**d, padding=2**d),
                     nn.GLU(dim=1),
                 ))
@@ -38,6 +39,6 @@ class WaveNet(nn.Module):
         for proj_in, block, proj_out in zip(self.proj_in, self.blocks, self.proj_out):
             h = block(proj_in(x), *args, **kwargs)
             res, skip = proj_out(h).chunk(2, dim=1)
-            x = (x + res) * 2 ** -0.5
+            x = x + res
             o = o + skip
         return o * len(self.blocks) ** -0.5
