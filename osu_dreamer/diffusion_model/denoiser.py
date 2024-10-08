@@ -13,22 +13,6 @@ from osu_dreamer.modules.rff import RandomFourierFeatures
 from osu_dreamer.modules.film import FiLM
 from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
 
-class DenoiserBlock(nn.Module):
-    def __init__(self, dim: int, t_dim: int, cbam_reduction: int):
-        super().__init__()
-        self.norm1 = FiLM(dim, t_dim)
-        self.proj_in = nn.Sequential( nn.SiLU(), nn.Conv1d(dim, dim, 1) )
-        self.norm2 = FiLM(dim, t_dim)
-        self.proj_out = nn.Sequential( nn.SiLU(), CBAM(dim, cbam_reduction) )
-
-    def forward(
-        self, 
-        x: Float[Tensor, "B D L"], 
-        t: Float[Tensor, "B T"],
-    ) -> Float[Tensor, "B D L"]:
-        h = self.proj_in(self.norm1(x, t))
-        return x + self.proj_out(self.norm2(h, t))
-    
 @dataclass
 class DenoiserArgs:
     h_dim: int
@@ -58,11 +42,23 @@ class Denoiser(nn.Module):
 
         self.proj_h = nn.Conv1d(a_dim + dim, args.h_dim, 1)
 
-        self.net = WaveNet(
-            args.h_dim, 
-            args.wavenet_args, 
-            lambda dim: DenoiserBlock(dim, args.c_dim, args.cbam_reduction), 
-        )
+        class DenoiserBlock(nn.Module):
+            def __init__(self, dim: int):
+                super().__init__()
+                self.norm1 = FiLM(dim, args.c_dim)
+                self.conv = nn.Sequential( nn.SiLU(), nn.Conv1d(dim, dim, 1) )
+                self.norm2 = FiLM(dim, args.c_dim)
+                self.attn = nn.Sequential( nn.SiLU(), CBAM(dim, args.cbam_reduction) )
+
+            def forward(
+                self, 
+                x: Float[Tensor, "B D L"], 
+                t: Float[Tensor, "B T"],
+            ) -> Float[Tensor, "B D L"]:
+                x = x + self.conv(self.norm1(x, t))
+                return x + self.attn(self.norm2(x, t))
+
+        self.net = WaveNet(args.h_dim, args.wavenet_args, DenoiserBlock)
 
         self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
