@@ -34,7 +34,6 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        slider_importance_factor: float,
 
         # model hparams
         diffusion_args: DiffusionArgs,
@@ -53,7 +52,6 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
-        self.slider_importance_factor = slider_importance_factor
     
 
     def forward(
@@ -65,21 +63,8 @@ class Model(pl.LightningModule):
         denoiser = partial(self.denoiser,audio,labels)
         
         pred_chart, loss_weight = self.diffusion.training_sample(denoiser, chart)
-        pixel_loss = (loss_weight * (pred_chart - chart) ** 2).mean()
-        bound_loss = ((pred_chart.abs().clamp(min=1) - 1) ** 2).mean()
-
-        cursor_diff = chart[:, CursorSignals, 1:] - chart[:, CursorSignals, :-1]
-        pred_cursor_diff = pred_chart[:, CursorSignals, 1:] - pred_chart[:, CursorSignals, :-1]
-        cursor_diff_loss = th.mean((cursor_diff - pred_cursor_diff) ** 2)
-
-        loss = pixel_loss + bound_loss + self.slider_importance_factor * cursor_diff_loss
-
-        return loss, {
-            "loss": loss.detach(),
-            "pixel": pixel_loss.detach(),
-            "bound": bound_loss.detach(),
-            "cursor": cursor_diff_loss.detach(),            
-        }
+        loss = (loss_weight * (pred_chart - chart) ** 2).mean()
+        return loss, { "loss": loss.detach() }
     
     @th.no_grad()
     def sample(

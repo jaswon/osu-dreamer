@@ -45,7 +45,8 @@ class Diffusion:
         c_in = 1 / hyp
         c_noise = th.log(std)[:,0,0]
 
-        return c_skip * x_t + c_out * model(c_in * x_t, c_noise)
+        pred_x0 = c_skip * x_t + c_out * model(c_in * x_t, c_noise)
+        return pred_x0.clamp(min=-1, max=1)
 
     def training_sample(self, model: Denoiser, x0: X) -> tuple[X,T]:
         """sample denoised predictions and per-batch loss weights"""
@@ -88,7 +89,7 @@ class Diffusion:
                 = ∇logp(xt) + ∇logp(y|xt)
                 = (pred_x0 - xt) / t**2 + ∇logp(y|xt)
             """
-            x0_hat = self.pred_x0(denoiser, x, t).clamp(min=-1, max=1)
+            x0_hat = self.pred_x0(denoiser, x, t)
             score = (x0_hat - x) / t ** 2
             return -t * score
 

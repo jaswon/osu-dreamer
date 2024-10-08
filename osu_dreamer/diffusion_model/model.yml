@@ -62,7 +62,6 @@ model:
     val_batches: 64
 
     # training parameters
-    slider_importance_factor: 1e1
     opt_args:
         lr: .0001
 
