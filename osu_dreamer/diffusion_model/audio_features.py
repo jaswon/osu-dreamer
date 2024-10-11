@@ -1,14 +1,25 @@
 
+from dataclasses import dataclass
+
 from jaxtyping import Float
 
 from torch import nn, Tensor
 
+from einops import rearrange
+
 from osu_dreamer.data.load_audio import A_DIM
 
-from ..modules.wavenet import WaveNet, WaveNetArgs
+class Residual(nn.Module):
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
 
-class AudioFeatureArgs(WaveNetArgs):
-    pass
+    def forward(self, x):
+        return x + self.net(x)
+
+@dataclass
+class AudioFeatureArgs:
+    scales: list[int]
 
 class AudioFeatures(nn.Module):
     def __init__(
@@ -18,18 +29,25 @@ class AudioFeatures(nn.Module):
     ):
         super().__init__()
 
-        self.net = nn.Sequential(
-            nn.Conv1d(A_DIM, dim, 1),
-            WaveNet(dim, args, lambda dim: nn.Sequential(
-                nn.Conv1d(dim, dim, 3,1,1, groups=dim),
-                nn.Conv1d(dim, dim, 1),
-                nn.SiLU(),
-                nn.Conv1d(dim, dim, 1),
-            )),
-        )
+        self.proj_in = nn.Conv2d(1, dim, 1)
+        self.blocks = nn.ModuleList()
+        size = 1
+        for s in args.scales:
+            size *= s
+            self.blocks.append(nn.Sequential(
+                Residual(nn.Conv2d(dim, dim, (1,3), 1, (0,1), (1,1), groups=dim)),
+                Residual(nn.Conv2d(dim, dim, (1,5), 1, (0,6), (1,3), groups=dim)),
+                nn.Conv2d(dim, dim, 1),
+                nn.MaxPool2d((s,1), (s,1)),
+            ))
+
+        assert A_DIM == size
 
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-    ) -> Float[Tensor, "B A L"]:
-        return self.net(audio)
+    ) -> Float[Tensor, "B D L"]:
+        h = self.proj_in(rearrange(audio, 'b a l -> b 1 a l'))
+        for block in self.blocks:
+            h = block(h)
+        return rearrange(h, 'b d 1 l -> b d l')

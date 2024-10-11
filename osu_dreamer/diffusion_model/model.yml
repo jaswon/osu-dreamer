@@ -72,6 +72,10 @@ model:
         log_snr_bound: 5e-2
         std_data: .73
 
+    audio_features: 128
+    audio_feature_args:
+        scales: [4,4,3,2]
+
     denoiser_args:
         h_dim: 144
         cbam_reduction: 8
