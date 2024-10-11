@@ -65,7 +65,10 @@ class Data(pl.LightningDataModule):
             seq_len=self.seq_len,
             subseq_density=self.subseq_density,
         )
-        self.val_set = FullSequenceDataset(dataset=val_split)
+        self.val_set = FullSequenceDataset(
+            dataset=val_split,
+            seq_len=self.seq_len,
+        )
 
         print('approximate epoch length:', self.train_set.approx_dataset_size / self.batch_size)
             

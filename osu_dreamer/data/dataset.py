@@ -27,6 +27,7 @@ class FullSequenceDataset(IterableDataset):
     def __init__(self, **kwargs):
         super().__init__()
         self.dataset = kwargs.pop("dataset")
+        self.seq_len = kwargs.pop("seq_len")
             
         if len(kwargs):
             raise ValueError(f"unexpected kwargs: {kwargs}")
@@ -59,6 +60,10 @@ class FullSequenceDataset(IterableDataset):
             
     def sample_stream(self, map_file, map_idx) -> Iterator[Batch]:
         audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # [A,L]
+        L = audio.size(-1)
+        if self.seq_len >= L:
+            return
+        
         with open(map_file, 'rb') as f:
             chart       = th.tensor(np.load(f)).float()
             star_rating = th.tensor(np.load(f)).float()
@@ -69,7 +74,6 @@ class FullSequenceDataset(IterableDataset):
         
 class SubsequenceDataset(FullSequenceDataset):
     def __init__(self, **kwargs):
-        self.seq_len = kwargs.pop("seq_len")
         self.subseq_density = kwargs.pop("subseq_density", 2)
         super().__init__(**kwargs)
 
@@ -85,13 +89,13 @@ class SubsequenceDataset(FullSequenceDataset):
 
 
     def sample_stream(self, map_file, map_idx):
-        audio,chart,labels = next(super().sample_stream(map_file, map_idx))
-        L = audio.size(-1)
-        if self.seq_len >= L:
-            return
+        for audio,chart,labels in super().sample_stream(map_file, map_idx):
+            L = audio.size(-1)
+            if self.seq_len >= L:
+                return
 
-        num_samples = int(L / self.seq_len * self.subseq_density)
+            num_samples = int(L / self.seq_len * self.subseq_density)
 
-        for idx in th.randperm(L - self.seq_len)[:num_samples]:
-            sl = ..., slice(idx,idx+self.seq_len)
-            yield Batch(audio[sl], chart[sl], labels) 
+            for idx in th.randperm(L - self.seq_len)[:num_samples]:
+                sl = ..., slice(idx,idx+self.seq_len)
+                yield Batch(audio[sl], chart[sl], labels) 
