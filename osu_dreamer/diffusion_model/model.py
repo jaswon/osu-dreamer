@@ -14,7 +14,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals, BeatmapEncoding
+from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals
 from osu_dreamer.data.prepare_map import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
@@ -33,6 +33,7 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
+        cursor_factor: float,
         opt_args: dict[str, Any],
 
         # model hparams
@@ -51,6 +52,7 @@ class Model(pl.LightningModule):
         self.val_steps = val_steps
 
         # training params
+        self.cursor_factor = cursor_factor
         self.opt_args = opt_args
     
 
@@ -63,8 +65,20 @@ class Model(pl.LightningModule):
         denoiser = partial(self.denoiser,audio,labels)
         
         pred_chart, loss_weight = self.diffusion.training_sample(denoiser, chart)
-        loss = (loss_weight * (pred_chart - chart) ** 2).mean()
-        return loss, { "loss": loss.detach() }
+
+        pixel_loss = (loss_weight * (pred_chart - chart) ** 2).mean()
+
+        cursor_diff = chart[:, CursorSignals, 1:] - chart[:, CursorSignals, :-1]
+        pred_cursor_diff = pred_chart[:, CursorSignals, 1:] - pred_chart[:, CursorSignals, :-1]
+        cd_map = lambda diff: th.tanh(diff * 20)
+        cursor_loss = (loss_weight * (cd_map(cursor_diff) - cd_map(pred_cursor_diff)) ** 2).mean()
+
+        loss = pixel_loss + self.cursor_factor * cursor_loss
+        return loss, {
+            "loss": loss.detach(),
+            "pixel": pixel_loss.detach(),
+            "cursor": cursor_loss.detach(),
+        }
     
     @th.no_grad()
     def sample(
