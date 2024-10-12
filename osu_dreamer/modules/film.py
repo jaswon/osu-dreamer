@@ -13,10 +13,12 @@ class FiLM(nn.Module):
             nn.Linear(t_dim, dim*2),
         )
 
-    def forward(
-        self, 
-        x: Float[Tensor, "B D L"], 
-        t: Float[Tensor, "B T"],
-    ) -> Float[Tensor, "B D L"]:
-        scale, shift = self.ss(t)[:,:,None].chunk(2, dim=1)
+    def forward(self, xt: tuple[
+        Float[Tensor, "B D ..."], 
+        Float[Tensor, "B T"],
+    ]) -> Float[Tensor, "B D ..."]:
+        x,t = xt
+        ss = self.ss(t)
+        ss = ss.view(*ss.shape, *([1] * (x.ndim - 2)))
+        scale, shift = ss.chunk(2, dim=1)
         return self.norm(x) * scale + shift

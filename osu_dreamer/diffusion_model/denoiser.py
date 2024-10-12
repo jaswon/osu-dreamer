@@ -43,18 +43,24 @@ class Denoiser(nn.Module):
         class DenoiserBlock(nn.Module):
             def __init__(self, dim: int):
                 super().__init__()
-                self.norm1 = FiLM(dim, args.c_dim)
-                self.conv = nn.Sequential( nn.SiLU(), nn.Conv1d(dim, dim, 1) )
-                self.norm2 = FiLM(dim, args.c_dim)
-                self.attn = nn.Sequential( nn.SiLU(), CBAM(dim, args.cbam_reduction) )
+                self.conv = nn.Sequential(
+                    FiLM(dim, args.c_dim), 
+                    nn.SiLU(), 
+                    nn.Conv1d(dim, dim, 1),
+                )
+                self.attn = nn.Sequential(
+                    FiLM(dim, args.c_dim),
+                    nn.SiLU(),
+                    CBAM(dim, args.cbam_reduction),
+                )
 
             def forward(
                 self, 
                 x: Float[Tensor, "B D L"], 
                 t: Float[Tensor, "B T"],
             ) -> Float[Tensor, "B D L"]:
-                x = x + self.conv(self.norm1(x, t))
-                return x + self.attn(self.norm2(x, t))
+                x = x + self.conv((x, t))
+                return x + self.attn((x, t))
 
         self.net = WaveNet(args.h_dim, a_dim, args.wavenet_args, DenoiserBlock)
 
