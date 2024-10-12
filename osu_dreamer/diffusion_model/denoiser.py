@@ -38,7 +38,7 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_h = nn.Conv1d(a_dim + dim, args.h_dim, 1)
+        self.proj_h = nn.Conv1d(dim, args.h_dim, 1)
 
         class DenoiserBlock(nn.Module):
             def __init__(self, dim: int):
@@ -56,7 +56,7 @@ class Denoiser(nn.Module):
                 x = x + self.conv(self.norm1(x, t))
                 return x + self.attn(self.norm2(x, t))
 
-        self.net = WaveNet(args.h_dim, args.wavenet_args, DenoiserBlock)
+        self.net = WaveNet(args.h_dim, a_dim, args.wavenet_args, DenoiserBlock)
 
         self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
@@ -72,5 +72,5 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],      # (log) denoising step
     ) -> Float[Tensor, "B X L"]:
         c = self.proj_c(th.cat([t[:,None], label], dim=1))
-        h = self.proj_h(th.cat([ audio_features, x ], dim=1))
-        return self.proj_out(self.net(h,c))
+        h = self.proj_h(x)
+        return self.proj_out(self.net(h,audio_features,c))
