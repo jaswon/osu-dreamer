@@ -29,17 +29,24 @@ class AudioFeatures(nn.Module):
     ):
         super().__init__()
 
-        self.proj_in = nn.Conv2d(1, dim, 1)
+        in_dim = dim // 2**len(args.scales)
+        assert 2**len(args.scales) * in_dim == dim
+
+        self.proj_in = nn.Conv2d(1, in_dim, 1)
         self.blocks = nn.ModuleList()
         size = 1
+        d = in_dim
         for s in args.scales:
-            size *= s
             self.blocks.append(nn.Sequential(
-                Residual(nn.Conv2d(dim, dim, (1,3), 1, (0,1), (1,1), groups=dim)),
-                Residual(nn.Conv2d(dim, dim, (1,5), 1, (0,6), (1,3), groups=dim)),
-                nn.Conv2d(dim, dim, 1),
+                Residual(nn.Conv2d(d, d, (1,3), 1, (0,1), (1,1), groups=d)),
+                Residual(nn.Conv2d(d, d, (1,5), 1, (0,6), (1,3), groups=d)),
+                nn.Conv2d(d, d*2, 1),
+                nn.GLU(dim=1),
                 nn.MaxPool2d((s,1), (s,1)),
+                nn.Conv2d(d, d*2, 1),
             ))
+            size *= s
+            d *= 2
 
         assert A_DIM == size
 

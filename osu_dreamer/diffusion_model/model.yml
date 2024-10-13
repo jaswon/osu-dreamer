@@ -72,7 +72,7 @@ model:
         log_snr_bound: 5e-2
         std_data: .73
 
-    audio_features: 128
+    audio_features: 512
     audio_feature_args:
         scales: [4,4,3,2]
 
