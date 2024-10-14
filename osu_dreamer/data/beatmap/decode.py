@@ -10,7 +10,7 @@ from osu_dreamer.data.prepare_map import NUM_LABELS
 
 from .fit_bezier import segment_length, Point, fit_bezier
 from .encode import FrameTimes, EncodedBeatmap, BeatmapEncoding
-from .hit import decode_extents, decode_events
+from .hit import decode_hit_signal
 
 @dataclass
 class Metadata:
@@ -87,31 +87,12 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
     cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
 
-    onset_locs = decode_events(enc[BeatmapEncoding.ONSET])
-    onset_loc2idx = np.full_like(frame_times, -1, dtype=int)
-    for i, onset_idx in enumerate(onset_locs):
-        onset_loc2idx[onset_idx-ONSET_TOL:onset_idx+ONSET_TOL+1] = i
-
-    new_combos = [False] * len(onset_locs)
-    for new_combo in decode_events(enc[BeatmapEncoding.COMBO]):
-        onset_idx = onset_loc2idx[new_combo]
-        if onset_idx == -1:
-            continue
-        new_combos[onset_idx] = True
-
-    sustain_ends = [-1] * len(onset_locs)
-    for sustain_start, sustain_end in zip(*decode_extents(enc[BeatmapEncoding.SUSTAIN])):
-        onset_idx = onset_loc2idx[sustain_start]
-        if onset_idx == -1:
-            continue
-        sustain_ends[onset_idx] = sustain_end
-
-    slider_ends = [-1] * len(onset_locs)
-    for slider_start, slider_end in zip(*decode_extents(enc[BeatmapEncoding.SLIDER])):
-        onset_idx = onset_loc2idx[slider_start]
-        if onset_idx == -1:
-            continue
-        slider_ends[onset_idx] = slider_end
+    hits = decode_hit_signal(enc[[
+        BeatmapEncoding.ONSET,
+        BeatmapEncoding.COMBO,
+        BeatmapEncoding.SLIDE,
+        BeatmapEncoding.SUSTAIN,
+    ]])
     
     tps = []
     hos = []
@@ -119,38 +100,26 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     slider_ts = []
     slider_vels = []
 
-    for onset_loc, new_combo, sustain_end, slider_end in zip(onset_locs, new_combos, sustain_ends, slider_ends):
-        t = frame_times[onset_loc]
+    for hit in hits:
+        i, new_combo, *rest = hit
+        t = frame_times[i]
         combo_bit = 2**2 if new_combo else 0
 
         def add_hit_circle():
-            x,y = cursor_signal[:, onset_loc].round().astype(int)
+            x,y = cursor_signal[:, i].round().astype(int)
             hos.append(f"{x},{y},{t},{2**0 + combo_bit},0,0:0:0:0:")
 
-        if sustain_end == -1:
-            # no sustain
+        if len(rest) == 0: # circle
             add_hit_circle()
             continue
 
-        if sustain_end - onset_loc < 4:
-            # sustain too short
-            add_hit_circle()
-            continue
-
-        u = frame_times[sustain_end]
-        if slider_end == -1:
-            # spinner
+        j, num_slides = rest
+        u = frame_times[j]
+        if num_slides == 0: # spinner
             hos.append(f"256,192,{t},{2**3 + combo_bit},0,{u}")
             continue
 
-        if slider_end - onset_loc < 4:
-            # slider too short
-            add_hit_circle()
-            continue
-
-        # slider
-        num_slides = max(1, round((sustain_end - onset_loc) / (slider_end - onset_loc)))
-        length, ctrl_pts = slider_decoder(cursor_signal, onset_loc, sustain_end, num_slides)
+        length, ctrl_pts = slider_decoder(cursor_signal, i, j, num_slides)
 
         if length == 0:
             # zero length

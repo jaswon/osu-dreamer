@@ -15,8 +15,8 @@ BeatmapEncoding = IntEnum('BeatmapEncoding', [
     # hit signals
     "ONSET",
     "COMBO",
+    "SLIDE",
     "SUSTAIN",
-    "SLIDER",
 
     # cursor signals
     "X",
@@ -27,8 +27,8 @@ X_DIM = len(BeatmapEncoding)
 HitSignals = [
     BeatmapEncoding.ONSET,
     BeatmapEncoding.COMBO,
+    BeatmapEncoding.SLIDE,
     BeatmapEncoding.SUSTAIN,
-    BeatmapEncoding.SLIDER,
 ]
 HIT_DIM = len(HitSignals)
 

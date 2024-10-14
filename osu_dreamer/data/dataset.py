@@ -65,11 +65,9 @@ class FullSequenceDataset(IterableDataset):
             return
         
         with open(map_file, 'rb') as f:
-            chart       = th.tensor(np.load(f)).float()
-            star_rating = th.tensor(np.load(f)).float()
-            diff_labels = th.tensor(np.load(f)).float()
+            chart  = th.tensor(np.load(f)).float()
+            labels = th.tensor(np.load(f)).float()
             
-        labels = th.cat([ star_rating, diff_labels ])
         yield Batch(audio,chart,labels)
         
 class SubsequenceDataset(FullSequenceDataset):
