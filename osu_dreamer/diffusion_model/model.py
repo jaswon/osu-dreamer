@@ -101,7 +101,7 @@ class Model(pl.LightningModule):
             denoiser, 
             num_steps, z,
             **kwargs,
-        )
+        ).clamp(min=-1, max=1)
 
 
 #
