@@ -75,6 +75,9 @@ def fit_bezier(
     
     # parameterize points, assuming constant speed
     u = np.cumsum(np.linalg.norm(points[1:] - points[:-1], axis=1))
+    if u[-1] == 0:
+        # no distance covered
+        return []
     u = np.pad(u, (1,0)) / u[-1]
 
     split_point = points.shape[0] // 2 # makes type checker happy
