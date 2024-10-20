@@ -39,7 +39,6 @@ class AudioFeatures(nn.Module):
         for s in args.scales:
             self.blocks.append(nn.Sequential(
                 Residual(nn.Conv2d(d, d, (1,3), 1, (0,1), (1,1), groups=d)),
-                Residual(nn.Conv2d(d, d, (1,5), 1, (0,6), (1,3), groups=d)),
                 nn.Conv2d(d, d*2, 1),
                 nn.GLU(dim=1),
                 nn.MaxPool2d((s,1), (s,1)),
