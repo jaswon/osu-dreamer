@@ -9,7 +9,6 @@ from torch import nn, Tensor
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
 from osu_dreamer.modules.cbam import CBAM
-from osu_dreamer.modules.rff import RandomFourierFeatures
 from osu_dreamer.modules.film import FiLM
 from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
     
@@ -18,7 +17,6 @@ class DenoiserArgs:
     h_dim: int
     cbam_reduction: int
 
-    c_features: int
     c_dim: int
 
     wavenet_args: WaveNetArgs
@@ -33,8 +31,9 @@ class Denoiser(nn.Module):
         super().__init__()
         
         self.proj_c = nn.Sequential(
-            RandomFourierFeatures(1 + NUM_LABELS, args.c_features),
-            nn.Linear(args.c_features, args.c_dim),
+            nn.Linear(NUM_LABELS, args.c_dim),
+            nn.SiLU(),
+            nn.Linear(args.c_dim, args.c_dim),
             nn.SiLU(),
         )
 
@@ -77,6 +76,6 @@ class Denoiser(nn.Module):
         x: Float[Tensor, "B X L"],  # noised input
         t: Float[Tensor, "B"],      # (log) denoising step
     ) -> Float[Tensor, "B X L"]:
-        c = self.proj_c(th.cat([t[:,None], label], dim=1))
+        c = self.proj_c(label)
         h = self.proj_h(x)
         return self.proj_out(self.net(h,c))
