@@ -10,6 +10,7 @@ from osu_dreamer.data.prepare_map import NUM_LABELS
 
 from osu_dreamer.modules.cbam import CBAM
 from osu_dreamer.modules.film import FiLM
+from osu_dreamer.modules.modconv import ModulatedConv1d
 from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
     
 @dataclass
@@ -37,7 +38,7 @@ class Denoiser(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_h = nn.Conv1d(dim, args.h_dim, 1)
+        self.proj_h = ModulatedConv1d(a_dim+dim, args.h_dim, args.c_dim, 1)
 
         class DenoiserBlock(nn.Module):
             def __init__(self, dim: int):
@@ -77,5 +78,5 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],      # (log) denoising step
     ) -> Float[Tensor, "B X L"]:
         c = self.proj_c(label)
-        h = self.proj_h(x)
+        h = self.proj_h((th.cat([audio_features,x], dim=1), c))
         return self.proj_out(self.net(h,c))
