@@ -80,7 +80,8 @@ model:
         h_dim: 144
         cbam_reduction: 8
 
-        c_dim: 1024
+        c_dim: 512
+        c_depth: 8
 
         wavenet_args:
             num_stacks: 7

@@ -19,6 +19,7 @@ class DenoiserArgs:
     cbam_reduction: int
 
     c_dim: int
+    c_depth: int
 
     wavenet_args: WaveNetArgs
 
@@ -31,12 +32,13 @@ class Denoiser(nn.Module):
     ):
         super().__init__()
         
-        self.proj_c = nn.Sequential(
-            nn.Linear(NUM_LABELS, args.c_dim),
-            nn.SiLU(),
-            nn.Linear(args.c_dim, args.c_dim),
-            nn.SiLU(),
-        )
+        self.proj_c = nn.Sequential(*(
+            block for i in range(args.c_depth)
+            for block in [
+                nn.Linear(NUM_LABELS if i==0 else args.c_dim, args.c_dim),
+                nn.SiLU(),
+            ]
+        ))
 
         self.proj_h = ModulatedConv1d(a_dim+dim, args.h_dim, args.c_dim, 1)
 
