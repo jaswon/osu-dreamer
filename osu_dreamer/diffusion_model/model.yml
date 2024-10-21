@@ -77,11 +77,11 @@ model:
         scales: [4,4,3,2]
 
     denoiser_args:
-        h_dim: 128
+        h_dim: 196
         cbam_reduction: 2
 
-        c_dim: 512
-        c_depth: 8
+        c_dim: 256
+        c_depth: 3
 
         wavenet_args:
             num_stacks: 5

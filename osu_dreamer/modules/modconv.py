@@ -15,7 +15,13 @@ class _ModConv(nn.Module):
     ):
         super().__init__()
         self.conv = conv
-        self.mod = nn.Linear(t_dim, in_dim)
+        self.mod = nn.Sequential(
+            nn.Linear(t_dim, t_dim),
+            nn.SiLU(),
+            nn.Linear(t_dim, t_dim),
+            nn.SiLU(),
+            nn.Linear(t_dim, in_dim),
+        )
 
     def forward(self, xt: tuple[
         Float[Tensor, "B I ..."], 
