@@ -35,7 +35,7 @@ class Denoiser(nn.Module):
         self.proj_c = nn.Sequential(*(
             block for i in range(args.c_depth)
             for block in [
-                nn.Linear(NUM_LABELS if i==0 else args.c_dim, args.c_dim),
+                nn.Linear(1+NUM_LABELS if i==0 else args.c_dim, args.c_dim),
                 nn.SiLU(),
             ]
         ))
@@ -77,6 +77,6 @@ class Denoiser(nn.Module):
         x: Float[Tensor, "B X L"],  # noised input
         t: Float[Tensor, "B"],      # (log) denoising step
     ) -> Float[Tensor, "B X L"]:
-        c = self.proj_c(label)
+        c = self.proj_c(th.cat([t[:,None],label], dim=1))
         h = self.proj_h((th.cat([audio_features,x], dim=1), c))
         return self.proj_out(self.net(h,c))
