@@ -68,21 +68,21 @@ model:
 
     # model hyperparameters
     diffusion_args:
-        log_snr_scale: 5.
+        log_snr_scale: 5e0
         log_snr_bound: 5e-2
         std_data: .67
 
-    audio_features: 512
+    audio_features: 128
     audio_feature_args:
         scales: [4,4,3,2]
 
     denoiser_args:
-        h_dim: 144
-        cbam_reduction: 8
+        h_dim: 128
+        cbam_reduction: 2
 
         c_dim: 512
         c_depth: 8
 
         wavenet_args:
-            num_stacks: 7
-            stack_depth: 7
+            num_stacks: 5
+            stack_depth: 5

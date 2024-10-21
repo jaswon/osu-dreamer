@@ -30,7 +30,7 @@ class WaveNet(nn.Module):
                     nn.Conv1d(dim, dim*2, 3, dilation=2**depth, padding=2**depth),
                     nn.GLU(dim=1),
                 )
-                self.block = block(dim)
+                self.block = block(depth)
                 self.proj_out = nn.Conv1d(dim, 2*dim, 1)
 
             def forward(
