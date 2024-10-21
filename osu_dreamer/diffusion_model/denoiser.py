@@ -40,7 +40,7 @@ class Denoiser(nn.Module):
             ]
         ))
 
-        self.proj_h = ModulatedConv1d(a_dim+dim, args.h_dim, args.c_dim, 1)
+        self.proj_h = ModulatedConv1d(a_dim+dim, args.h_dim, args.c_dim)
 
         class DenoiserBlock(nn.Module):
             def __init__(self, dim: int):
