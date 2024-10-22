@@ -8,12 +8,35 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+class ResSkipNet(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        layers: list[nn.Module],
+    ):
+        super().__init__()
+        self.norms = nn.ModuleList([ nn.GroupNorm(1, dim) for _ in layers ])
+        self.layers = nn.ModuleList(layers)
+        self.post_norm = nn.GroupNorm(1, dim)
+
+    def forward(
+        self, 
+        x: Float[Tensor, "B X L"], 
+        *args, **kwargs,
+    ) -> Float[Tensor, "B X L"]:
+        o = th.zeros_like(x)
+        for norm, layer in zip(self.norms, self.layers):
+            res, skip = layer(norm(x),*args,**kwargs)
+            x = x + res
+            o = o + skip
+        return self.post_norm(o)
+
 @dataclass
 class WaveNetArgs:
     num_stacks: int
     stack_depth: int
 
-class WaveNet(nn.Module):
+class WaveNet(ResSkipNet):
     """wavenet receptive field: 1+s*(2**d-1)"""
     def __init__(
         self,
@@ -22,8 +45,6 @@ class WaveNet(nn.Module):
         args: WaveNetArgs,
         block: Callable[[int], nn.Module],
     ):
-        super().__init__()
-
         class layer(nn.Module):
             def __init__(self, depth: int):
                 super().__init__()
@@ -34,10 +55,7 @@ class WaveNet(nn.Module):
                         nn.Conv1d(y_dim, dim*2, 1),
                     )
 
-                self.proj_x = nn.Sequential(
-                    nn.GroupNorm(1, dim),
-                    nn.Conv1d(dim, dim*2, 3, dilation=2**depth, padding=2**depth),
-                )
+                self.proj_x = nn.Conv1d(dim, dim*2, 3, dilation=2**depth, padding=2**depth)
                 self.block = block(depth)
                 self.proj_out = nn.Conv1d(dim, 2*dim, 1)
 
@@ -57,21 +75,8 @@ class WaveNet(nn.Module):
                 h = self.block(h, *args, **kwargs)
                 return self.proj_out(h).chunk(2, dim=1)
 
-        self.layers = nn.ModuleList()
-        for _ in range(args.num_stacks):
-            for d in range(args.stack_depth):
-                self.layers.append(layer(d))
-        self.post_norm = nn.GroupNorm(1, dim)
-
-    def forward(
-        self, 
-        x: Float[Tensor, "B X L"], 
-        y: Optional[Float[Tensor, "B Y L"]],
-        *args, **kwargs,
-    ) -> Float[Tensor, "B X L"]:
-        o = th.zeros_like(x)
-        for layer in self.layers:
-            res, skip = layer(x,y,*args,**kwargs)
-            x = x + res
-            o = o + skip
-        return self.post_norm(o)
+        super().__init__(dim, [
+            layer(d)
+            for _ in range(args.num_stacks)
+            for d in range(args.stack_depth)
+        ])
