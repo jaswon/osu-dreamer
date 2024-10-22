@@ -74,7 +74,9 @@ model:
 
     audio_features: 128
     audio_feature_args:
-        scales: [4,4,3,2]
+        h_dim: 128
+        num_stacks: 4
+        stack_depth: 4
 
     denoiser_args:
         h_dim: 256

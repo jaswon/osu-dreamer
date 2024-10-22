@@ -5,21 +5,13 @@ from jaxtyping import Float
 
 from torch import nn, Tensor
 
-from einops import rearrange
-
 from osu_dreamer.data.load_audio import A_DIM
 
-class Residual(nn.Module):
-    def __init__(self, net: nn.Module):
-        super().__init__()
-        self.net = net
-
-    def forward(self, x):
-        return x + self.net(x)
+from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
 
 @dataclass
-class AudioFeatureArgs:
-    scales: list[int]
+class AudioFeatureArgs(WaveNetArgs):
+    h_dim: int
 
 class AudioFeatures(nn.Module):
     def __init__(
@@ -29,31 +21,23 @@ class AudioFeatures(nn.Module):
     ):
         super().__init__()
 
-        in_dim = dim // 2**len(args.scales)
-        assert 2**len(args.scales) * in_dim == dim
+        class block(nn.Module):
+            def __init__(self, depth: int):
+                super().__init__()
+                self.net = nn.Sequential(
+                    nn.Conv1d(dim, args.h_dim, 1),
+                    nn.SiLU(),
+                    nn.Conv1d(args.h_dim, dim, 1),
+                )
+        
+            def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
+                return x + self.net(x)
 
-        self.proj_in = nn.Conv2d(1, in_dim, 1)
-        self.blocks = nn.ModuleList()
-        size = 1
-        d = in_dim
-        for s in args.scales:
-            self.blocks.append(nn.Sequential(
-                Residual(nn.Conv2d(d, d, (1,3), 1, (0,1), (1,1), groups=d)),
-                nn.Conv2d(d, d*2, 1),
-                nn.GLU(dim=1),
-                nn.MaxPool2d((s,1), (s,1)),
-                nn.Conv2d(d, d*2, 1),
-            ))
-            size *= s
-            d *= 2
-
-        assert A_DIM == size
+        self.proj_in = nn.Conv1d(A_DIM, dim, 1)
+        self.net = WaveNet(dim, None, args, block)
 
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
     ) -> Float[Tensor, "B D L"]:
-        h = self.proj_in(rearrange(audio, 'b a l -> b 1 a l'))
-        for block in self.blocks:
-            h = block(h)
-        return rearrange(h, 'b d 1 l -> b d l')
+        return self.net(self.proj_in(audio), None)
