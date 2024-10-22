@@ -77,8 +77,8 @@ model:
         scales: [4,4,3,2]
 
     denoiser_args:
-        h_dim: 196
-        cbam_reduction: 2
+        h_dim: 256
+        cbam_reduction: 4
 
         c_dim: 256
         c_depth: 3
