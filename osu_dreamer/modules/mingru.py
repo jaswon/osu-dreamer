@@ -62,8 +62,9 @@ class minGRULayer(nn.Module):
 
         self.fore = minGRU(dim, h_dim)
         self.back = minGRU(dim, h_dim)
-        self.proj_out = nn.Conv1d(dim, dim, 1)
+        self.out = nn.Conv1d(dim, dim, 1)
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
-        h = th.cat([self.fore(x), self.back(th.flip(x, (2,)))], dim=1)
-        return self.proj_out(h)
+        fore = self.fore(x)
+        back = self.back(x.flip(2)).flip(2)
+        return self.out(th.cat([fore, back], dim=1))
