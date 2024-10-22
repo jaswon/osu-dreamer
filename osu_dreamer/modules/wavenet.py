@@ -26,7 +26,7 @@ class ResSkipNet(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         o = th.zeros_like(x)
         for norm, layer in zip(self.norms, self.layers):
-            res, skip = layer(norm(x),*args,**kwargs)
+            res, skip = layer(norm(x),*args,**kwargs).chunk(2, dim=1)
             x = x + res
             o = o + skip
         return self.post_norm(o)
@@ -64,16 +64,13 @@ class WaveNet(ResSkipNet):
                 x: Float[Tensor, "B D L"], 
                 y: Optional[Float[Tensor, "B Y L"]],
                 *args, **kwargs,
-            ) -> tuple[
-                Float[Tensor, "B D L"],
-                Float[Tensor, "B D L"],
-            ]:
+            ) -> Float[Tensor, "B D*2 L"]:
                 h = self.proj_x(x)
                 if self.proj_y is not None:
                     h = h + self.proj_y(y)
                 h = F.glu(h, dim=1)
                 h = self.block(h, *args, **kwargs)
-                return self.proj_out(h).chunk(2, dim=1)
+                return self.proj_out(h)
 
         super().__init__(dim, [
             layer(d)
