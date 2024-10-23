@@ -3,15 +3,15 @@ from dataclasses import dataclass
 
 from jaxtyping import Float
 
-from torch import nn, Tensor
+from torch import nn, Tensor 
 
 from osu_dreamer.data.load_audio import A_DIM
 
-from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
+from osu_dreamer.modules.mingru import minGRU2
 
 @dataclass
-class AudioFeatureArgs(WaveNetArgs):
-    h_dim: int
+class AudioFeatureArgs:
+    scales: list[int]
 
 class AudioFeatures(nn.Module):
     def __init__(
@@ -21,23 +21,33 @@ class AudioFeatures(nn.Module):
     ):
         super().__init__()
 
-        class block(nn.Module):
-            def __init__(self, depth: int):
-                super().__init__()
-                self.net = nn.Sequential(
-                    nn.Conv1d(dim, args.h_dim, 1),
-                    nn.SiLU(),
-                    nn.Conv1d(args.h_dim, dim, 1),
-                )
-        
-            def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
-                return x + self.net(x)
+        in_dim = dim // 2**len(args.scales)
+        assert 2**len(args.scales) * in_dim == dim
 
-        self.proj_in = nn.Conv1d(A_DIM, dim, 1)
-        self.net = WaveNet(dim, None, args, block)
+        self.net = nn.Sequential(
+            nn.Unflatten(1, (1, -1)), 
+            nn.Conv2d(1, in_dim, 1),
+        )
+
+        size = 1
+        d = in_dim
+        for s in args.scales:
+            self.net.extend([
+                nn.Conv2d(d, d, (1,9), 1, (0,4), (1,1), groups=d),
+                nn.SiLU(),
+                nn.Conv2d(d, d*2, 1),
+                minGRU2(),
+                nn.MaxPool2d((s,1), (s,1)),
+                nn.Conv2d(d, d*2, 1),
+            ])
+            size *= s
+            d *= 2
+        assert A_DIM == size
+
+        self.net.append(nn.Flatten(1,2))
 
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
     ) -> Float[Tensor, "B D L"]:
-        return self.net(self.proj_in(audio), None)
+        return self.net(audio)
