@@ -74,6 +74,7 @@ model:
 
     audio_features: 256
     audio_feature_args:
+        layer_depth: 3
         scales: [4,4,3,2]
 
     denoiser_args:

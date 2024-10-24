@@ -9,9 +9,18 @@ from osu_dreamer.data.load_audio import A_DIM
 
 from osu_dreamer.modules.mingru import minGRU2
 
+class Residual(nn.Module):
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
+
+    def forward(self, x):
+        return x + self.net(x)
+
 @dataclass
 class AudioFeatureArgs:
     scales: list[int]
+    layer_depth: int
 
 class AudioFeatures(nn.Module):
     def __init__(
@@ -32,11 +41,15 @@ class AudioFeatures(nn.Module):
         size = 1
         d = in_dim
         for s in args.scales:
+            for _ in range(args.layer_depth):
+                self.net.append(Residual(nn.Sequential(
+                    nn.GroupNorm(1, d),
+                    nn.Conv2d(d, d, *zip((1,1,0), (9,1,4)), groups=d),
+                    nn.SiLU(),
+                    nn.Conv2d(d, d*2, 1),
+                    minGRU2(),
+                )))
             self.net.extend([
-                nn.Conv2d(d, d, (1,9), 1, (0,4), (1,1), groups=d),
-                nn.SiLU(),
-                nn.Conv2d(d, d*2, 1),
-                minGRU2(),
                 nn.MaxPool2d((s,1), (s,1)),
                 nn.Conv2d(d, d*2, 1),
             ])
