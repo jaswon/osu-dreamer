@@ -44,6 +44,9 @@ ApproachRate: {{ar}}
 SliderMultiplier: 1
 SliderTickRate: 1
 
+[Events]
+{{breaks}}
+
 [TimingPoints]
 {{timing_points}}
 
@@ -96,6 +99,8 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     
     tps = []
     hos = []
+    breaks = []
+    last_end_time = None
 
     slider_ts = []
     slider_vels = []
@@ -105,18 +110,24 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
         t = frame_times[i]
         combo_bit = 2**2 if new_combo else 0
 
+        if last_end_time is not None:
+            if t - last_end_time > 5000:
+                breaks.append(f"2,{last_end_time},{t}")
+
         def add_hit_circle():
             x,y = cursor_signal[:, i].round().astype(int)
             hos.append(f"{x},{y},{t},{2**0 + combo_bit},0,0:0:0:0:")
 
         if len(rest) == 0: # circle
             add_hit_circle()
+            last_end_time = t
             continue
 
         j, num_slides = rest
         u = frame_times[j]
         if num_slides == 0: # spinner
             hos.append(f"256,192,{t},{2**3 + combo_bit},0,{u}")
+            last_end_time = u
             continue
 
         length, ctrl_pts = slider_decoder(cursor_signal, i, j, num_slides)
@@ -124,11 +135,13 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
         if length == 0:
             # zero length
             add_hit_circle()
+            last_end_time = t
             continue
 
         x1,y1 = ctrl_pts[0]
         curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
         hos.append(f"{x1},{y1},{t},{2**1 + combo_bit},0,B|{curve_pts},{num_slides},{length}")
+        last_end_time = u
 
         slider_ts.append(t)
         slider_vels.append(length * num_slides / (u-t))
@@ -159,6 +172,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
         od=labels[2],
         cs=labels[3],
         hp=labels[4],
+        breaks="\n".join(breaks),
         timing_points="\n".join(tps), 
         hit_objects="\n".join(hos),
     )
