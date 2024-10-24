@@ -9,19 +9,18 @@ import torch.nn.functional as F
 
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
-from osu_dreamer.modules.cbam import CBAM
+from osu_dreamer.modules.mingru import minGRU2
 from osu_dreamer.modules.modconv import ModulatedConv1d
-from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
-    
+from osu_dreamer.modules.wavenet import ResSkipNet
+
+
 @dataclass
 class DenoiserArgs:
     h_dim: int
-    cbam_reduction: int
+    depth: int
 
     c_dim: int
     c_depth: int
-
-    wavenet_args: WaveNetArgs
 
 class Denoiser(nn.Module):
     def __init__(
@@ -40,29 +39,32 @@ class Denoiser(nn.Module):
             ]
         ))
 
-        self.proj_h = ModulatedConv1d(dim, args.h_dim, args.c_dim)
+        H = args.h_dim
+        self.proj_h = ModulatedConv1d(dim, H, args.c_dim)
 
-        class DenoiserBlock(nn.Module):
-            def __init__(self, depth: int):
+        class layer(nn.Module):
+            def __init__(self):
                 super().__init__()
-                self.attn = None
-                if depth >= 4:
-                    self.attn = CBAM(args.h_dim, args.cbam_reduction)
-
-                self.c1 = ModulatedConv1d(args.h_dim, args.h_dim, args.c_dim)
-                self.c2 = ModulatedConv1d(args.h_dim, args.h_dim, args.c_dim)
-
+                self.proj = ModulatedConv1d(H+a_dim, H*2, args.c_dim)
+                self.conv = nn.Conv1d(H, H, 9,1,4, groups=H)
+                self.seq = nn.Sequential(
+                    ModulatedConv1d(H, H*2, args.c_dim),
+                    minGRU2(),
+                )
+                self.out = ModulatedConv1d(H, H*2, args.c_dim)
+        
             def forward(
-                self, 
-                x: Float[Tensor, "B D L"], 
-                t: Float[Tensor, "B T"],
-            ) -> Float[Tensor, "B D L"]:
-                if self.attn is not None:
-                    x = x + self.attn(x)
-                x = x + self.c2((F.silu(self.c1((x,t))),t))
-                return x
-
-        self.net = WaveNet(args.h_dim, a_dim, args.wavenet_args, DenoiserBlock)
+                self,
+                x: Float[Tensor, "B X L"],
+                y: Float[Tensor, "B Y L"],
+                c: Float[Tensor, "B C"],
+            ) -> Float[Tensor, "B X*2 L"]:
+                h,g = self.proj((th.cat([x,y], dim=1),c)).chunk(2, dim=1)
+                h = self.conv(h)
+                h = self.seq((F.silu(h),c)) * F.silu(g)
+                return self.out((h,c))
+            
+        self.net = ResSkipNet(H, [ layer() for _ in range(args.depth) ])
 
         self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
@@ -70,7 +72,7 @@ class Denoiser(nn.Module):
 
     def forward(
         self, 
-        audio_features: Float[Tensor, "B A L"],
+        a: Float[Tensor, "B A L"],
         label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #
@@ -79,5 +81,5 @@ class Denoiser(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         c = self.proj_c(th.cat([t[:,None],label], dim=1))
         h = self.proj_h((x, c))
-        h = self.net(h, audio_features, c)
+        h = self.net(h,a,c)
         return self.proj_out(h)
