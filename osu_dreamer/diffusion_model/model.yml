@@ -39,14 +39,14 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 1024 # ~8s @ 8ms/frame
+    seq_len: 512 # ~4s @ 8ms/frame
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .1
+    subseq_density: .05
     
     # size of training batch
-    batch_size: 16
+    batch_size: 10
     
     # number of workers to use for data loading
     num_workers: 6
@@ -79,7 +79,8 @@ model:
 
     denoiser_args:
         h_dim: 256
-        depth: 12
+        expand: 4
+        depth: 8
 
         c_dim: 256
-        c_depth: 3
+        c_depth: 2

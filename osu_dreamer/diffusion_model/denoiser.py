@@ -17,6 +17,7 @@ from osu_dreamer.modules.wavenet import ResSkipNet
 @dataclass
 class DenoiserArgs:
     h_dim: int
+    expand: int
     depth: int
 
     c_dim: int
@@ -39,19 +40,19 @@ class Denoiser(nn.Module):
             ]
         ))
 
-        H = args.h_dim
-        self.proj_h = ModulatedConv1d(dim, H, args.c_dim)
+        self.proj_h = ModulatedConv1d(dim, args.h_dim, args.c_dim)
 
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.proj = ModulatedConv1d(H+a_dim, H*2, args.c_dim)
+                H = args.h_dim * args.expand
+                self.proj = ModulatedConv1d(args.h_dim+a_dim, H*2, args.c_dim)
                 self.conv = nn.Conv1d(H, H, 9,1,4, groups=H)
                 self.seq = nn.Sequential(
                     ModulatedConv1d(H, H*2, args.c_dim),
                     minGRU2(),
                 )
-                self.out = ModulatedConv1d(H, H*2, args.c_dim)
+                self.out = ModulatedConv1d(H, args.h_dim*2, args.c_dim)
         
             def forward(
                 self,
@@ -64,7 +65,7 @@ class Denoiser(nn.Module):
                 h = self.seq((F.silu(h),c)) * F.silu(g)
                 return self.out((h,c))
             
-        self.net = ResSkipNet(H, [ layer() for _ in range(args.depth) ])
+        self.net = ResSkipNet(args.h_dim, [ layer() for _ in range(args.depth) ])
 
         self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
