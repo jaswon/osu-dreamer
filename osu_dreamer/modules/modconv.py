@@ -1,54 +1,67 @@
 
-from typing import Callable
+from typing import Optional
 from jaxtyping import Float
+
+from contextlib import contextmanager
 
 import torch as th
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 from einops import rearrange
 
-class _ModConv(nn.Module):
-    conv: Callable
+class ModulateConv:
+    value: Optional[Tensor]
 
+    def __init__(self, t_dim: int):
+        self.t_dim = t_dim
+
+    @contextmanager
+    def set(self, value: Float[Tensor, "B {self.t_dim}"]):
+        self.value = value
+        yield
+        self.value = None
+
+    def __call__(self, conv: nn.modules.conv._ConvNd) -> nn.Module:
+        return _ModConv(self, conv)
+
+class _ModConv(nn.Module):
     def __init__(
         self,
-        in_dim: int,
-        out_dim: int,
-        t_dim: int,
+        mod: ModulateConv,
+        conv: nn.modules.conv._ConvNd,
     ):
         super().__init__()
 
-        self.weight = nn.Parameter(th.empty(out_dim, in_dim))
-        th.nn.init.kaiming_uniform_(self.weight, a=5**.5)
+        self.conv = conv
+        self.groups = self.conv.groups
 
-        self.mod = nn.Sequential(
+        self.mod = mod
+        t_dim = mod.t_dim
+        self.proj_t = nn.Sequential(
             nn.Linear(t_dim, t_dim),
             nn.SiLU(),
             nn.Linear(t_dim, t_dim),
             nn.SiLU(),
-            nn.Linear(t_dim, in_dim),
+            nn.Linear(t_dim, self.conv.weight.size(1)),
         )
 
-    def forward(self, xt: tuple[
-        Float[Tensor, "B I ..."], 
-        Float[Tensor, "B T"],
-    ]) -> Float[Tensor, "B O ..."]:
-        bx,t = xt
-        b = t.size(0)
+    def forward(self, bx: Float[Tensor, "B I ..."]) -> Float[Tensor, "B O ..."]:
+        t = self.mod.value
+        if t is None:
+            raise RuntimeError('mod not set')
+        B = t.size(0)
 
-        bw = th.einsum('oi,bi->boi', self.weight, self.mod(t)+1)
-        demod = th.rsqrt(th.sum(bw ** 2, dim=2) + 1e-8)
-        bw = th.einsum('boi,bo->boi', bw, demod)
+        bw = th.einsum('oi...,bi->boi...', self.conv.weight, self.proj_t(t)+1)
+        demod = th.rsqrt(th.sum(bw.flatten(2) ** 2, dim=2) + 1e-8)
+        bw = th.einsum('boi...,bo->boi...', bw, demod)
+        w = rearrange(bw, 'b o i ... -> (b o) i ...')
 
-        w = rearrange(bw, 'b o i -> (b o) i')
         x = rearrange(bx, 'b d ... -> 1 (b d) ...') 
-        o = type(self).conv(x, w, b)
+        self.conv.groups = B * self.groups
+        o = self.conv._conv_forward(x, w, None)
+        bo = rearrange(o, '1 (b d) ... -> b d ...', b=B)
 
-        return rearrange(o, '1 (b d) ... -> b d ...', b=b)
+        if self.conv.bias is not None:
+            bo = bo + self.conv.bias[None,:,None]
 
-class ModulatedConv1d(_ModConv):
-    conv = lambda x,w,b: F.conv1d(x, w[:,:,None], None, groups=b)
-
-class ModulatedConv2d(_ModConv):
-    conv = lambda x,w,b: F.conv2d(x, w[:,:,None,None], None, groups=b)
+        return bo
