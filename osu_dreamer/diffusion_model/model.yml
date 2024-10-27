@@ -24,7 +24,7 @@ trainer:
             init_args:
                 monitor: val/loss
                 mode: min
-                patience: 10
+                patience: 30
 
     logger:
         class_path: pytorch_lightning.loggers.TensorBoardLogger
@@ -80,8 +80,8 @@ model:
 
     denoiser_args:
         h_dim: 256
-        expand: 4
         depth: 8
+        seq_expand: 2
 
         c_dim: 256
         c_depth: 2
