@@ -12,6 +12,7 @@ from osu_dreamer.modules.mingru import minGRU2
 @dataclass
 class AudioFeatureArgs:
     scales: list[int]
+    conv_expand: int
     seq_depth: int
     seq_expand: int
 
@@ -34,9 +35,12 @@ class AudioFeatures(nn.Module):
         size = 1
         d = in_dim
         for s in args.scales:
+            h = d*args.conv_expand
             self.net.extend([
-                nn.Conv2d(d, d, *zip((5,1,2), (3,1,1)), groups=d),
-                nn.Conv2d(d, d, 1),
+                nn.Conv2d(d, h, 1),
+                nn.Conv2d(h, h, *zip((5,1,2), (3,1,1)), groups=h),
+                nn.SiLU(),
+                nn.Conv2d(h, d, 1),
                 nn.ReLU(),
                 nn.MaxPool2d((s,1), (s,1)),
                 nn.Conv2d(d, d*2, 1),
