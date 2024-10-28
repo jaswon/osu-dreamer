@@ -5,6 +5,7 @@ from jaxtyping import Float
 
 import torch as th
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
@@ -17,7 +18,6 @@ from osu_dreamer.modules.wavenet import ResSkipNet
 class DenoiserArgs:
     h_dim: int
     depth: int
-    seq_expand: int
 
     c_dim: int
     c_depth: int
@@ -47,21 +47,23 @@ class Denoiser(nn.Module):
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
+                self.hg = mod(nn.Conv1d(args.h_dim+a_dim, args.h_dim*2, 1))
                 self.net = nn.Sequential(
-                    mod(nn.Conv1d(args.h_dim+a_dim, args.h_dim, 1)),
                     mod(nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim)),
                     nn.SiLU(),
-                    mod(nn.Conv1d(args.h_dim, args.h_dim*args.seq_expand*2, 1)),
+                    mod(nn.Conv1d(args.h_dim, args.h_dim*2, 1)),
                     minGRU2(),
-                    mod(nn.Conv1d(args.h_dim*args.seq_expand, args.h_dim*2, 1)),
                 )
+                self.out = mod(nn.Conv1d(args.h_dim, args.h_dim*2, 1))
         
             def forward(
                 self,
                 x: Float[Tensor, "B X L"],
                 y: Float[Tensor, "B Y L"],
             ) -> Float[Tensor, "B X*2 L"]:
-                return self.net(th.cat([x,y], dim=1))
+                h,g = self.hg(th.cat([x,y], dim=1)).chunk(2, dim=1)
+                h = self.net(h) * F.silu(g)
+                return self.out(h)
             
         self.net = ResSkipNet(args.h_dim, [ layer() for _ in range(args.depth) ])
 
