@@ -23,6 +23,8 @@ class DenoiserArgs:
     c_dim: int
     c_depth: int
 
+    mod_depth: int
+
 class Denoiser(nn.Module):
     def __init__(
         self,
@@ -40,7 +42,7 @@ class Denoiser(nn.Module):
             ]
         ))
 
-        mod = ModulateConv(args.c_dim)
+        mod = ModulateConv(args.c_dim, args.mod_depth)
         self.mod = mod
 
         self.proj_h = mod(nn.Conv1d(dim, args.h_dim, 1))

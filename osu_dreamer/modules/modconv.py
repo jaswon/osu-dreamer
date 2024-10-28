@@ -12,8 +12,9 @@ from einops import rearrange
 class ModulateConv:
     value: Optional[Tensor]
 
-    def __init__(self, t_dim: int):
+    def __init__(self, t_dim: int, depth: int):
         self.t_dim = t_dim
+        self.depth = depth
 
     @contextmanager
     def set(self, value: Float[Tensor, "B {self.t_dim}"]):
@@ -38,10 +39,10 @@ class _ModConv(nn.Module):
         self.mod = mod
         t_dim = mod.t_dim
         self.proj_t = nn.Sequential(
-            nn.Linear(t_dim, t_dim),
-            nn.SiLU(),
-            nn.Linear(t_dim, t_dim),
-            nn.SiLU(),
+            *(
+                block for _ in range(mod.depth)
+                for block in [ nn.Linear(t_dim, t_dim), nn.SiLU() ]
+            ),
             nn.Linear(t_dim, self.conv.weight.size(1)),
         )
 

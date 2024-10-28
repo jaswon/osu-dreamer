@@ -84,4 +84,5 @@ model:
         depth: 8
 
         c_dim: 256
-        c_depth: 2
+        c_depth: 3
+        mod_depth: 1
