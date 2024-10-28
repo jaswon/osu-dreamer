@@ -35,7 +35,8 @@ class AudioFeatures(nn.Module):
         d = in_dim
         for s in args.scales:
             self.net.extend([
-                nn.Conv2d(d, d, *zip((3,1,1), (3,1,1)), groups=d),
+                nn.Conv2d(d, d, *zip((5,1,2), (3,1,1)), groups=d),
+                nn.Conv2d(d, d, 1),
                 nn.ReLU(),
                 nn.MaxPool2d((s,1), (s,1)),
                 nn.Conv2d(d, d*2, 1),
@@ -52,6 +53,7 @@ class AudioFeatures(nn.Module):
                 self.net = nn.Sequential(
                     nn.GroupNorm(1, d),
                     nn.Conv1d(d, d, 3,1,1, groups=d),
+                    nn.Conv1d(d, d, 1),
                     nn.SiLU(),
                     nn.Conv1d(d, d*args.seq_expand*2, 1),
                     minGRU2(),
