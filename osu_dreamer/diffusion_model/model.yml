@@ -79,7 +79,8 @@ model:
         seq_expand: 2
 
     denoiser_args:
-        h_dim: 512
+        h_dim: 256
+        expand: 2
         depth: 8
 
         c_dim: 256

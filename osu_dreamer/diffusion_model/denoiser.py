@@ -18,6 +18,7 @@ from osu_dreamer.modules.wavenet import ResSkipNet
 class DenoiserArgs:
     h_dim: int
     depth: int
+    expand: int
 
     c_dim: int
     c_depth: int
@@ -47,14 +48,16 @@ class Denoiser(nn.Module):
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.hg = mod(nn.Conv1d(args.h_dim+a_dim, args.h_dim*2, 1))
+                H = args.h_dim * args.expand
+                self.hg = mod(nn.Conv1d(args.h_dim+a_dim, H*2, 1))
                 self.net = nn.Sequential(
-                    mod(nn.Conv1d(args.h_dim, args.h_dim, 5,1,2, groups=args.h_dim)),
+                    mod(nn.Conv1d(H, H, 3,1,1, groups=H)),
+                    mod(nn.Conv1d(H, H, 1)),
                     nn.SiLU(),
-                    mod(nn.Conv1d(args.h_dim, args.h_dim*2, 1)),
+                    mod(nn.Conv1d(H, H*2, 1)),
                     minGRU2(),
                 )
-                self.out = mod(nn.Conv1d(args.h_dim, args.h_dim*2, 1))
+                self.out = mod(nn.Conv1d(H, args.h_dim*2, 1))
         
             def forward(
                 self,
