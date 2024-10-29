@@ -51,7 +51,11 @@ class Denoiser(nn.Module):
             def __init__(self):
                 super().__init__()
                 H = args.h_dim * args.expand
-                self.hg = mod(nn.Conv1d(args.h_dim+a_dim, H*2, 1))
+                self.hg = nn.Sequential(
+                    mod(nn.Conv1d(args.h_dim+a_dim, H*2, 1)),
+                    nn.SiLU(),
+                    mod(nn.Conv1d(H*2, H*2, 1)),
+                )
                 self.net = nn.Sequential(
                     mod(nn.Conv1d(H, H, 3,1,1, groups=H)),
                     mod(nn.Conv1d(H, H, 1)),
