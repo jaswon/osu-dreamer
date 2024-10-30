@@ -75,15 +75,15 @@ model:
     audio_features: 256
     audio_feature_args:
         scales: [4,4,3,2]
-        conv_expand: 8
+        conv_expand: 4
         seq_depth: 4
-        seq_expand: 8
+        seq_expand: 2
 
     denoiser_args:
-        h_dim: 256
+        h_dim: 128
         expand: 2
-        depth: 8
+        depth: 16
 
         c_dim: 256
-        c_depth: 3
-        mod_depth: 1
+        c_depth: 1
+        mod_depth: 3
