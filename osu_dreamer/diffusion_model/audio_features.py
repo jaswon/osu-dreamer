@@ -57,7 +57,6 @@ class AudioFeatures(nn.Module):
                 self.net = nn.Sequential(
                     nn.GroupNorm(1, d),
                     nn.Conv1d(d, d, 3,1,1, groups=d),
-                    nn.Conv1d(d, d, 1),
                     nn.SiLU(),
                     nn.Conv1d(d, d*args.seq_expand*2, 1),
                     minGRU2(),

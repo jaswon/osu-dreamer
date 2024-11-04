@@ -58,7 +58,6 @@ class Denoiser(nn.Module):
                 )
                 self.net = nn.Sequential(
                     mod(nn.Conv1d(H, H, 3,1,1, groups=H)),
-                    mod(nn.Conv1d(H, H, 1)),
                     nn.SiLU(),
                     mod(nn.Conv1d(H, H*2, 1)),
                     minGRU2(),
