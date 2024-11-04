@@ -61,7 +61,9 @@ class Beatmap:
         with open(filename, encoding='utf-8') as f:
             cfg = self.parse_map_file(f)
 
-        self.audio_filename = self.filename.parent / cfg["General"]["AudioFilename"]
+        # account for case-insensitivity
+        lc_files = { f.name.lower(): f.name for f in self.filename.parent.iterdir() }
+        self.audio_filename = self.filename.parent / lc_files[cfg["General"]["AudioFilename"].lower()]
 
         self.mode = int(cfg["General"]["Mode"])
 
