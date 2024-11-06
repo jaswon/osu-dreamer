@@ -64,7 +64,7 @@ model:
     # training parameters
     cursor_factor: .01
     opt_args:
-        lr: .00003
+        lr: .0001
 
     # model hyperparameters
     diffusion_args:
@@ -75,14 +75,14 @@ model:
     audio_features: 256
     audio_feature_args:
         scales: [4,4,3,2]
-        conv_expand: 8
-        seq_depth: 6
-        seq_expand: 2
+        conv_expand: 4
+        seq_depth: 12
+        seq_expand: 4
 
     denoiser_args:
         h_dim: 128
         expand: 2
-        depth: 16
+        depth: 12
 
         c_dim: 256
         c_depth: 1
