@@ -8,8 +8,6 @@ from numpy import ndarray
 from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.osu.hit_objects import Slider, Spinner
 
-from scipy.signal import find_peaks
-
 from ..load_audio import FrameTimes
 
 from enum import IntEnum
@@ -33,7 +31,7 @@ def events(ts: list[Real], frame_times: FrameTimes) -> Float[ndarray, "L"]:
     return (log_time - MIN_TIME) / (MAX_TIME - MIN_TIME)
 
 def decode_events(events: Float[ndarray, "L"]) -> list[int]:
-    return find_peaks(-events, height=0.6, distance=4)[0].tolist()
+    return (np.nonzero(events[1:] < events[:-1] - .1)[0] + 1).tolist()
 
 # == extents ==
 
