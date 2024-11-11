@@ -4,9 +4,8 @@ from jaxtyping import Float, Int
 import numpy as np
 from numpy import ndarray
 
-import bezier
-
 from .hit_objects import Slider, Vec2
+from .bezier import BezierCurve
 
 def approx_eq(a,b):
     return abs(a-b) < 1e-8
@@ -173,14 +172,13 @@ class Bezier(Slider):
         ctrl_curves.append(ctrl_pts[last_idx:])
 
         total_len = 0
-        curves: list[bezier.Curve] = []
+        curves: list[BezierCurve] = []
         for c in ctrl_curves:
             if len(c) < 2:
                 # invalid bezier curve spec
                 continue
 
-            nodes = np.array(c).T # 2 x n
-            curve = bezier.Curve.from_nodes(nodes)
+            curve = BezierCurve(np.array(c).T)
             total_len += curve.length
             curves.append(curve)
 
@@ -190,17 +188,18 @@ class Bezier(Slider):
             # -> extend slider in a straight line
 
             # end of bezier curve is tangent to last segment in control points
-            last_curve_nodes = curves[-1].nodes
+            last_curve_nodes = curves[-1].p
             p = last_curve_nodes[:, -1]
             v = p - last_curve_nodes[:, -2]
 
             nodes = np.array([p, p + v / np.linalg.norm(v) * tail_len]).T
 
-            curve = bezier.Curve.from_nodes(nodes)
+            curve = BezierCurve(nodes)
 
             assert approx_eq(curve.length, tail_len), f"{curve.length} != {tail_len}"
             curves.append(curve)
             
+        self.path_segments: list[BezierCurve]
         self.path_segments = curves
         self.cum_t = np.cumsum([ c.length for c in curves ])
         self.cum_t /= self.cum_t[-1]
@@ -219,12 +218,12 @@ class Bezier(Slider):
 
     def lerp(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
         return np.stack([
-            self.path_segments[idx].evaluate(t)[:,0]
+            self.path_segments[idx].at(np.array([t]))[:,0]
             for idx, t in zip(*self.curve_reparameterize(t))
         ], axis=0)
 
     def vel(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
         return np.stack([
-            self.path_segments[idx].evaluate_hodograph(t)[:,0] / self.slide_duration
+            self.path_segments[idx].hodo().at(np.array([t]))[:,0] / self.slide_duration
             for idx, t in zip(*self.curve_reparameterize(t))
         ], axis=0)

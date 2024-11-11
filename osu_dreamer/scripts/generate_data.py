@@ -14,7 +14,7 @@ dir_option_type = click.Path(exists=True, file_okay=False, path_type=Path)
 
 @click.command()
 @click.option('--maps-dir', type=dir_option_type, required=True, help='directory containing uncompressed osu! mapsets (eg. the `osu!/Songs` directory)')
-@click.option('--data-dir', type=click.Path(), default=Path('./data'), help='directory to store pre-processed training samples')
+@click.option('--data-dir', type=click.Path(path_type=Path), default=Path('./data'), help='directory to store pre-processed training samples')
 @click.option('--num-workers', type=int, default=2, help='number of workers to use for dataset generation')
 def generate_data(maps_dir: Path, data_dir: Path, num_workers: int):
     """

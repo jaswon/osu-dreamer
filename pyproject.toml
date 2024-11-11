@@ -13,7 +13,6 @@ jaxtyping = "^0.2.28"
 pytorch-lightning = "^2.2.2"
 jsonargparse = {extras = ["signatures"], version = "^4.28.0"}
 librosa = "^0.10.1"
-bezier = "^2023.7.28"
 einops = "^0.7.0"
 tensorboard = "^2.16.2"
 matplotlib = "^3.8.4"

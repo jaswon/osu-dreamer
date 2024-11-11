@@ -213,42 +213,6 @@ test-tox = ["equinox", "mypy (>=0.800)", "numpy", "pandera", "pytest (>=4.0.0)",
 test-tox-coverage = ["coverage (>=5.5)"]
 
 [[package]]
-name = "bezier"
-version = "2023.7.28"
-description = "Helper for Bézier Curves, Triangles, and Higher Order Objects"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "bezier-2023.7.28-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:5846838f53b1f63fc53a2fb6273966eeaf0e8d6ed81a25368bfda8cc4bfb1f0c"},
-    {file = "bezier-2023.7.28-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:412b15c606183a0aaf9cbc40d4e1069638e60d6a8a80460fb3bd7fb69f92a6b8"},
-    {file = "bezier-2023.7.28-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3db780501aa0ed9224582c28d1b4b35eab764a58096a405fc749691972986cba"},
-    {file = "bezier-2023.7.28-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9af82b42143e5fda2c101308166bc55f4b31ddcbd4e315b25f766668ab87e1b7"},
-    {file = "bezier-2023.7.28-cp310-cp310-win_amd64.whl", hash = "sha256:32d6d38d7b3b9cbbea53ed0814b348da8d70718c85213ff48d418968fcf11dd9"},
-    {file = "bezier-2023.7.28-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:e8b8a0d049eef63774b805c2e1078337d206b35599e74a43554b687eb650cfd3"},
-    {file = "bezier-2023.7.28-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:ed0cc6441da427a2ae40dd32eb6b567c1a3e48ccbeecabdb03f93370da762c68"},
-    {file = "bezier-2023.7.28-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:aa43e1721f252f99a1d8bc06f66e89e5433604f1b0338fe7e025e4cd4dd579ff"},
-    {file = "bezier-2023.7.28-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:17201989272725921b6133ff89ab29f08c5f1c18b29b0bbfe64d95fc61f50a40"},
-    {file = "bezier-2023.7.28-cp311-cp311-win_amd64.whl", hash = "sha256:355947a0b3bd1a8b978ad992ff8ac538fd46b7dcd6858af62b471445541c38b2"},
-    {file = "bezier-2023.7.28-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:b6931d16897a76aecd8d427896af2ea24d00332941cb8f8a6a71ffeb15440800"},
-    {file = "bezier-2023.7.28-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:9bde270818247331db5c99ef42bf33981c7568825269d5463d28325bbc5d5998"},
-    {file = "bezier-2023.7.28-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:750e239d40e0d8d4b906b2509cf8c3448afabaa5779b3d5642cdc8d1b754fc48"},
-    {file = "bezier-2023.7.28-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e247d82ac271b451974e9cc5e8c50a46e0196e1e35ffddee8e90d27bd5e86242"},
-    {file = "bezier-2023.7.28-cp38-cp38-win_amd64.whl", hash = "sha256:922055eb437d46e13a0d20cc2b9ebed093dbbe3a55afb8d30136ffff5ce47620"},
-    {file = "bezier-2023.7.28-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:962d93f7dbfdc37c1fa2f930f304810eff79ef30d067a36c65bbdce0a6356afe"},
-    {file = "bezier-2023.7.28-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:6c52b5f083540250da00d586ce5f4e8d8d2434c63b5b815625c5b3e1a602c2e8"},
-    {file = "bezier-2023.7.28-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:787023b8e1a5d9056bbb3422ecc84b276cfb03f37e359676e523ca70446c8a33"},
-    {file = "bezier-2023.7.28-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8ae58e466335c5808e8841c46afdd8ac449915895f28d9bd526b19110a6d4caa"},
-    {file = "bezier-2023.7.28-cp39-cp39-win_amd64.whl", hash = "sha256:24fc2c33b98101321906092600a9821b495abe877a029f973882a8e88932d88a"},
-    {file = "bezier-2023.7.28.tar.gz", hash = "sha256:853256d1e1e9cd82cbb3d1543be906e9d54e8491e3020a90c084a9d18021f63b"},
-]
-
-[package.dependencies]
-numpy = ">=1.24.2"
-
-[package.extras]
-full = ["matplotlib (>=3.4.3)", "scipy (>=1.10.1)", "sympy (>=1.11.1)"]
-
-[[package]]
 name = "certifi"
 version = "2024.2.2"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -3252,4 +3216,4 @@ test = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more-it
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "2976a52237362ea7013552ba83830de1835a643742c733f7213a0442649ac35b"
+content-hash = "3288a721fe25d92622e481a90da421973426c038762603553ace47ff310a2d82"

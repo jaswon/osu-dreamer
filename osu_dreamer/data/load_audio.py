@@ -1,11 +1,10 @@
 
-import warnings
-
 from jaxtyping import Float
 
 import numpy as np
 
 import librosa
+import soundfile
 
 # audio processing constants
 SR = 22000
@@ -28,9 +27,8 @@ eps = 1e-10
 fmin = librosa.note_to_hz('C0')
 
 def load_audio(audio_file):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        wave, _ = librosa.load(audio_file, sr=SR, res_type='polyphase')
+    with soundfile.SoundFile(audio_file) as f:
+        wave, _ = librosa.load(f, sr=SR, res_type='polyphase')
 
     # compute time-frequency representation
     return np.log(eps + np.abs(librosa.vqt(

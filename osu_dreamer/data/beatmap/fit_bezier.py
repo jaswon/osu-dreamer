@@ -6,22 +6,7 @@ from typing import Optional, Union
 import numpy as np
 from numpy import ndarray
 
-import bezier
-
-def hodo(p: Float[ndarray, "N 2"]):
-    return p.shape[0] * (p[1:] - p[:-1])
-
-def q(p: Float[ndarray, "N 2"], t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
-    """evaluates bezier at t"""
-    return bezier.Curve.from_nodes(p.T).evaluate_multi(t).T
-
-def qprime(p: Float[ndarray, "N 2"], t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
-    """evaluates bezier first derivative at t"""
-    return bezier.Curve.from_nodes(hodo(p).T).evaluate_multi(t).T
-
-def qprimeprime(p: Float[ndarray, "N 2"], t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
-    """evaluates bezier second derivative at t"""
-    return bezier.Curve.from_nodes(hodo(hodo(p)).T).evaluate_multi(t).T
+from osu_dreamer.osu.bezier import BezierCurve
 
 def normalize(v: Float[ndarray, "..."]) -> Float[ndarray, "..."]:
     magnitude = np.sqrt(np.dot(v,v))
@@ -34,7 +19,7 @@ def compute_error(
     points: Float[ndarray, "L 2"], 
     u: Float[ndarray, "L"],
 ) -> tuple[float, int]:
-    errs = ((q(p, u) - points) ** 2).sum(-1) # L
+    errs = ((BezierCurve(p.T).at(u).T - points) ** 2).sum(-1) # L
     split_point = errs.argmax()
     return float(errs[split_point]), int(split_point)
 
@@ -44,7 +29,7 @@ Line = Float[ndarray, "2 2"]
 Segment = Union[Cubic, Line]
 
 def segment_length(p: Segment) -> float:
-    return float(bezier.Curve.from_nodes(p.T).length)
+    return BezierCurve(p.T).length
 
 def fit_bezier(
     points: Float[ndarray, "L 2"],
@@ -116,7 +101,7 @@ def generate_bezier(
     
     # Create the C and X matrices
     C = np.einsum('lix,ljx->ij', A, A)
-    X = np.einsum('lix,lx->i', A, points - q(bez_curve, u))
+    X = np.einsum('lix,lx->i', A, points - BezierCurve(bez_curve.T).at(u).T)
 
     # Compute the determinants of C and X
     det_C0_C1 = C[0][0] * C[1][1] - C[1][0] * C[0][1]
@@ -166,10 +151,14 @@ def newton_raphson_root_find(
     gives
     u_n+1 = u_n - |q(u_n)-p * q'(u_n)| / |q'(u_n)**2 + q(u_n)-p * q''(u_n)|
     """
+
+    C = BezierCurve(bez.T)
+    dC = C.hodo()
+    ddC = dC.hodo()
     
-    d = q(bez, u) - points # L 2
-    qp = qprime(bez, u) # L 2
+    d = C.at(u).T - points # L 2
+    qp = dC.at(u).T # L 2
     num = (d * qp).sum(-1) # L
-    den = (qp**2 + d*qprimeprime(bez, u)).sum(-1) # L
+    den = (qp**2 + d*ddC.at(u).T).sum(-1) # L
     
     return u - np.divide(num, den, out=np.zeros_like(num), where=den!=0)
