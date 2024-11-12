@@ -7,18 +7,6 @@ from numpy import ndarray
 from .hit_objects import Slider, Vec2
 from .bezier import BezierCurve
 
-def approx_eq(a,b):
-    return abs(a-b) < 1e-8
-
-def binom_coeffs(n):
-    """returns a list of C(n, k) for 0<=k<=n"""
-    ret = []
-    c = 1.0
-    for k in range(n+1):
-        ret.append(c)
-        c = c*(n+1)/(k+1) - c
-    return ret
-
 def from_control_points(
     t: int,
     beat_length: float,
@@ -143,11 +131,6 @@ class Perfect(Slider):
 
 
 class Bezier(Slider):
-    SEG_LEN = 10
-
-    def __repr__(self):
-        return f"{super().__repr__()} Bezier[*{self.slides}]({self.ctrl_pts})"
-
     def __init__(
         self,
         t: int,
@@ -182,10 +165,13 @@ class Bezier(Slider):
             total_len += curve.length
             curves.append(curve)
 
+        self.hold_max_t = length / total_len
+
         tail_len = self.length - total_len
         if tail_len > 0:
             # computed length less than defined length
             # -> extend slider in a straight line
+            self.hold_max_t = 1
 
             # end of bezier curve is tangent to last segment in control points
             last_curve_nodes = curves[-1].p
@@ -193,22 +179,22 @@ class Bezier(Slider):
             v = p - last_curve_nodes[:, -2]
 
             nodes = np.array([p, p + v / np.linalg.norm(v) * tail_len]).T
-
-            curve = BezierCurve(nodes)
-
-            assert approx_eq(curve.length, tail_len), f"{curve.length} != {tail_len}"
-            curves.append(curve)
+            curves.append(BezierCurve(nodes))
             
         self.path_segments: list[BezierCurve]
         self.path_segments = curves
         self.cum_t = np.cumsum([ c.length for c in curves ])
         self.cum_t /= self.cum_t[-1]
 
+    def __repr__(self):
+        return f"{super().__repr__()} Bezier[*{self.slides}]({self.ctrl_pts})"
+
     def curve_reparameterize(self, t: Float[ndarray, "L"]) -> tuple[Int[ndarray, "L"], Float[ndarray, "L"]]:
         """
         converts the parameter to an index into the sequence of curves and a new parameter localized to that curve
         """
-        idx = np.searchsorted(self.cum_t, np.clip(t, 0, 1))
+        t = np.clip(t, 0, 1) * self.hold_max_t
+        idx = np.searchsorted(self.cum_t, t)
 
         range_start = np.insert(self.cum_t, 0, 0)[idx]
         range_end = self.cum_t[idx]
