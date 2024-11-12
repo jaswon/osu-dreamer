@@ -8,7 +8,7 @@ from numpy import ndarray
 
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
-from .fit_bezier import segment_length, Point, fit_bezier
+from .fit_bezier import fit_bezier
 from .encode import FrameTimes, EncodedBeatmap, BeatmapEncoding
 from .hit import decode_hit_signal
 
@@ -54,12 +54,12 @@ SliderTickRate: 1
 {{hit_objects}}
 """      
 
-def slider_decoder(
+def decode_slider(
     cursor_signal: Float[ndarray, "2 L"], 
     start_idx: int, 
     end_idx: int, 
     num_repeats: int,
-) -> tuple[float, list[Point]]:
+) -> tuple[float, list[Float[ndarray, "2"]]]:
     """
     returns the slider's length and control points defined by
     the cursor signal, start+end indices, and number of repeats
@@ -67,17 +67,13 @@ def slider_decoder(
 
     first_slide_idx = round(start_idx + (end_idx-start_idx) / num_repeats)
 
-    ctrl_pts: list[Point] = []
+    ctrl_pts: list[Float[ndarray, "2"]] = []
     length = 0.
     # TODO: try fit circular arc before bezier
-    path = fit_bezier(cursor_signal.T[start_idx:first_slide_idx+1], max_err=50.)
-    for i, seg in enumerate(path):
-        seg = seg.round()
-        seg_len = segment_length(seg)
-        if len(path) > 1 and i == 0 and seg_len < 20:
-            # skip short starting segments
-            continue
-        ctrl_pts.extend(seg)
+    path = fit_bezier(cursor_signal[:,start_idx:first_slide_idx+1], max_err=5.)
+    for seg in path:
+        seg_len = seg.length
+        ctrl_pts.extend(seg.p.T)
         length += seg_len
     
     return length, ctrl_pts
@@ -130,7 +126,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
             last_end_time = u
             continue
 
-        length, ctrl_pts = slider_decoder(cursor_signal, i, j, num_slides)
+        length, ctrl_pts = decode_slider(cursor_signal, i, j, num_slides)
 
         if length == 0:
             # zero length
