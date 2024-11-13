@@ -9,6 +9,8 @@ from osu_dreamer.osu.bezier import BezierCurve
 def fit_bezier(
     points: Float[ndarray, "2 L"],
     max_err: float, 
+    constrain_start: bool = False,
+    constrain_end: bool = False,
 ) -> list[BezierCurve]:
     """fits a cubic poly-Bezier curve to points evenly spaced in time"""
 
@@ -22,7 +24,7 @@ def fit_bezier(
         return [BezierCurve(points)]
 
     u = np.linspace(0, 1, L)
-    bez_curve = fit_cubic(points, u)
+    bez_curve = fit_cubic(points, u, constrain_start, constrain_end)
     err, split_point = compute_error(bez_curve, points, u)
         
     if err < max_err:
@@ -36,8 +38,8 @@ def fit_bezier(
 
     # Fitting failed -- split at max error point and fit recursively
     return [
-        *fit_bezier(points[:,:split_point+1], max_err),
-        *fit_bezier(points[:,split_point:], max_err),
+        *fit_bezier(points[:,:split_point+1], max_err, constrain_start, True),
+        *fit_bezier(points[:,split_point:], max_err, True, constrain_end),
     ]
 
 def compute_error(
@@ -52,13 +54,12 @@ def compute_error(
 def fit_cubic(
     xy: Float[ndarray, "2 L"],
     t: Float[ndarray, "L"],
+    constrain_start: bool,
+    constrain_end: bool,
 ) -> Float[ndarray, "2 4"]:
     """
     fits a cubic bezier constrained by start and end points (via linearly constrained least squares) 
     """
-
-    N = np.array([ [0,0], [1,0], [0,1], [0,0] ])
-    c0 = np.array([ xy[:,0], [0,0], [0,0], xy[:,-1] ])
 
     TM = t[:,None] ** np.array([[0,1,2,3]]) @ np.array([
         [1, 0, 0, 0],
@@ -66,6 +67,21 @@ def fit_cubic(
         [3, -6, 3, 0],
         [-1, 3, -3, 1],
     ])
+
+    c0 = np.array([
+        xy[:,0], 
+        xy[:,0] + (xy[:,-1] - xy[:,0]) / 3, 
+        xy[:,-1] + (xy[:,0] - xy[:,-1]) / 3, 
+        xy[:,-1],
+    ])
+    if constrain_start and constrain_end:
+        N = np.eye(4,2,-1)
+    elif constrain_start and not constrain_end:
+        N = np.eye(4,3,-1)
+    elif not constrain_start and constrain_end:
+        N = np.eye(4,3,0)
+    else:
+        N = np.eye(4,4,0)
     
     A_tilde = TM @ N
     y_tilde = xy.T - TM @ c0
