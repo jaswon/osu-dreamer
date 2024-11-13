@@ -47,7 +47,7 @@ def prepare_map(data_dir: Path, map_file: Path):
     assert len(diff_labels) == NUM_LABELS
 
     if spec_path.exists():
-        for i in range(7):
+        for i in range(8):
             try:
                 spec = np.load(spec_path)
                 break
