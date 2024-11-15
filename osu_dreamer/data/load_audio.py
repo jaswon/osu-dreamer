@@ -17,11 +17,11 @@ A_DIM = N_OCTAVES * OCTAVE_BINS
 
 FrameTimes = Float[np.ndarray, "L"]
 
-def get_frame_times(spec) -> FrameTimes:
-    return librosa.frames_to_time(
-        np.arange(spec.shape[-1]),
-        sr=SR, hop_length=HOP_LEN,
-    ) * 1000
+def get_frame_times(num_frames: int) -> FrameTimes:
+    """returns the time (ms) corresponding to frames"""
+    frames = np.arange(num_frames)
+    samples = frames * HOP_LEN + N_FFT // 2
+    return samples / SR * 1000
 
 eps = 1e-10
 fmin = librosa.note_to_hz('C0')

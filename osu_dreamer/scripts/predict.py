@@ -10,7 +10,7 @@ import torch as th
 
 import click
 
-from osu_dreamer.data.load_audio import load_audio, get_frame_times
+from osu_dreamer.data.load_audio import load_audio
 from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
 
 from osu_dreamer.diffusion_model.model import Model
@@ -66,8 +66,6 @@ def predict(
     dev = next(model.parameters()).device
     audio = th.tensor(load_audio(audio_file), device=dev)
     labels = th.tensor(diff, device=dev)
-
-    frame_times = get_frame_times(audio)
     
     # generate maps
     # ======
@@ -97,7 +95,7 @@ def predict(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 decode_beatmap(
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    label, pred_signal, frame_times,
+                    label, pred_signal,
                 ),
             )
     

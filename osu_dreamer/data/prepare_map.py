@@ -72,7 +72,7 @@ def prepare_map(data_dir: Path, map_file: Path):
         with open(spec_path, "wb") as f:
             np.save(f, spec, allow_pickle=False)
             
-    frame_times = get_frame_times(spec)
+    frame_times = get_frame_times(spec.shape[1])
 
     # compute map signal
     try:

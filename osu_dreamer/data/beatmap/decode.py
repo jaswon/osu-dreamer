@@ -9,7 +9,8 @@ from numpy import ndarray
 from osu_dreamer.data.prepare_map import NUM_LABELS
 
 from .fit_bezier import fit_bezier
-from .encode import FrameTimes, EncodedBeatmap, BeatmapEncoding
+from ..load_audio import get_frame_times
+from .encode import EncodedBeatmap, BeatmapEncoding
 from .hit import decode_hit_signal
 
 @dataclass
@@ -81,7 +82,9 @@ def decode_slider(
 ONSET_TOL = 2
 DEFAULT_BEAT_LEN = 60000/100 # 100 bpm
 
-def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap, frame_times: FrameTimes) -> str:
+def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap) -> str:
+
+    frame_times = get_frame_times(enc.shape[1])
 
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
     cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
