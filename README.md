@@ -21,7 +21,7 @@ osu!dreamer is a generative model for osu! beatmaps based on diffusion
 Clone this repo, then run:
 
 ```
-poetry install
+poetry install [--with dev]
 ```
 
 This will install `osu-dreamer`'s dependencies
