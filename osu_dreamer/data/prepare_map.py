@@ -4,15 +4,11 @@ from pathlib import Path
 
 import numpy as np
 
-import rosu_pp_py as rosu
 from osu_dreamer.osu.beatmap import Beatmap
 
 from .beatmap.encode import encode_beatmap
 from .load_audio import load_audio, get_frame_times
-
-NUM_LABELS = 5
-
-perf = rosu.Performance()
+from .labels import get_labels
 
 def prepare_map(data_dir: Path, map_file: Path):
     try:
@@ -41,10 +37,7 @@ def prepare_map(data_dir: Path, map_file: Path):
         print(f"{map_file}: {e}")
         return
     
-    # difficulty calculation
-    diff_attrs = perf.calculate(rosu.Beatmap(path=str(map_file))).difficulty
-    diff_labels = np.array([diff_attrs.stars, bm.ar, bm.od, bm.cs, bm.hp])
-    assert len(diff_labels) == NUM_LABELS
+    diff_labels = get_labels(map_file, bm)
 
     if spec_path.exists():
         for i in range(8):

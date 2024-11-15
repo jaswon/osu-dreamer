@@ -6,7 +6,7 @@ from jaxtyping import Float
 import numpy as np
 from numpy import ndarray
 
-from osu_dreamer.data.prepare_map import NUM_LABELS
+from osu_dreamer.data.labels import NUM_LABELS
 
 from .fit_bezier import fit_bezier
 from ..load_audio import get_frame_times

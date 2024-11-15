@@ -14,7 +14,7 @@ from torch.utils.data import IterableDataset
 from .reclaim_memory import reclaim_memory
 from .load_audio import A_DIM
 from .beatmap.encode import X_DIM
-from .prepare_map import NUM_LABELS
+from .labels import NUM_LABELS
 
 
 class Batch(NamedTuple):

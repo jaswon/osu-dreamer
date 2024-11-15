@@ -13,7 +13,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals, BeatmapEncoding
-from osu_dreamer.data.prepare_map import NUM_LABELS
+from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.adabelief import AdaBelief

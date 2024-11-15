@@ -7,7 +7,7 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from osu_dreamer.data.prepare_map import NUM_LABELS
+from osu_dreamer.data.labels import NUM_LABELS
 
 from osu_dreamer.modules.mingru import minGRU2
 from osu_dreamer.modules.modconv import ModulateConv
