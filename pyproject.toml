@@ -10,14 +10,13 @@ package-mode = false
 python = "^3.9"
 pytorch-lightning = "^2.2.2"
 jsonargparse = {extras = ["signatures"], version = "^4.28.0"}
-librosa = "^0.10.1"
 einops = "^0.7.0"
 click = "^8.1.7"
 rosu-pp-py = "^1.1.0"
 torch = "^2.4.0"
 tinytag = "^1.10.1"
 ffmpeg-python = "^0.2.0"
-
+scipy = "~1.13"
 
 [tool.poetry.group.dev]
 optional = true
@@ -28,6 +27,7 @@ jaxtyping = "^0.2.28"
 tensorboard = "^2.16.2"
 matplotlib = "^3.8.4"
 ipykernel = "^6.29.4"
+librosa = "^0.10.2.post1"
 
 
 [build-system]
