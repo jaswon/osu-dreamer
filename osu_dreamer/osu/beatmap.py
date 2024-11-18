@@ -7,6 +7,8 @@ from pathlib import Path
 import bisect
 import numpy as np
 
+import rosu_pp_py as rosu
+
 from .hit_objects import Timed, TimingPoint, Circle, Spinner, Slider
 from .sliders import from_control_points
 
@@ -55,6 +57,8 @@ class Beatmap:
         return f"{self.title} [{self.version}]"
 
     def __init__(self, filename, meta_only=False):
+
+        self.sr = rosu.Performance().calculate(rosu.Beatmap(path=str(filename))).difficulty.stars
         
         self.filename = Path(filename)
 

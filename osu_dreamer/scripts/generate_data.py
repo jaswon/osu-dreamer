@@ -85,7 +85,7 @@ def process_mapset(kv: tuple[Path, list[Path]]):
             except Exception as e:
                 print(f"{map_file}: {e}")
                 continue
-            diff_labels = get_labels(map_file, bm)
+            diff_labels = get_labels(bm)
 
             # compute map signal
             try:
