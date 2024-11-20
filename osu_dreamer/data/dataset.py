@@ -60,8 +60,7 @@ class FullSequenceDataset(IterableDataset):
             
     def sample_stream(self, map_file, map_idx) -> Iterator[Batch]:
         audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # [A,L]
-        L = audio.size(-1)
-        if self.seq_len >= L:
+        if self.seq_len >= audio.size(-1):
             return
         
         with open(map_file, 'rb') as f:

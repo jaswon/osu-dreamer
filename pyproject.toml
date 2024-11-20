@@ -17,6 +17,7 @@ torch = "^2.4.0"
 tinytag = "^1.10.1"
 ffmpeg-python = "^0.2.0"
 scipy = "~1.13"
+nnaudio = "^0.3.3"
 
 [tool.poetry.group.dev]
 optional = true

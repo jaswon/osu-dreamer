@@ -1877,6 +1877,25 @@ extra = ["lxml (>=4.6)", "pydot (>=1.4.2)", "pygraphviz (>=1.11)", "sympy (>=1.1
 test = ["pytest (>=7.2)", "pytest-cov (>=4.0)"]
 
 [[package]]
+name = "nnaudio"
+version = "0.3.3"
+description = "A fast GPU audio processing toolbox with 1D convolutional neural network"
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "nnAudio-0.3.3-py3-none-any.whl", hash = "sha256:4ea1fdc4638b9cf53c9b58ca11a9d474105a2b58da8bb5f6e75416ba5ada5e46"},
+    {file = "nnAudio-0.3.3.tar.gz", hash = "sha256:076697199811314d41714d563d9d72ed0808e7c2da2dacf11dd4e3069d4ec054"},
+]
+
+[package.dependencies]
+numpy = ">=1.14.5"
+scipy = ">=1.2.0"
+torch = ">=1.6.0"
+
+[package.extras]
+tests = ["librosa", "pytest"]
+
+[[package]]
 name = "numba"
 version = "0.60.0"
 description = "compiling Python code using LLVM"
@@ -3512,4 +3531,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "ca15dfd9b864434a158f8f2dedbf50882035d075658223193a2f897efc56afc5"
+content-hash = "14e081d654673982680eea54e58565d37bb5b5a80e5cecce49cf41f605b6a517"
