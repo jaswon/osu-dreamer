@@ -31,7 +31,7 @@ def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> CursorSignal:
     # compute duration a hit object stays on screen from approach rate
     preempt = 1200 + (120 if bm.ar <= 5 else 150) * (5-bm.ar)
 
-    hos: list[HitObject] = [Circle(0, True, 256, 192), *bm.hit_objects]
+    hos: list[HitObject] = [Circle(0, True, 0, 256, 192), *bm.hit_objects]
 
     sig = np.zeros((frame_times.shape[0], 2))
 

@@ -94,6 +94,9 @@ HitEncoding = IntEnum('HitEncoding', [
     "COMBO",
     "SLIDE",
     "SUSTAIN",
+    "WHISTLE",
+    "FINISH",
+    "CLAP",
 ], start=0)
 HIT_DIM = len(HitEncoding)
 
@@ -104,8 +107,11 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     returns an array encoding a beatmap's hits:
     0. onsets
     1. new combos
-    2. sustains (both sliders and spinners)
-    3. the first slide of sliders
+    2. the first slide of sliders
+    3. sustains (both sliders and spinners)
+    4. whistle hit sound
+    5. finish hit sound
+    6. clap hit sound
     """
 
     return np.stack([
@@ -117,11 +123,14 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
             for ho in bm.hit_objects
             if isinstance(ho, (Slider, Spinner))
         ], frame_times), # sustains
+        events([ ho.t for ho in bm.hit_objects if ho.whistle ], frame_times),
+        events([ ho.t for ho in bm.hit_objects if ho.finish ], frame_times),
+        events([ ho.t for ho in bm.hit_objects if ho.clap ], frame_times),
     ]) * 2 - 1
 
 Hit = Union[
-    tuple[int, bool],           # hit(t, new_combo)
-    tuple[int, bool, int, int], # spin(t, new_combo, u, slides)
+    tuple[int, bool, bool, bool, bool],           # hit(t, new_combo, whistle, finish, clap)
+    tuple[int, bool, bool, bool, bool, int, int], # hold(t, new_combo, whistle, finish, clap, u, slides)
 ]
 
 ONSET_TOL = 2
@@ -134,12 +143,13 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
     for i, onset_idx in enumerate(onset_idxs):
         onset_idx_map[onset_idx-ONSET_TOL:onset_idx+ONSET_TOL+1] = i
 
-    new_combos = [False] * len(onset_idxs)
-    for new_combo in decode_events(hit_signal[HitEncoding.COMBO]):
-        onset_idx = onset_idx_map[new_combo]
-        if onset_idx == -1:
-            continue
-        new_combos[onset_idx] = True
+    onset_props = np.full((len(onset_idxs), 4), False, dtype=bool)
+    for i, sig in enumerate([HitEncoding.COMBO, HitEncoding.WHISTLE, HitEncoding.FINISH, HitEncoding.CLAP]):
+        for ev in decode_events(hit_signal[sig]):
+            onset_idx = onset_idx_map[ev]
+            if onset_idx == -1:
+                continue
+            onset_props[onset_idx, i] = True
 
     sustain_ends = [-1] * len(onset_idxs)
     for sustain_start, sustain_end in zip(*decode_extents(hit_signal[HitEncoding.SUSTAIN])):
@@ -151,8 +161,8 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
     slide_locs = decode_slides(hit_signal[HitEncoding.SLIDE])
 
     hits: list[Hit] = []
-    for onset_loc, new_combo, sustain_end in zip(onset_idxs, new_combos, sustain_ends):
-        hit = (onset_loc, new_combo)
+    for onset_loc, onset_prop, sustain_end, slide_count in zip(onset_idxs, onset_props, sustain_ends, slide_counts):
+        hit = (onset_loc, *onset_prop.tolist())
 
         if sustain_end == -1 or sustain_end - onset_loc < 4:
             # sustain too short

@@ -10,7 +10,7 @@ from osu_dreamer.data.labels import NUM_LABELS
 
 from .fit_bezier import fit_bezier
 from ..load_audio import get_frame_times
-from .encode import EncodedBeatmap, BeatmapEncoding
+from .encode import EncodedBeatmap, BeatmapEncoding, HitSignals
 from .hit import decode_hit_signal
 
 @dataclass
@@ -79,9 +79,6 @@ def decode_slider(
     
     return length, ctrl_pts
 
-ONSET_TOL = 2
-DEFAULT_BEAT_LEN = 60000/100 # 100 bpm
-
 def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap) -> str:
 
     frame_times = get_frame_times(enc.shape[1])
@@ -89,12 +86,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
     cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
 
-    hits = decode_hit_signal(enc[[
-        BeatmapEncoding.ONSET,
-        BeatmapEncoding.COMBO,
-        BeatmapEncoding.SLIDE,
-        BeatmapEncoding.SUSTAIN,
-    ]])
+    hits = decode_hit_signal(enc[HitSignals])
     
     tps = []
     hos = []
@@ -105,9 +97,14 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     slider_vels = []
 
     for hit in hits:
-        i, new_combo, *rest = hit
+        i, new_combo, whistle, finish, clap, *rest = hit
         t = frame_times[i]
         combo_bit = 2**2 if new_combo else 0
+        hitsound = sum([
+            1 << 1 if whistle else 0,
+            1 << 2 if finish else 0,
+            1 << 3 if clap else 0,
+        ])
 
         if last_end_time is not None:
             if t - last_end_time > 5000:
@@ -115,7 +112,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
 
         def add_hit_circle():
             x,y = cursor_signal[:, i].round().astype(int)
-            hos.append(f"{x},{y},{t},{2**0 + combo_bit},0,0:0:0:0:")
+            hos.append(f"{x},{y},{t},{2**0 + combo_bit},{hitsound},0:0:0:0:")
 
         if len(rest) == 0: # circle
             add_hit_circle()
@@ -125,7 +122,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
         j, num_slides = rest
         u = frame_times[j]
         if num_slides == 0: # spinner
-            hos.append(f"256,192,{t},{2**3 + combo_bit},0,{u}")
+            hos.append(f"256,192,{t},{2**3 + combo_bit},{hitsound},{u}")
             last_end_time = u
             continue
 
@@ -139,7 +136,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
 
         x1,y1 = ctrl_pts[0]
         curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
-        hos.append(f"{x1},{y1},{t},{2**1 + combo_bit},0,B|{curve_pts},{num_slides},{length}")
+        hos.append(f"{x1},{y1},{t},{2**1 + combo_bit},{hitsound},B|{curve_pts},{num_slides},{length}")
         last_end_time = u
 
         slider_ts.append(t)
