@@ -42,7 +42,7 @@ def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> CursorSignal:
         if isinstance(cur, Spinner):
             sig[cur_i] = cur.start_pos()
         elif isinstance(cur, Slider):
-            cur_f = (frame_times[cur_i] - cur.t) % (cur.slide_duration * 2) / cur.slide_duration
+            cur_f = ((frame_times[cur_i] - cur.t) / cur.slide_duration) % 2
             sig[cur_i] = cur.lerp(np.where(cur_f < 1, cur_f, 2 - cur_f))
 
         if nxt is None:

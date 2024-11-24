@@ -70,7 +70,7 @@ model:
     diffusion_args:
         log_snr_scale: 5e0
         log_snr_bound: 5e-2
-        std_data: .67
+        std_data: .73
 
     audio_features: 256
     audio_feature_args:
