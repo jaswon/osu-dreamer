@@ -25,7 +25,7 @@ def get_frame_times(num_frames: int) -> FrameTimes:
     samples = frames * HOP_LEN
     return samples / SR * 1000
 
-def load_audio(file_name):
+def load_audio(file_name) -> Float[np.ndarray, "F L"]:
     buf = ( ffmpeg
         .input(file_name)
         .output('-', format='s16le', acodec='pcm_s16le', ac=1, ar=str(SR))

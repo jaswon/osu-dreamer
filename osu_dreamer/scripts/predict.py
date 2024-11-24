@@ -64,7 +64,7 @@ def predict(
     # load audio
     # ======
     dev = next(model.parameters()).device
-    audio = th.tensor(load_audio(audio_file), device=dev)
+    audio = th.tensor(load_audio(audio_file), device=dev).float()
     labels = th.tensor(diff, device=dev)
     
     # generate maps

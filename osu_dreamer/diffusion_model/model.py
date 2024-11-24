@@ -93,9 +93,9 @@ class Model(pl.LightningModule):
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
-        audio = repeat(audio, 'a l -> b a l', b=num_samples)
         z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
-        denoiser = partial(self.denoiser,self.audio_features(audio),labels)
+        a_f = repeat(self.audio_features(audio[None]), '1 a l -> b a l', b=num_samples)
+        denoiser = partial(self.denoiser,a_f,labels)
 
         return self.diffusion.sample(
             denoiser, 
