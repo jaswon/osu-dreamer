@@ -169,11 +169,11 @@ class Beatmap:
         self.hit_objects: list[Union[Circle, Slider, Spinner]] = []
         for l in lines:
             spl = l.strip().split(",")
-            x, y, t, k = [int(x) for x in spl[:4]]
-            new_combo = (k&(1<<2)) > 0 
-            if k & (1 << 0):  # hit circle
-                ho = Circle(t, new_combo, x, y)
-            elif k & (1 << 1):  # slider
+            x, y, t, typ, hit_sound = [int(x) for x in spl[:5]]
+            new_combo = (typ&(1<<2)) > 0 
+            if typ & (1 << 0):  # hit circle
+                ho = Circle(t, new_combo, hit_sound, x, y)
+            elif typ & (1 << 1):  # slider
                 curve, slides, length = spl[5:8]
                 _, *control_points = curve.split("|")
                 control_points = [np.array([x,y], dtype=float)] + [
@@ -187,14 +187,15 @@ class Beatmap:
                     tp.beat_length, 
                     self.slider_mult * tp.slider_mult,
                     new_combo,
+                    hit_sound,
                     int(slides),
                     float(length),
                     control_points,
                 )
-            elif k & (1 << 3):  # spinner
-                ho = Spinner(t, new_combo, int(spl[5]))
+            elif typ & (1 << 3):  # spinner
+                ho = Spinner(t, new_combo, hit_sound, int(spl[5]))
             else:
-                raise ValueError(f"invalid hit object type: {k}")
+                raise ValueError(f"invalid hit object type: {typ}")
                 
             if len(self.hit_objects) and ho.t < self.hit_objects[-1].end_time():
                 raise ValueError(f"hit object starts before previous hit object ends: {t}")

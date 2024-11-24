@@ -40,9 +40,12 @@ class TimingPoint(Timed):
         ])
 
 class HitObject(Timed):
-    def __init__(self, t: int, new_combo: bool):
+    def __init__(self, t: int, new_combo: bool, hit_sound: int):
         super().__init__(t)
         self.new_combo = new_combo
+        self.whistle = 0 != hit_sound & (1 << 1) 
+        self.finish = 0 != hit_sound & (1 << 2) 
+        self.clap = 0 != hit_sound & (1 << 3) 
 
     def __repr__(self):
         return super().__repr__() + (" *" if self.new_combo else "")
@@ -58,8 +61,8 @@ class HitObject(Timed):
 
 
 class Circle(HitObject):
-    def __init__(self, t: int, new_combo: bool, x: int, y: int):
-        super().__init__(t, new_combo)
+    def __init__(self, t: int, new_combo: bool, hit_sound: int, x: int, y: int):
+        super().__init__(t, new_combo, hit_sound)
         self.x = x
         self.y = y
 
@@ -73,8 +76,8 @@ class Circle(HitObject):
         return np.array([ self.x, self.y ], dtype=float)
 
 class Spinner(HitObject):
-    def __init__(self, t: int, new_combo: bool, u: int):
-        super().__init__(t, new_combo)
+    def __init__(self, t: int, new_combo: bool, hit_sound: int, u: int):
+        super().__init__(t, new_combo, hit_sound)
         self.u = u
 
     def __repr__(self):
@@ -94,10 +97,11 @@ class Slider(HitObject):
         beat_length: float,
         slider_mult: float,
         new_combo: bool,
+        hit_sound: int,
         slides: int,
         length: float,
     ):
-        super().__init__(t, new_combo)
+        super().__init__(t, new_combo, hit_sound)
         self.slides = slides
         self.length = length
         self.beat_length = beat_length
