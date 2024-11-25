@@ -1,25 +1,28 @@
 
-from jaxtyping import Float
+from jaxtyping import Float, Complex
 
 import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+def complex_log(float_input: Float[Tensor, "..."], eps=1e-6) -> Complex[Tensor, "..."]:
+    real = th.clamp_min(float_input.abs(), eps).log()
+    imag = (float_input < 0) * th.pi
+    return th.complex(real, imag.float())
+
 def min_gru(
     h: Float[Tensor, "B H ... L"], 
     g: Float[Tensor, "B H ... L"],
 ) -> Float[Tensor, "B H ... L"]:
-    log_h_tilde = th.where(h < 0, h, th.log(F.relu(h)+1)) # h_tilde = 1+ELU(x)
-
     log_coeffs = -F.softplus(g)
-    log_values = -F.softplus(-g) + log_h_tilde
+    log_values = -F.softplus(-g) + complex_log(h)
 
     # heinsen associative scan (log-space)
     a_star = log_coeffs.cumsum(dim=-1)
     log_h0_plus_b_star = (log_values - a_star).logcumsumexp(dim=-1)
     log_h = a_star + log_h0_plus_b_star
     
-    return log_h.exp()
+    return log_h.exp().real
 
 def min_gru_bidirectional(x: Float[Tensor, "B H ... L"]) -> Float[Tensor, "B H/2 ... L"]:
     fore, back = x.chunk(2, dim=1)
