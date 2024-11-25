@@ -11,7 +11,7 @@ from osu_dreamer.data.labels import NUM_LABELS
 
 from osu_dreamer.modules.mingru import minGRU2
 from osu_dreamer.modules.modconv import ModulateConv
-from osu_dreamer.modules.wavenet import ResSkipNet
+from osu_dreamer.modules.resnet import ResNet
 
 
 @dataclass
@@ -51,29 +51,25 @@ class Denoiser(nn.Module):
             def __init__(self):
                 super().__init__()
                 H = args.h_dim * args.expand
-                self.hg = nn.Sequential(
-                    mod(nn.Conv1d(args.h_dim+a_dim, H*2, 1)),
-                    nn.SiLU(),
-                    mod(nn.Conv1d(H*2, H*2, 1)),
-                )
+                self.hg = mod(nn.Conv1d(args.h_dim+a_dim, H*2, 1))
                 self.net = nn.Sequential(
                     mod(nn.Conv1d(H, H, 3,1,1, groups=H)),
                     nn.SiLU(),
                     mod(nn.Conv1d(H, H*2, 1)),
                     minGRU2(),
                 )
-                self.out = mod(nn.Conv1d(H, args.h_dim*2, 1))
-        
+                self.out = mod(nn.Conv1d(H, args.h_dim, 1))
+
             def forward(
                 self,
                 x: Float[Tensor, "B X L"],
                 y: Float[Tensor, "B Y L"],
-            ) -> Float[Tensor, "B X*2 L"]:
+            ) -> Float[Tensor, "B X L"]:
                 h,g = self.hg(th.cat([x,y], dim=1)).chunk(2, dim=1)
                 h = self.net(h) * F.silu(g)
                 return self.out(h)
             
-        self.net = ResSkipNet(args.h_dim, [ layer() for _ in range(args.depth) ])
+        self.net = ResNet(args.h_dim, [ layer() for _ in range(args.depth) ])
 
         self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)

@@ -3,11 +3,13 @@ from dataclasses import dataclass
 
 from jaxtyping import Float
 
+import torch.nn.functional as F
 from torch import nn, Tensor 
 
 from osu_dreamer.data.load_audio import A_DIM
 
 from osu_dreamer.modules.mingru import minGRU2
+from osu_dreamer.modules.resnet import ResNet
 
 @dataclass
 class AudioFeatureArgs:
@@ -54,20 +56,22 @@ class AudioFeatures(nn.Module):
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
+                H = d * args.seq_expand
+                self.hg = nn.Conv1d(d, H*2, 1)
                 self.net = nn.Sequential(
-                    nn.GroupNorm(1, d),
-                    nn.Conv1d(d, d, 3,1,1, groups=d),
+                    nn.Conv1d(H, H, 3,1,1, groups=H),
                     nn.SiLU(),
-                    nn.Conv1d(d, d*args.seq_expand*2, 1),
+                    nn.Conv1d(H, H*2, 1),
                     minGRU2(),
-                    nn.Conv1d(d*args.seq_expand, d, 1),
                 )
+                self.out = nn.Conv1d(H, d, 1)
 
-            def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
-                return x + self.net(x)
+            def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
+                h,g = self.hg(x).chunk(2, dim=1)
+                h = self.net(h) * F.silu(g)
+                return self.out(h)
             
-        for _ in range(args.seq_depth):
-            self.net.append(layer())
+        self.net.append(ResNet(d, [ layer() for _ in range(args.seq_depth) ]))
 
     def forward(
         self,
