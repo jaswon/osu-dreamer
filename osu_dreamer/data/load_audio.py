@@ -15,7 +15,6 @@ A_DIM = BINS_PER_OCTAVE * N_OCTAVES
 SR = F_MIN * 1 << (1 + N_OCTAVES)
 MS_PER_FRAME = 6 # approximate
 HOP_LEN = (SR * MS_PER_FRAME + 500) // 1000
-eps = 1e-10
 
 FrameTimes = Float[np.ndarray, "L"]
 
@@ -33,14 +32,19 @@ def load_audio(file_name) -> Float[np.ndarray, "F L"]:
         .run(quiet=True)
     )[0]
     wave = np.frombuffer(buf, dtype=np.int16).astype(np.float32) / 2 ** 15
+    return compute_cqt(wave)
 
+cqt_module = nnAudio.features.CQT(
+    sr=SR,
+    hop_length=HOP_LEN,
+    fmin=F_MIN,
+    n_bins=A_DIM,
+    bins_per_octave=BINS_PER_OCTAVE,
+    verbose=False,
+)
+
+def compute_cqt(wave, eps = 1e-3):
     dev = 'cuda' if th.cuda.is_available() else 'cpu'
-    cqt = nnAudio.features.CQT(
-        sr=SR,
-        hop_length=HOP_LEN,
-        fmin=F_MIN,
-        n_bins=A_DIM,
-        bins_per_octave=BINS_PER_OCTAVE,
-        verbose=False,
-    ).to(dev)(th.tensor(wave, device=dev))[0].cpu().numpy()
-    return np.log(eps + cqt**2) - np.log(eps)
+    wave = th.tensor(wave, device=dev).float()
+    cqt = cqt_module.to(dev)(wave, normalization_type='convolutional')[0].cpu().numpy()
+    return (np.log(cqt+eps) - np.log(eps)) / -np.log(eps)
