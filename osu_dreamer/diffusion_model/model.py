@@ -67,20 +67,21 @@ class Model(pl.LightningModule):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         denoiser = partial(self.denoiser,self.audio_features(audio),labels)
-        pred_chart, loss_weight = self.diffusion.training_sample(denoiser, chart)
+        pred_chart, u, loss_weight = self.diffusion.training_sample(denoiser, chart)
+        u = u[:,None,None]
 
-        pixel_loss = (loss_weight * (pred_chart - chart) ** 2).mean()
+        pixel_loss = loss_weight * (pred_chart - chart) ** 2
 
         cursor_diff = chart[:, CursorSignals, 1:] - chart[:, CursorSignals, :-1]
         pred_cursor_diff = pred_chart[:, CursorSignals, 1:] - pred_chart[:, CursorSignals, :-1]
         cd_map = lambda diff: th.tanh(diff * 20)
-        cursor_loss = (loss_weight * (cd_map(cursor_diff) - cd_map(pred_cursor_diff)) ** 2).mean()
+        cursor_loss = loss_weight * (cd_map(cursor_diff) - cd_map(pred_cursor_diff)) ** 2
 
-        loss = pixel_loss + self.cursor_factor * cursor_loss
+        loss = ((pixel_loss + self.cursor_factor * cursor_loss) / th.exp(u) + u).mean()
         return loss, {
             "loss": loss.detach(),
-            "pixel": pixel_loss.detach(),
-            "cursor": cursor_loss.detach(),
+            "pixel": pixel_loss.detach().mean(),
+            "cursor": cursor_loss.detach().mean(),
         }
     
     @th.no_grad()

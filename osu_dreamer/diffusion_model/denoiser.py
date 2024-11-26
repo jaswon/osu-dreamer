@@ -12,6 +12,7 @@ from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.modules.mingru import minGRU2
 from osu_dreamer.modules.modconv import ModulateConv
 from osu_dreamer.modules.resnet import ResNet
+from osu_dreamer.modules.rff import RandomFourierFeatures
 
 
 @dataclass
@@ -20,6 +21,7 @@ class DenoiserArgs:
     depth: int
     expand: int
 
+    rff_dim: int
     c_dim: int
     c_depth: int
 
@@ -33,14 +35,25 @@ class Denoiser(nn.Module):
         args: DenoiserArgs,
     ):
         super().__init__()
+
+        class emb(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.rff = RandomFourierFeatures(1, args.rff_dim)
+                self.proj_e = nn.Linear(args.rff_dim, args.c_dim)
+                self.proj_u = nn.Linear(args.rff_dim, 1)
+                self.proj_label = nn.Linear(NUM_LABELS, args.c_dim)
+
+            def forward(
+                self,
+                t: Float[Tensor, "B"],
+                c: Float[Tensor, f"B {NUM_LABELS}"],
+            ) -> tuple[Float[Tensor, "B C"], Float[Tensor, "B"]]:
+                f = self.rff(t[:,None])
+                e = self.proj_e(f) + self.proj_label(c)
+                return F.silu(e), self.proj_u(f)[:,0]
         
-        self.proj_c = nn.Sequential(*(
-            block for i in range(args.c_depth)
-            for block in [
-                nn.Linear(1+NUM_LABELS if i==0 else args.c_dim, args.c_dim),
-                nn.SiLU(),
-            ]
-        ))
+        self.emb = emb()
 
         mod = ModulateConv(args.c_dim, args.mod_depth)
         self.mod = mod
@@ -83,9 +96,10 @@ class Denoiser(nn.Module):
         # --- diffusion args --- #
         x: Float[Tensor, "B X L"],  # noised input
         t: Float[Tensor, "B"],      # (log) denoising step
-    ) -> Float[Tensor, "B X L"]:
-        c = self.proj_c(th.cat([t[:,None],label], dim=1))
-        with self.mod.set(c):
+    ) -> tuple[Float[Tensor, "B X L"], Float[Tensor, "B"]]:
+        emb, u = self.emb(t, label)
+        with self.mod.set(emb):
             h = self.proj_h(x)
             h = self.net(h,a)
-        return self.proj_out(h)
+        o = self.proj_out(h)
+        return o, u
