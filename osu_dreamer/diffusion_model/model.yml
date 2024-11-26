@@ -64,7 +64,8 @@ model:
     # training parameters
     cursor_factor: .01
     opt_args:
-        lr: .0002
+        lr: .01
+        betas: [.9,.99]
 
     # model hyperparameters
     diffusion_args:
@@ -72,17 +73,17 @@ model:
         log_snr_bound: 5e-2
         std_data: .73
 
-    audio_features: 160
+    audio_features: 128
     audio_feature_args:
         scales: [4,3,3,2]
         conv_expand: 4
-        seq_depth: 16
+        seq_depth: 24
         seq_expand: 2
 
     denoiser_args:
         h_dim: 128
-        expand: 4
-        depth: 12
+        expand: 2
+        depth: 24
 
         rff_dim: 32
         c_dim: 128
