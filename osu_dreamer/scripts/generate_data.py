@@ -1,8 +1,9 @@
 
 from pathlib import Path
-from multiprocessing import Pool
+from torch.multiprocessing import Pool, set_start_method
 
 import numpy as np
+import torch
 
 from tqdm import tqdm
 
@@ -38,9 +39,12 @@ def generate_data(maps_dir: Path, data_dir: Path, num_workers: int):
     print(f"{num_src_maps} osu! beatmaps ({len(src_mapsets)} mapsets) found, processing...")
 
     data_dir.mkdir(exist_ok=True)
+    set_start_method('spawn')
     with Pool(processes=num_workers) as p:
         for _ in tqdm(p.imap_unordered(process_mapset, src_mapsets.items()), total=len(src_mapsets)):
             reclaim_memory()
+            with torch.no_grad():
+                torch.cuda.empty_cache()
 
 def process_mapset(kv: tuple[Path, list[Path]]):
     mapset_dir, map_files = kv
