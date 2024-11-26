@@ -86,5 +86,3 @@ model:
 
         rff_dim: 32
         c_dim: 128
-        c_depth: 1
-        mod_depth: 3

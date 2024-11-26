@@ -10,8 +10,6 @@ import torch.nn.functional as F
 from osu_dreamer.data.labels import NUM_LABELS
 
 from osu_dreamer.modules.mingru import minGRU2
-from osu_dreamer.modules.modconv import ModulateConv
-from osu_dreamer.modules.resnet import ResNet
 from osu_dreamer.modules.rff import RandomFourierFeatures
 
 
@@ -23,9 +21,6 @@ class DenoiserArgs:
 
     rff_dim: int
     c_dim: int
-    c_depth: int
-
-    mod_depth: int
 
 class Denoiser(nn.Module):
     def __init__(
@@ -55,34 +50,35 @@ class Denoiser(nn.Module):
         
         self.emb = emb()
 
-        mod = ModulateConv(args.c_dim, args.mod_depth)
-        self.mod = mod
-
-        self.proj_h = mod(nn.Conv1d(dim, args.h_dim, 1))
+        self.proj_h = nn.Conv1d(dim, args.h_dim, 1)
 
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
                 H = args.h_dim * args.expand
-                self.hg = mod(nn.Conv1d(args.h_dim+a_dim, H*2, 1))
+                self.hg = nn.Conv1d(args.h_dim+a_dim, H*2, 1)
+                self.proj_c = nn.Linear(args.c_dim, H*2)
                 self.net = nn.Sequential(
-                    mod(nn.Conv1d(H, H, 3,1,1, groups=H)),
+                    nn.Conv1d(H, H, 3,1,1, groups=H),
                     nn.SiLU(),
-                    mod(nn.Conv1d(H, H*2, 1)),
+                    nn.Conv1d(H, H*2, 1),
                     minGRU2(),
                 )
-                self.out = mod(nn.Conv1d(H, args.h_dim, 1))
+                self.out = nn.Conv1d(H, args.h_dim, 1)
 
             def forward(
                 self,
                 x: Float[Tensor, "B X L"],
                 y: Float[Tensor, "B Y L"],
+                c: Float[Tensor, "B C"],
             ) -> Float[Tensor, "B X L"]:
-                h,g = self.hg(th.cat([x,y], dim=1)).chunk(2, dim=1)
+                h = th.cat([F.silu(x),y], dim=1)
+                c = self.proj_c(c)[:,:,None] + 1
+                h,g = (c * self.hg(h)).chunk(2, dim=1)
                 h = self.net(h) * F.silu(g)
-                return self.out(h)
+                return x + self.out(h)
             
-        self.net = ResNet(args.h_dim, [ layer() for _ in range(args.depth) ])
+        self.layers = nn.ModuleList([ layer() for _ in range(args.depth) ])
 
         self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
         th.nn.init.zeros_(self.proj_out.weight)
@@ -98,8 +94,8 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],      # (log) denoising step
     ) -> tuple[Float[Tensor, "B X L"], Float[Tensor, "B"]]:
         emb, u = self.emb(t, label)
-        with self.mod.set(emb):
-            h = self.proj_h(x)
-            h = self.net(h,a)
+        h = self.proj_h(x)
+        for layer in self.layers:
+            h = layer(h,a,emb)
         o = self.proj_out(h)
         return o, u
