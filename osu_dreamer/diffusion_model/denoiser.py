@@ -35,9 +35,9 @@ class Denoiser(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.rff = RandomFourierFeatures(1, args.rff_dim)
-                self.proj_e = nn.Linear(args.rff_dim, args.c_dim)
-                self.proj_u = nn.Linear(args.rff_dim, 1)
-                self.proj_label = nn.Linear(NUM_LABELS, args.c_dim)
+                self.proj_e = nn.Linear(args.rff_dim, args.c_dim, bias=False)
+                self.proj_u = nn.Linear(args.rff_dim, 1, bias=False)
+                self.proj_label = nn.Linear(NUM_LABELS, args.c_dim, bias=False)
 
             def forward(
                 self,
@@ -50,21 +50,21 @@ class Denoiser(nn.Module):
         
         self.emb = emb()
 
-        self.proj_h = nn.Conv1d(dim, args.h_dim, 1)
+        self.proj_h = nn.Conv1d(dim+1, args.h_dim, 1, bias=False)
 
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
                 H = args.h_dim * args.expand
-                self.hg = nn.Conv1d(args.h_dim+a_dim, H*2, 1)
-                self.proj_c = nn.Linear(args.c_dim, H*2)
+                self.hg = nn.Conv1d(args.h_dim+a_dim, H*2, 1, bias=False)
+                self.proj_c = nn.Linear(args.c_dim, H*2, bias=False)
                 self.net = nn.Sequential(
-                    nn.Conv1d(H, H, 3,1,1, groups=H),
+                    nn.Conv1d(H, H, 3,1,1, groups=H, bias=False),
                     nn.SiLU(),
-                    nn.Conv1d(H, H*2, 1),
+                    nn.Conv1d(H, H*2, 1, bias=False),
                     minGRU2(),
                 )
-                self.out = nn.Conv1d(H, args.h_dim, 1)
+                self.out = nn.Conv1d(H, args.h_dim, 1, bias=False)
 
             def forward(
                 self,
@@ -80,9 +80,8 @@ class Denoiser(nn.Module):
             
         self.layers = nn.ModuleList([ layer() for _ in range(args.depth) ])
 
-        self.proj_out = nn.Conv1d(args.h_dim, dim, 1)
+        self.proj_out = nn.Conv1d(args.h_dim, dim, 1, bias=False)
         th.nn.init.zeros_(self.proj_out.weight)
-        th.nn.init.zeros_(self.proj_out.bias) # type: ignore
 
     def forward(
         self, 
@@ -94,7 +93,7 @@ class Denoiser(nn.Module):
         t: Float[Tensor, "B"],      # (log) denoising step
     ) -> tuple[Float[Tensor, "B X L"], Float[Tensor, "B"]]:
         emb, u = self.emb(t, label)
-        h = self.proj_h(x)
+        h = self.proj_h(th.cat([x, th.ones_like(x[:,[0],:])], dim=1))
         for layer in self.layers:
             h = layer(h,a,emb)
         o = self.proj_out(h)
