@@ -5,23 +5,27 @@ from jaxtyping import Float
 from dataclasses import dataclass
 
 import torch as th
-from torch import Tensor
+from torch import Tensor, nn
 
 from einops import repeat
 
+import osu_dreamer.modules.mp as MP
 
-U = Float[Tensor, "B"]
-T = Float[Tensor, "B 1 1"]                  # diffusion step
-X = Float[Tensor, "B D N"]                  # sequence
-Denoiser = Callable[[ X, T ], tuple[X, U]]  # p(x0 | xt, t)
+U = Float[Tensor, "B"]              # loss weight, uncertainty
+F = Float[Tensor, "B F"]            # noise level features
+T = Float[Tensor, "B 1 1"]          # diffusion step
+X = Float[Tensor, "B D N"]          # sequence
+Denoiser = Callable[[ X, T ], X]    # p(x0 | xt, t)
 
 @dataclass
 class DiffusionArgs:
     log_snr_scale: float
     log_snr_bound: float
     std_data: float
+    noise_level_features: int
 
-class Diffusion:
+
+class Diffusion(nn.Module):
     """https://arxiv.org/pdf/2206.00364.pdf"""
 
     def __init__(
@@ -36,6 +40,9 @@ class Diffusion:
         self.std_noise = std_noise
         self.std_data = args.std_data
 
+        self.noise_level_features = MP.RandomFourierFeatures(1, args.noise_level_features)
+        self.proj_u = MP.Linear(args.noise_level_features, 1)
+
     def pred_x0(self, model: Denoiser, x_t: X, std: T) -> tuple[X,U]:
         """https://arxiv.org/pdf/2206.00364.pdf#section.5"""
 
@@ -44,19 +51,20 @@ class Diffusion:
         c_skip = self.std_data ** 2 / sq_sum
         c_out = std * self.std_data / hyp
         c_in = 1 / hyp
-        c_noise = th.log(std)[:,0,0]
+        c_noise = th.log(std)
 
-        model_out, u = model(c_in * x_t, c_noise)
+        nlf = self.noise_level_features(c_noise[:,:,0])
+        model_out = model(c_in * x_t, nlf)
         pred_x0 = c_skip * x_t + c_out * model_out
-        return pred_x0, u
+        return pred_x0, self.proj_u(nlf)[:,0]
 
-    def training_sample(self, model: Denoiser, x0: X) -> tuple[X,U,T]:
+    def training_sample(self, model: Denoiser, x0: X) -> tuple[X,U,U]:
         """sample denoised predictions and per-batch loss weights"""
         t = self.std_noise(th.rand(x0.size(0),1,1).to(x0.device))
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
         x_t = x0 + th.randn_like(x0) * t
 
-        return *self.pred_x0(model, x_t, t), loss_weight
+        return *self.pred_x0(model, x_t, t), loss_weight[:,0,0]
     
     @th.no_grad()
     def sample(

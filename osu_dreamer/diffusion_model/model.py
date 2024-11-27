@@ -38,7 +38,6 @@ class Model(pl.LightningModule):
         opt_args: dict[str, Any],
 
         # model hparams
-        audio_features: int,
         diffusion_args: DiffusionArgs,
         denoiser_args: DenoiserArgs,
         audio_feature_args: AudioFeatureArgs,
@@ -48,8 +47,13 @@ class Model(pl.LightningModule):
 
         # model
         self.diffusion = Diffusion(diffusion_args)
-        self.denoiser = Denoiser(X_DIM, audio_features, denoiser_args)
-        self.audio_features = AudioFeatures(audio_features, audio_feature_args)
+        self.audio_features = AudioFeatures(audio_feature_args)
+        self.denoiser = Denoiser(
+            X_DIM, 
+            audio_feature_args.dim, 
+            diffusion_args.noise_level_features, 
+            denoiser_args,
+        )
 
         # validation params
         self.val_batches = val_batches
@@ -68,14 +72,13 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         denoiser = partial(self.denoiser,self.audio_features(audio),labels)
         pred_chart, u, loss_weight = self.diffusion.training_sample(denoiser, chart)
-        u = u[:,None,None]
 
-        pixel_loss = loss_weight * (pred_chart - chart) ** 2
+        pixel_loss = loss_weight * (pred_chart - chart).pow(2).mean((1,2))
 
         cursor_diff = chart[:, CursorSignals, 1:] - chart[:, CursorSignals, :-1]
         pred_cursor_diff = pred_chart[:, CursorSignals, 1:] - pred_chart[:, CursorSignals, :-1]
         cd_map = lambda diff: th.tanh(diff * 20)
-        cursor_loss = loss_weight * (cd_map(cursor_diff) - cd_map(pred_cursor_diff)) ** 2
+        cursor_loss = loss_weight * (cd_map(cursor_diff) - cd_map(pred_cursor_diff)).pow(2).mean((1,2))
 
         loss = ((pixel_loss + self.cursor_factor * cursor_loss) / th.exp(u) + u).mean()
         return loss, {

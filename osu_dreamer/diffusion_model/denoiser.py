@@ -14,39 +14,24 @@ import osu_dreamer.modules.mp as MP
 @dataclass
 class DenoiserArgs:
     h_dim: int
+    c_dim: int
     depth: int
     expand: int
-
-    rff_dim: int
-    c_dim: int
 
 class Denoiser(nn.Module):
     def __init__(
         self,
         dim: int,
         a_dim: int,
+        f_dim: int,
         args: DenoiserArgs,
     ):
         super().__init__()
-
-        class emb(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.rff = MP.RandomFourierFeatures(1, args.rff_dim)
-                self.proj_e = MP.Linear(args.rff_dim, args.c_dim)
-                self.proj_u = MP.Linear(args.rff_dim, 1)
-                self.proj_label = MP.Linear(NUM_LABELS, args.c_dim)
-
-            def forward(
-                self,
-                t: Float[Tensor, "B"],
-                c: Float[Tensor, f"B {NUM_LABELS}"],
-            ) -> tuple[Float[Tensor, "B C"], Float[Tensor, "B"]]:
-                f = self.rff(t[:,None])
-                e = MP.add(self.proj_e(f), self.proj_label(c))
-                return MP.silu(e), self.proj_u(f)[:,0]
         
-        self.emb = emb()
+        self.emb = nn.Sequential(
+            MP.Linear(f_dim+NUM_LABELS, args.c_dim),
+            MP.SiLU(),
+        )
 
         self.proj_h = MP.Conv1d(dim+1, args.h_dim, 1)
 
@@ -93,11 +78,11 @@ class Denoiser(nn.Module):
         
         # --- diffusion args --- #
         x: Float[Tensor, "B X L"],  # noised input
-        t: Float[Tensor, "B"],      # (log) denoising step
-    ) -> tuple[Float[Tensor, "B X L"], Float[Tensor, "B"]]:
-        emb, u = self.emb(t, label)
+        f: Float[Tensor, "B F"],    # noise level features
+    ) -> Float[Tensor, "B X L"]:
+        emb = self.emb(MP.cat([f, label], dim=1))
         h = self.proj_h(MP.cat([x, th.ones_like(x[:,:1,:])], dim=1))
         for layer in self.layers:
             h = layer(h,a,emb)
         o = self.proj_out(h)
-        return o, u
+        return o

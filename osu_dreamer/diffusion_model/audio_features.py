@@ -11,6 +11,7 @@ import osu_dreamer.modules.mp as MP
 
 @dataclass
 class AudioFeatureArgs:
+    dim: int
     scales: list[int]
     conv_expand: int
     seq_depth: int
@@ -19,13 +20,12 @@ class AudioFeatureArgs:
 class AudioFeatures(nn.Module):
     def __init__(
         self,
-        dim: int,
         args: AudioFeatureArgs,
     ):
         super().__init__()
 
-        in_dim = dim // 2**len(args.scales)
-        assert 2**len(args.scales) * in_dim == dim
+        in_dim = args.dim // 2**len(args.scales)
+        assert 2**len(args.scales) * in_dim == args.dim
 
         self.proj_in = nn.Sequential(
             nn.Unflatten(1, (1, -1)), 

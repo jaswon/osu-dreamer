@@ -72,9 +72,10 @@ model:
         log_snr_scale: 5e0
         log_snr_bound: 5e-2
         std_data: .73
+        noise_level_features: 32
 
-    audio_features: 128
     audio_feature_args:
+        dim: 128
         scales: [4,3,3,2]
         conv_expand: 4
         seq_depth: 24
@@ -82,8 +83,6 @@ model:
 
     denoiser_args:
         h_dim: 128
+        c_dim: 128
         expand: 2
         depth: 24
-
-        rff_dim: 32
-        c_dim: 128
