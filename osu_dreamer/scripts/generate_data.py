@@ -81,9 +81,8 @@ def process_mapset(kv: tuple[Path, list[Path]]):
         with open(spec_path, "wb") as f:
             np.save(f, spec, allow_pickle=False)
 
+        frame_times = get_frame_times(spec.shape[1])
         for bm, map_path in bms:
-            frame_times = get_frame_times(spec.shape[1])
-            
             try:
                 bm.parse_map_data()
             except Exception as e:
