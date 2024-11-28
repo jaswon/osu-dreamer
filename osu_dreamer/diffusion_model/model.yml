@@ -25,6 +25,8 @@ trainer:
                 monitor: val/loss
                 mode: min
                 patience: 60
+        - # learning rate monitor
+            class_path: pytorch_lightning.callbacks.LearningRateMonitor
 
     logger:
         class_path: pytorch_lightning.loggers.TensorBoardLogger
@@ -63,8 +65,9 @@ model:
 
     # training parameters
     cursor_factor: .01
+    step_ref: 1e4
     opt_args:
-        lr: .01
+        lr: .02 # ~ 1.3 * #params ** -.25
         betas: [.9,.99]
 
     # model hyperparameters

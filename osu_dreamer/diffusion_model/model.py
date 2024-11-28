@@ -36,6 +36,7 @@ class Model(pl.LightningModule):
         # training parameters
         cursor_factor: float,
         opt_args: dict[str, Any],
+        step_ref: float,
 
         # model hparams
         diffusion_args: DiffusionArgs,
@@ -62,6 +63,7 @@ class Model(pl.LightningModule):
         # training params
         self.cursor_factor = cursor_factor
         self.opt_args = opt_args
+        self.step_ref = step_ref
     
 
     def forward(
@@ -117,7 +119,15 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-        return AdaBelief(self.parameters(), **self.opt_args)
+        opt = AdaBelief(self.parameters(), **self.opt_args)
+        isqrt = lambda step: max(step / self.step_ref, 1) ** -.5
+        return {
+            "optimizer": opt,
+            "lr_scheduler": {
+                "scheduler": th.optim.lr_scheduler.LambdaLR(opt, isqrt),
+                "interval": "step",
+            }
+        }
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(*batch)
