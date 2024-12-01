@@ -60,7 +60,9 @@ class Diffusion(nn.Module):
 
     def training_sample(self, model: Denoiser, x0: X) -> tuple[X,U,U]:
         """sample denoised predictions and per-batch loss weights"""
-        t = self.std_noise(th.rand(x0.size(0),1,1).to(x0.device))
+        b = x0.size(0)
+        u = (th.arange(b) + th.rand(1)) / b # low discrepancy sampling
+        t = self.std_noise(u)[:,None,None].to(x0.device)
         loss_weight = (t ** 2 + self.std_data ** 2) / (t * self.std_data) ** 2
         x_t = x0 + th.randn_like(x0) * t
 
