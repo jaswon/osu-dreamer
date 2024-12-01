@@ -29,9 +29,11 @@ class AudioFeatures(nn.Module):
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.hg = MP.Conv1d(args.dim, H*2, 1)
-                self.net = nn.Sequential(
+                self.hg = nn.Sequential(
+                    MP.Conv1d(args.dim, H*2, 1),
                     MP.SiLU(),
+                )
+                self.net = nn.Sequential(
                     MP.Conv1d(H, H, 3,1,1, groups=H),
                     MP.SiLU(),
                     MP.minGRU2(H),
@@ -41,8 +43,8 @@ class AudioFeatures(nn.Module):
             def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
                 x = MP.pixel_norm(x)
                 h,g = self.hg(x).chunk(2, dim=1)
-                h = self.net(h) * MP.silu(g)
-                return MP.add(x, self.out(h), t=.3)
+                o = self.out(self.net(h) * g)
+                return MP.add(x, o, t=.3)
             
         self.layers = nn.ModuleList([ layer() for _ in range(args.depth) ])
 

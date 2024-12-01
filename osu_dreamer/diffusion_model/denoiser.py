@@ -39,7 +39,10 @@ class Denoiser(nn.Module):
             def __init__(self):
                 super().__init__()
                 H = args.h_dim * args.expand
-                self.hg = MP.Conv1d(args.h_dim+a_dim, H*2, 1)
+                self.hg = nn.Sequential(
+                    MP.Conv1d(args.h_dim+a_dim, H*2, 1),
+                    MP.SiLU(),
+                )
                 self.proj_c = nn.Sequential(
                     MP.Linear(args.c_dim, H*2),
                     MP.Gain(),
@@ -61,8 +64,8 @@ class Denoiser(nn.Module):
                 h = MP.cat([MP.silu(x),y], dim=1)
                 c = self.proj_c(c)[:,:,None] + 1
                 h,g = (c * self.hg(h)).chunk(2, dim=1)
-                h = self.net(h) * MP.silu(g)
-                return MP.add(x, self.out(h), t=.3)
+                o = self.out(self.net(h) * g)
+                return MP.add(x, o, t=.3)
             
         self.layers = nn.ModuleList([ layer() for _ in range(args.depth) ])
 
