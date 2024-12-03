@@ -135,3 +135,24 @@ class minGRU2(nn.Module):
             min_gru(*fore_hg.chunk(2, dim=1)),
             min_gru(*back_hg.flip(2).chunk(2, dim=1)).flip(2),
         ], dim=1)
+    
+class Seq(nn.Module):
+    def __init__(self, dim: int, h_dim: int):
+        super().__init__()
+        self.h = nn.Sequential(
+            SiLU(),
+            Conv1d(dim, h_dim, 1),
+            Conv1d(h_dim, h_dim, 3,1,1, groups=h_dim),
+            SiLU(),
+            minGRU2(h_dim),
+            PixelNorm(),
+        )
+        self.g = nn.Sequential(
+            SiLU(),
+            Conv1d(dim, h_dim, 1),
+            SiLU(),
+        )
+        self.out = Conv1d(h_dim, dim, 1)
+
+    def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
+        return self.out(self.h(x) * self.g(x))
