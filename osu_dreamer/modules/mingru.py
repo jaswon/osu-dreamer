@@ -11,9 +11,9 @@ def complex_log(float_input: Float[Tensor, "..."], eps=1e-6) -> Complex[Tensor, 
     return th.complex(real, imag.float())
 
 def min_gru(
-    h: Float[Tensor, "B H ... L"], 
-    g: Float[Tensor, "B H ... L"],
-) -> Float[Tensor, "B H ... L"]:
+    h: Float[Tensor, "... L"], 
+    g: Float[Tensor, "... L"],
+) -> Float[Tensor, "... L"]:
     log_coeffs = -F.softplus(g)
     log_values = -F.softplus(-g) + complex_log(h)
 

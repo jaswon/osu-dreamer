@@ -10,7 +10,7 @@ import torch as th
 import torch.nn.functional as F
 from torch import nn, Tensor
 
-from osu_dreamer.modules.mingru import min_gru
+from osu_dreamer.modules.mingru import complex_log
 
 def normalize(x: Float[Tensor, "..."], dim=None, eps=1e-4) -> Float[Tensor, "..."]:
     if dim is None:
@@ -105,6 +105,21 @@ class Conv2d(nn.Conv2d):
     def forward(self, x: Float[Tensor, "B iD iH iW"]) -> Float[Tensor, "B oD oH oW"]:
         return self._conv_forward(x, get_normed_weight(self.weight, self.training), None)
     
+def min_gru(
+    h: Float[Tensor, "... L"], 
+    g: Float[Tensor, "... L"],
+) -> Float[Tensor, "... L"]:
+    log_scale = .5 * th.log(1/th.cosh(g)+1) # mp
+    log_coeffs = -F.softplus(g) + log_scale
+    log_values = -F.softplus(-g) + log_scale + complex_log(h)
+
+    # heinsen associative scan (log-space)
+    a_star = log_coeffs.cumsum(dim=-1)
+    log_h0_plus_b_star = (log_values - a_star).logcumsumexp(dim=-1)
+    log_h = a_star + log_h0_plus_b_star
+    
+    return log_h.exp().real
+
 class minGRU2(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
