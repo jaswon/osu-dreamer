@@ -39,14 +39,14 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 2048 # ~16s @ 8ms/frame
+    seq_len: 1024 # ~8s @ 8ms/frame
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .5
+    subseq_density: .1
     
     # size of training batch
-    batch_size: 64
+    batch_size: 16
     
     # number of workers to use for data loading
     num_workers: 4
@@ -58,19 +58,15 @@ data:
     
 model:
     # training parameters
-    slider_importance_factor: 1000.
+    cursor_factor: 1.
     opt_args:
-        lr: .0003
-
-    start_beta: 1e1
-    end_beta: 1e-6
-    beta_steps: 10000
+        lr: .01
+    step_ref: 5000
 
     args:
-        latent_dim: 4
         h_dim: 128
-
-        wavenet_args:
-            num_stacks: 3
-            stack_depth: 3
-            expand: 1
+        a_dim: 12
+        x_dim: 4
+        depth: 3
+        blocks_per_depth: 4
+        vocab_size: 8192

@@ -1,39 +1,37 @@
 
-from typing import Any
+from typing import Any, Callable
 from jaxtyping import Float
 
 from dataclasses import dataclass
 
 import torch as th
 from torch import Tensor, nn
+import torch.nn.functional as F
 
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from einops import repeat
+
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals, BeatmapEncoding
+from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals
 from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.adabelief import AdaBelief
+import osu_dreamer.modules.mp as MP
 
-from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
-
-class Residual(nn.Module):
-    def __init__(self, net: nn.Module):
-        super().__init__()
-        self.net = net
-
-    def forward(self, x):
-        return x + self.net(x)
+from .modules import Encoder, Decoder, VectorQuantizer
 
 @dataclass
-class VAEArgs:
-    latent_dim: int
+class VQGANArgs:
+    x_dim: int
+    a_dim: int
     h_dim: int
-    
-    wavenet_args: WaveNetArgs
+    depth: int
+    blocks_per_depth: int
+    vocab_size: int
     
 class Model(pl.LightningModule):
     def __init__(
@@ -41,116 +39,81 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        slider_importance_factor: float,
-
-        start_beta: float,
-        end_beta: float,
-        beta_steps: int,
+        step_ref: float,
+        cursor_factor: float,
 
         # model hparams
-        args: VAEArgs,
+        args: VQGANArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
-        self.dim = args.latent_dim
+        self.x_dim = args.x_dim
+        self.a_dim = args.a_dim
 
         # training params
+        self.chunk_size = 1 << args.depth
+        self.step_ref = step_ref
         self.opt_args = opt_args
-        self.slider_importance_factor = slider_importance_factor
+        self.cursor_factor = cursor_factor
 
         # model
-        self.start_beta = start_beta
-        self.end_beta = end_beta
-        self.beta_steps = beta_steps
 
-        block = lambda dim: Residual(nn.Sequential(
-            nn.Conv1d(dim, dim, 3,1,1, groups=dim),
-            nn.SiLU(),
-            nn.Conv1d(dim, dim, 1),
-        ))
-
-        enc_out = nn.Conv1d(args.h_dim, args.latent_dim * 2, 1)
-        th.nn.init.zeros_(enc_out.weight)
-        th.nn.init.zeros_(enc_out.bias) # type: ignore
-        self.encoder = nn.Sequential(
-            nn.Conv1d(X_DIM, args.h_dim, 1),
-            WaveNet(args.h_dim, args.wavenet_args, block, transpose=False),
-            enc_out,
+        self.audio_encoder = nn.Sequential(
+            MP.Conv1d(A_DIM, args.h_dim, 1),
+            MP.PixelNorm(),
+            Encoder(args.h_dim, args.depth, args.blocks_per_depth),
+            MP.Conv1d(args.h_dim, args.a_dim, 1),
         )
-
+        self.chart_encoder = nn.Sequential(
+            MP.Conv1d(X_DIM, args.h_dim, 1),
+            MP.PixelNorm(),
+            Encoder(args.h_dim, args.depth, args.blocks_per_depth),
+            MP.Conv1d(args.h_dim, args.x_dim, 1),
+        )
+        
+        self.vq = VectorQuantizer(args.x_dim, args.vocab_size)
         self.decoder = nn.Sequential(
-            nn.Conv1d(args.latent_dim, args.h_dim, 1),
-            WaveNet(args.h_dim, args.wavenet_args, block, transpose=True),
-            nn.Conv1d(args.h_dim, X_DIM, 1),
+            MP.Conv1d(args.a_dim + args.x_dim, args.h_dim, 1),
+            Decoder(args.h_dim, args.depth, args.blocks_per_depth),
+            MP.Conv1d(args.h_dim, X_DIM, 1),
+            MP.Gain(),
         )
 
-    def _encoder(
-        self, 
-        x: Float[Tensor, str(f"B {X_DIM} L")]
-    ) -> tuple[
-        Float[Tensor, "B Z L"], # mean
-        Float[Tensor, "B Z L"], # logvar
-    ]:
-        return self.encoder(x).chunk(2, dim=1)
-
-    def _reparam(
-        self,
-        mean: Float[Tensor, "B Z L"],
-        logvar: Float[Tensor, "B Z L"],
-    ) -> Float[Tensor, "B Z L"]:
-        return mean + th.randn_like(mean) * th.exp(logvar * .5)
-    
-    def _decoder(
-        self, 
-        z: Float[Tensor, "B Z L"]
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        return self.decoder(z)
+    def _padding(self, L: int):
+        return (self.chunk_size-L%self.chunk_size)%self.chunk_size
 
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-        x: Float[Tensor, str(f"B {X_DIM} L")],
+        chart: Float[Tensor, str(f"B {X_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
-        mean, logvar = self._encoder(x)
-        kl_loss = .5 * (mean ** 2 + logvar.exp() - logvar - 1).sum(dim=1).mean()
+        pad = self._padding(audio.size(-1))
+        if pad > 0:
+            chart = F.pad(chart, (0,pad))
+            audio = F.pad(audio, (0,pad), value=-1)
 
-        z = self._reparam(mean, logvar)
-        x_hat = self._decoder(z)
-        recon_loss = th.mean((x - x_hat) ** 2)
-        bound_loss = th.mean((x_hat.abs().clamp(min=1) - 1) ** 2)
+        z = self.chart_encoder(chart)
+        q_z, vq_loss = self.vq(z)
+        pred_chart = self.decoder(MP.cat([q_z, self.audio_encoder(audio)], dim=1))
+        recon_loss = th.mean((chart - pred_chart) ** 2)
+        bound_loss = th.mean((pred_chart.abs().clamp(min=1) - 1) ** 2)
 
-        x_cursor_diff = x[:, CursorSignals, 1:] - x[:, CursorSignals, :-1]
-        x_hat_cursor_diff = x_hat[:, CursorSignals, 1:] - x_hat[:, CursorSignals, :-1]
+        cursor_diff = chart[:, CursorSignals, 1:] - chart[:, CursorSignals, :-1]
+        pred_cursor_diff = pred_chart[:, CursorSignals, 1:] - pred_chart[:, CursorSignals, :-1]
+        cd_map = lambda diff: th.tanh(diff * 20)
+        cursor_loss = (cd_map(cursor_diff) - cd_map(pred_cursor_diff)).pow(2).mean()
 
-        # cursor diffs are only important during sliders
-        cursor_diff_factor = self.slider_importance_factor * (x[:,[BeatmapEncoding.SLIDER],1:]+1)/2
-        cursor_diff_loss = th.mean(cursor_diff_factor * (x_cursor_diff - x_hat_cursor_diff) ** 2)
-
-        # anneal kl importance
-        beta_t = min(self.global_step / self.beta_steps, 1)
-        beta = self.start_beta * (self.end_beta / self.start_beta) ** beta_t
         
-        loss = recon_loss + cursor_diff_loss + bound_loss + beta * kl_loss
+        loss = recon_loss + cursor_loss * self.cursor_factor + bound_loss + vq_loss
         return loss, {
             'loss': loss.detach(),
             'recon': recon_loss.detach(),
-            'cursor': cursor_diff_loss.detach(),
+            'cursor': cursor_loss.detach(),
             'bound': bound_loss.detach(),
-            'kl': kl_loss.detach(),
+            'vq': vq_loss.detach(),
         }
-
-    def encode(
-        self, 
-        x: Float[Tensor, str(f"B {X_DIM} L")]
-    ) -> Float[Tensor, "B Z L"]:
-        return self._reparam(*self._encoder(x))
-
-    def decode(
-        self, 
-        z: Float[Tensor, "B Z L"]
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        return self._decoder(z).clamp(min=-1, max=1)
+        
 #
 #
 # =============================================================================
@@ -160,7 +123,15 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-        return AdaBelief(self.parameters(), **self.opt_args)
+        opt = AdaBelief(self.parameters(), **self.opt_args)
+        isqrt = lambda step: max(step / self.step_ref, 1) ** -.5
+        return {
+            "optimizer": opt,
+            "lr_scheduler": {
+                "scheduler": th.optim.lr_scheduler.LambdaLR(opt, isqrt),
+                "interval": "step",
+            }
+        }
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(*batch)
@@ -176,13 +147,60 @@ class Model(pl.LightningModule):
             self.plot_sample(batch)
 
     def plot_sample(self, b: Batch):
-        a, x, label = b
+        a, x, _ = b
+        
+        padding = (self.chunk_size-x.size(-1)%self.chunk_size)%self.chunk_size
+        if padding > 0:
+            x = F.pad(x, (0, padding))
+            a = F.pad(a, (0,padding), value=-1)
 
         with th.no_grad():
-            z = self.encode(x)
-            x_hat = self.decode(z)
-            plots = [ x[0].cpu().numpy() for x in [ x, x_hat, z ] ]
+            za = self.audio_encoder(a)
+            q_zx = self.vq(self.chart_encoder(x))[0]
+            x_hat = self.decoder(MP.cat([q_zx, za], dim=1))
+            plots = [ x[0].cpu().numpy() for x in [ x, x_hat, repeat(q_zx, 'b d l -> b d (l r)', r=self.chunk_size) ] ]
 
         with plot_signals(a[0].cpu().numpy(), plots) as fig:
             exp: SummaryWriter = self.logger.experiment # type: ignore
             exp.add_figure("samples", fig, global_step=self.global_step)
+        
+#
+#
+# =============================================================================
+# MODEL API
+# =============================================================================
+#
+#
+
+    def encode(
+        self, 
+        chart: Float[Tensor, str(f"B {X_DIM} L")],
+        audio: Float[Tensor, str(f"B {A_DIM} L")],
+    ) -> tuple[
+        Float[Tensor, "B Zx zL"],
+        Float[Tensor, "B Za zL"],
+    ]:
+        pad = self._padding(audio.size(-1))
+        if pad > 0:
+            chart = F.pad(chart, (0,pad))
+            audio = F.pad(audio, (0,pad), value=-1)
+        z_x = self.chart_encoder(chart)
+        z_a = self.audio_encoder(audio)
+        return z_x, z_a
+    
+    def generate(
+        self,
+        audio: Float[Tensor, str(f"{A_DIM} L")],
+        make_latent: Callable[[Float[Tensor, "A zL"]], Float[Tensor, "B X zL"]],
+    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+        pad = self._padding(audio.size(-1))
+        if pad > 0:
+            audio = F.pad(audio, (0,pad), value=-1)
+        za = self.audio_encoder(audio[None])[0]
+        zx = make_latent(za)
+        za = repeat(za, 'a l -> b a l', b=zx.size(0))
+        q_zx, _ = self.vq(zx)
+        pred_chart = self.decoder(MP.cat([q_zx, za], dim=1))
+        if pad > 0:
+            pred_chart = pred_chart[...,:-pad]
+        return pred_chart.clamp(min=-1, max=1)
