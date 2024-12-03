@@ -27,11 +27,9 @@ class Denoiser(nn.Module):
         args: DenoiserArgs,
     ):
         super().__init__()
-        
-        self.emb = nn.Sequential(
-            MP.Linear(f_dim+NUM_LABELS, args.c_dim),
-            MP.SiLU(),
-        )
+
+        self.emb_f = MP.Linear(f_dim, args.c_dim)
+        self.emb_l = MP.Linear(NUM_LABELS, args.c_dim)
 
         self.proj_h = MP.Conv1d(dim+1, args.h_dim, 1)
 
@@ -86,7 +84,7 @@ class Denoiser(nn.Module):
         x: Float[Tensor, "B X L"],  # noised input
         f: Float[Tensor, "B F"],    # noise level features
     ) -> Float[Tensor, "B X L"]:
-        emb = self.emb(MP.cat([f, label], dim=1))
+        emb = MP.silu(MP.add(self.emb_f(f), self.emb_l(label-5)))
         h = self.proj_h(MP.cat([x, th.ones_like(x[:,:1,:])], dim=1))
         for layer in self.layers:
             h = layer(h,a,emb)
