@@ -39,18 +39,22 @@ class Denoiser(nn.Module):
             def __init__(self):
                 super().__init__()
                 H = args.h_dim * args.expand
-                self.hg = nn.Sequential(
-                    MP.Conv1d(args.h_dim+a_dim, H*2, 1),
-                    MP.SiLU(),
-                )
                 self.proj_c = nn.Sequential(
-                    MP.Linear(args.c_dim, H*2),
+                    MP.Linear(args.c_dim, args.h_dim+a_dim),
                     MP.Gain(),
                 )
-                self.net = nn.Sequential(
+                self.h = nn.Sequential(
+                    MP.SiLU(),
+                    MP.Conv1d(args.h_dim+a_dim, H, 1),
                     MP.Conv1d(H, H, 3,1,1, groups=H),
                     MP.SiLU(),
                     MP.minGRU2(H),
+                    MP.PixelNorm(),
+                )
+                self.g = nn.Sequential(
+                    MP.SiLU(),
+                    MP.Conv1d(args.h_dim+a_dim, H, 1),
+                    MP.SiLU(),
                 )
                 self.out = MP.Conv1d(H, args.h_dim, 1)
 
@@ -61,10 +65,9 @@ class Denoiser(nn.Module):
                 c: Float[Tensor, "B C"],
             ) -> Float[Tensor, "B X L"]:
                 x = MP.pixel_norm(x)
-                h = MP.cat([MP.silu(x),y], dim=1)
                 c = self.proj_c(c)[:,:,None] + 1
-                h,g = (c * self.hg(h)).chunk(2, dim=1)
-                o = self.out(self.net(h) * g)
+                xy = c * MP.cat([x,y], dim=1)
+                o = self.out(self.h(xy) * self.g(xy))
                 return MP.add(x, o, t=.3)
             
         self.layers = nn.ModuleList([ layer() for _ in range(args.depth) ])
