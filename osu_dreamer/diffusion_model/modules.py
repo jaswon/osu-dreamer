@@ -1,4 +1,5 @@
 
+from collections.abc import Sequence
 from jaxtyping import Float
 
 import torch as th
@@ -67,3 +68,14 @@ class Seq(nn.Module):
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
         return self.out(self.h(x) * self.g(x))
+    
+class ResNet(nn.Module):
+    def __init__(self, nets: Sequence[nn.Module]):
+        super().__init__()
+        self.nets = nn.ModuleList(nets)
+
+    def forward(self, x: Float[Tensor, "B D L"], *args, **kwargs) -> Float[Tensor, "B D L"]:
+        x = MP.pixel_norm(x)
+        for net in self.nets:
+            x = MP.pixel_norm(MP.add(x, net(x,*args,**kwargs), t=.3))
+        return x

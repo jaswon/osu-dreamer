@@ -9,7 +9,7 @@ from torch import nn, Tensor
 from osu_dreamer.data.labels import NUM_LABELS
 
 import osu_dreamer.modules.mp as MP
-from .modules import Seq
+from .modules import Seq, ResNet
 
 
 @dataclass
@@ -54,12 +54,11 @@ class Denoiser(nn.Module):
                 y: Float[Tensor, "B Y L"],
                 c: Float[Tensor, "B C"],
             ) -> Float[Tensor, "B X L"]:
-                x = MP.pixel_norm(x)
                 c = self.proj_c(c)[:,:,None] + 1
                 h = self.proj_h(c * MP.cat([x,y], dim=1))
-                return MP.add(x, self.seq(h), t=.3)
+                return self.seq(h)
             
-        self.layers = nn.ModuleList([ layer() for _ in range(args.depth) ])
+        self.net = ResNet([ layer() for _ in range(args.depth) ])
 
         self.proj_out = nn.Sequential(
             MP.Conv1d(args.h_dim, dim, 1),
@@ -77,7 +76,5 @@ class Denoiser(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         emb = MP.silu(MP.add(self.emb_f(f), self.emb_l(label-5)))
         h = self.proj_h(MP.cat([x, th.ones_like(x[:,:1,:])], dim=1))
-        for layer in self.layers:
-            h = layer(h,a,emb)
-        o = self.proj_out(h)
-        return o
+        h = self.net(h,a,emb)
+        return self.proj_out(h)
