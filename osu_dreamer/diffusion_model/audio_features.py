@@ -9,6 +9,7 @@ from torch import nn, Tensor
 from osu_dreamer.data.load_audio import A_DIM
 
 import osu_dreamer.modules.mp as MP
+from .modules import Seq
 
 @dataclass
 class AudioFeatureArgs:
@@ -28,12 +29,11 @@ class AudioFeatures(nn.Module):
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.seq = MP.Seq(args.dim, args.dim * args.expand)
+                self.seq = Seq(args.dim, args.dim * args.expand)
 
             def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
                 x = MP.pixel_norm(x)
-                x = MP.add(x, self.seq(x), t=.3)
-                return x
+                return MP.add(x, self.seq(x), t=.3)
             
         self.layers = nn.ModuleList([ layer() for _ in range(args.depth) ])
 

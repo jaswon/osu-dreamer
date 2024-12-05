@@ -9,6 +9,7 @@ from torch import nn, Tensor
 from osu_dreamer.data.labels import NUM_LABELS
 
 import osu_dreamer.modules.mp as MP
+from .modules import Seq
 
 
 @dataclass
@@ -45,7 +46,7 @@ class Denoiser(nn.Module):
                     MP.SiLU(),
                     MP.Conv1d(args.h_dim+a_dim, args.h_dim, 1),
                 )
-                self.seq = MP.Seq(args.h_dim, H)
+                self.seq = Seq(args.h_dim, H)
 
             def forward(
                 self,
