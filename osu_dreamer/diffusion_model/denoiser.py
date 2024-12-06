@@ -30,7 +30,10 @@ class Denoiser(nn.Module):
         super().__init__()
 
         self.emb_f = MP.Linear(f_dim, args.c_dim)
-        self.emb_l = MP.Linear(NUM_LABELS, args.c_dim)
+        self.emb_l = nn.Sequential(
+            MP.Linear(NUM_LABELS, args.c_dim),
+            MP.PixelNorm(),
+        )
 
         self.proj_h = MP.Conv1d(dim+1, args.h_dim, 1)
 
