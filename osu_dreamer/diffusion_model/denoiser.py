@@ -37,17 +37,14 @@ class Denoiser(nn.Module):
 
         self.proj_h = MP.Conv1d(dim+1, args.h_dim, 1)
 
+        H = args.h_dim * args.expand
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
-                H = args.h_dim * args.expand
+                self.proj_y = MP.Conv1d(a_dim, args.h_dim, 1)
                 self.proj_c = nn.Sequential(
-                    MP.Linear(args.c_dim, args.h_dim+a_dim),
+                    MP.Linear(args.c_dim, args.h_dim),
                     MP.Gain(),
-                )
-                self.proj_h = nn.Sequential(
-                    MP.SiLU(),
-                    MP.Conv1d(args.h_dim+a_dim, args.h_dim, 1),
                 )
                 self.seq = Seq(args.h_dim, H)
 
@@ -57,9 +54,9 @@ class Denoiser(nn.Module):
                 y: Float[Tensor, "B Y L"],
                 c: Float[Tensor, "B C"],
             ) -> Float[Tensor, "B X L"]:
+                xy = MP.add(x, self.proj_y(y), t=.1)
                 c = self.proj_c(c)[:,:,None] + 1
-                h = self.proj_h(c * MP.cat([x,y], dim=1))
-                return self.seq(h)
+                return self.seq(c * xy)
             
         self.net = ResNet([ layer() for _ in range(args.depth) ])
 
@@ -79,5 +76,5 @@ class Denoiser(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         emb = MP.silu(MP.add(self.emb_f(f), self.emb_l(label-5)))
         h = self.proj_h(MP.cat([x, th.ones_like(x[:,:1,:])], dim=1))
-        h = self.net(h,a,emb)
+        h = self.net(h,MP.pixel_norm(a),emb)
         return self.proj_out(h)

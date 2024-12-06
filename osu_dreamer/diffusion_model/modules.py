@@ -54,6 +54,7 @@ class Seq(nn.Module):
     def __init__(self, dim: int, h_dim: int):
         super().__init__()
         self.h = nn.Sequential(
+            MP.SiLU(),
             MP.Conv1d(dim, h_dim, 1),
             MP.Conv1d(h_dim, h_dim, 3,1,1, groups=h_dim),
             MP.SiLU(),
@@ -61,6 +62,7 @@ class Seq(nn.Module):
             MP.PixelNorm(),
         )
         self.g = nn.Sequential(
+            MP.SiLU(),
             MP.Conv1d(dim, h_dim, 1),
             MP.SiLU(),
         )
@@ -75,7 +77,7 @@ class ResNet(nn.Module):
         self.nets = nn.ModuleList(nets)
 
     def forward(self, x: Float[Tensor, "B D L"], *args, **kwargs) -> Float[Tensor, "B D L"]:
-        x = MP.pixel_norm(x)
         for net in self.nets:
-            x = MP.pixel_norm(MP.add(x, net(x,*args,**kwargs), t=.3))
+            x = MP.pixel_norm(x)
+            x = MP.add(x, net(x,*args,**kwargs), t=.1)
         return x
