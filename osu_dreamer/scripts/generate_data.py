@@ -69,17 +69,20 @@ def process_mapset(kv: tuple[Path, list[Path]]):
         audio_map.setdefault((audio_dir, bm.audio_filename), []).append((bm, map_path))
 
     for (audio_dir, audio_file), bms in audio_map.items():
-        try:
-            spec = load_audio(audio_file)
-        except Exception as e:
-            print(f"{audio_file}: {e}")
-            return
-        
-        # save spectrogram
         spec_path = audio_dir / "spec.pt"
-        spec_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(spec_path, "wb") as f:
-            np.save(f, spec, allow_pickle=False)
+        if not spec_path.exists():
+            try:
+                spec = load_audio(audio_file)
+            except Exception as e:
+                print(f"{audio_file}: {e}")
+                return
+            
+            # save spectrogram
+            spec_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(spec_path, "wb") as f:
+                np.save(f, spec, allow_pickle=False)
+        else:
+            spec = np.load(spec_path)
 
         frame_times = get_frame_times(spec.shape[1])
         for bm, map_path in bms:
