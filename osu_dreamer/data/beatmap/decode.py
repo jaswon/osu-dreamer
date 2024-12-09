@@ -59,25 +59,25 @@ def decode_slider(
     cursor_signal: Float[ndarray, "2 L"], 
     start_idx: int, 
     end_idx: int, 
-    slide_end: int,
-) -> tuple[float, int, list[Float[ndarray, "2"]]]:
+    num_repeats: int,
+) -> tuple[float, list[Float[ndarray, "2"]]]:
     """
     returns the slider's length and control points defined by
     the cursor signal, start+end indices, and number of repeats
     """
 
-    num_slides = round((end_idx-start_idx)/(slide_end-start_idx))
+    first_slide_idx = round(start_idx + (end_idx-start_idx) / num_repeats)
 
     ctrl_pts: list[Float[ndarray, "2"]] = []
     length = 0.
     # TODO: try fit circular arc before bezier
-    path = fit_bezier(cursor_signal[:,start_idx:slide_end+1], max_err=5.)
+    path = fit_bezier(cursor_signal[:,start_idx:first_slide_idx+1], max_err=5.)
     for seg in path:
         seg_len = seg.length
         ctrl_pts.extend(seg.p.T)
         length += seg_len
     
-    return length, num_slides, ctrl_pts
+    return length, ctrl_pts
 
 def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap) -> str:
 
@@ -119,14 +119,14 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
             last_end_time = t
             continue
 
-        j, slide_end = rest
+        j, num_slides = rest
         u = frame_times[j]
-        if slide_end == -1: # spinner
+        if num_slides == 0: # spinner
             hos.append(f"256,192,{t},{2**3 + combo_bit},{hitsound},{u}")
             last_end_time = u
             continue
 
-        length, num_slides, ctrl_pts = decode_slider(cursor_signal, i, j, slide_end)
+        length, ctrl_pts = decode_slider(cursor_signal, i, j, num_slides)
 
         if length == 0:
             # zero length

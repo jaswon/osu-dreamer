@@ -61,6 +61,31 @@ def decode_extents(extents: Float[ndarray, "L"]) -> tuple[list[int], list[int]]:
 
     return start_idxs[:cursor], end_idxs[:cursor]
 
+def slides(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "L"]:
+    slides = np.zeros_like(frame_times)
+
+    for ho in bm.hit_objects:
+        if not isinstance(ho, Slider):
+            continue
+
+        t = (frame_times - ho.t) / ho.slide_duration
+        region = (t >= 0) & (t <= ho.slides)
+        slides[region] = abs((t+1)%2-1)[region]
+
+    return slides
+
+def decode_slides(slides: Float[ndarray, "L"]) -> Float[ndarray, "L"]:
+    before_below = slides[:-1] <= 0
+    after_below  = slides[1:]  <= 0
+
+    fore_idxs = np.argwhere(before_below & ~after_below)[:,0]
+    back_idxs = np.argwhere(~before_below & after_below)[:,0]
+    
+    slide_locs = np.zeros_like(slides)
+    slide_locs[fore_idxs+1] = 1
+    slide_locs[back_idxs+1] = 1
+    return slide_locs
+
 # == hit signal ==
 
 HitEncoding = IntEnum('HitEncoding', [
@@ -91,11 +116,7 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     return np.stack([
         events([ ho.t for ho in bm.hit_objects                 ], frame_times), # onsets
         events([ ho.t for ho in bm.hit_objects if ho.new_combo ], frame_times), # new combos
-        extents([
-            (ho.t, ho.t + ho.slide_duration)
-            for ho in bm.hit_objects
-            if isinstance(ho, Slider)
-        ], frame_times), # slides
+        slides(bm, frame_times), # slides
         extents([
             (ho.t, ho.end_time())
             for ho in bm.hit_objects
@@ -108,7 +129,7 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
 
 Hit = Union[
     tuple[int, bool, bool, bool, bool],           #  hit(t, new_combo, whistle, finish, clap)
-    tuple[int, bool, bool, bool, bool, int, int], # hold(t, new_combo, whistle, finish, clap, u, slide_end)
+    tuple[int, bool, bool, bool, bool, int, int], # hold(t, new_combo, whistle, finish, clap, u, slides)
 ]
 
 ONSET_TOL = 2
@@ -136,15 +157,10 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             continue
         sustain_ends[onset_idx] = sustain_end
 
-    slide_ends = [-1] * len(onset_idxs)
-    for slide_start, slide_end in zip(*decode_extents(hit_signal[HitEncoding.SLIDE])):
-        onset_idx = onset_idx_map[slide_start]
-        if onset_idx == -1:
-            continue
-        slide_ends[onset_idx] = slide_end
+    slide_locs = decode_slides(hit_signal[HitEncoding.SLIDE])
 
     hits: list[Hit] = []
-    for onset_loc, onset_prop, sustain_end, slide_end in zip(onset_idxs, onset_props, sustain_ends, slide_ends):
+    for onset_loc, onset_prop, sustain_end in zip(onset_idxs, onset_props, sustain_ends):
         hit = (onset_loc, *onset_prop.tolist())
 
         if sustain_end == -1 or sustain_end - onset_loc < 4:
@@ -152,6 +168,7 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             hits.append(hit)
             continue
 
-        hits.append((*hit, sustain_end, slide_end))
+        num_slides = int(slide_locs[onset_loc:sustain_end+1].sum())
+        hits.append((*hit, sustain_end, num_slides))
     
     return hits
