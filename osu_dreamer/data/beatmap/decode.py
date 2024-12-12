@@ -1,7 +1,7 @@
 
 from dataclasses import dataclass, asdict
 
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 import numpy as np
 from numpy import ndarray
@@ -60,7 +60,7 @@ def decode_slider(
     start_idx: int, 
     end_idx: int, 
     num_repeats: int,
-) -> tuple[float, list[Float[ndarray, "2"]]]:
+) -> tuple[float, list[Int[ndarray, "2"]]]:
     """
     returns the slider's length and control points defined by
     the cursor signal, start+end indices, and number of repeats
@@ -68,20 +68,20 @@ def decode_slider(
 
     first_slide_idx = round(start_idx + (end_idx-start_idx) / num_repeats)
 
-    ctrl_pts: list[Float[ndarray, "2"]] = []
+    ctrl_pts: list[Int[ndarray, "2"]] = []
     length = 0.
     # TODO: try fit circular arc before bezier
     path = fit_bezier(cursor_signal[:,start_idx:first_slide_idx+1], max_err=5.)
     for seg in path:
         seg_len = seg.length
-        ctrl_pts.extend(seg.p.T)
+        ctrl_pts.extend(seg.p.T.round().astype(int))
         length += seg_len
     
     return length, ctrl_pts
 
 def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap) -> str:
 
-    frame_times = get_frame_times(enc.shape[1])
+    frame_times = get_frame_times(enc.shape[1]).round().astype(int)
 
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
     cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
