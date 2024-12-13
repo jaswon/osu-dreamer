@@ -72,10 +72,11 @@ def decode_slider(
     length = 0.
     # TODO: try fit circular arc before bezier
     path = fit_bezier(cursor_signal[:,start_idx:first_slide_idx+1], max_err=5.)
-    for seg in path:
-        seg_len = seg.length
+    for i, seg in enumerate(path):
+        if (i==0 or i==len(path)-1) and seg.length < 15:
+            continue
         ctrl_pts.extend(seg.p.T.round().astype(int))
-        length += seg_len
+        length += seg.length
     
     return length, ctrl_pts
 
