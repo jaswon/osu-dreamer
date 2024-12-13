@@ -86,6 +86,7 @@ class Diffusion(nn.Module):
         """https://github.com/NVlabs/edm/blob/62072d2612c7da05165d6233d13d17d71f213fee/generate.py#L25"""
         
         sigmas = self.std_noise(th.linspace(0, 1, num_steps))
+        num_churn_steps = ((S_tmin <= sigmas) & (sigmas <= S_tmax)).sum().item()
         sigmas = th.tensor([*sigmas.tolist(), 0], device=z.device)
 
         loop = zip(sigmas[:-1], sigmas[1:])
@@ -109,7 +110,7 @@ class Diffusion(nn.Module):
         x_t = z * (sigmas[0] ** 2 + self.std_data ** 2) ** .5
         for t_cur, t_nxt in loop:
             # increase noise temporarily
-            gamma = min(S_churn / num_steps, 2**.5 - 1) if S_tmin <= t_cur <= S_tmax else 0
+            gamma = min(S_churn / num_churn_steps, 2**.5 - 1) if S_tmin <= t_cur <= S_tmax else 0
             t_hat = t_cur + gamma * t_cur
             x_hat = x_t + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * th.randn_like(x_t)
 
