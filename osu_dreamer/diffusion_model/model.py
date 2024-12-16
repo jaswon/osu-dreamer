@@ -14,7 +14,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.beatmap.encode import X_DIM, CursorSignals
+from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
@@ -34,7 +34,6 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
-        cursor_factor: float,
         opt_args: dict[str, Any],
         step_ref: float,
 
@@ -61,7 +60,6 @@ class Model(pl.LightningModule):
         self.val_steps = val_steps
 
         # training params
-        self.cursor_factor = cursor_factor
         self.opt_args = opt_args
         self.step_ref = step_ref
     
@@ -76,17 +74,10 @@ class Model(pl.LightningModule):
         pred_chart, u, loss_weight = self.diffusion.training_sample(denoiser, chart)
 
         pixel_loss = loss_weight * (pred_chart - chart).pow(2).mean((1,2))
-
-        cursor_diff = chart[:, CursorSignals, 1:] - chart[:, CursorSignals, :-1]
-        pred_cursor_diff = pred_chart[:, CursorSignals, 1:] - pred_chart[:, CursorSignals, :-1]
-        cd_map = lambda diff: th.tanh(diff * 20)
-        cursor_loss = loss_weight * (cd_map(cursor_diff) - cd_map(pred_cursor_diff)).pow(2).mean((1,2))
-
-        loss = ((pixel_loss + self.cursor_factor * cursor_loss) / th.exp(u) + u).mean()
+        loss = (pixel_loss / th.exp(u) + u).mean()
         return loss, {
             "loss": loss.detach(),
             "pixel": pixel_loss.detach().mean(),
-            "cursor": cursor_loss.detach().mean(),
         }
     
     @th.no_grad()

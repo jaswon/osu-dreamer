@@ -64,7 +64,6 @@ model:
     val_batches: 64
 
     # training parameters
-    cursor_factor: .1
     step_ref: 1e4
     opt_args:
         lr: .01 # ~ 1.3 * #params ** -.25
