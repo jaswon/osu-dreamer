@@ -49,9 +49,9 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
         self.x_dim = args.x_dim
         self.a_dim = args.a_dim
+        self.chunk_size = 1 << args.depth
 
         # training params
-        self.chunk_size = 1 << args.depth
         self.step_ref = step_ref
         self.opt_args = opt_args
         self.cursor_factor = cursor_factor
@@ -134,13 +134,13 @@ class Model(pl.LightningModule):
         }
 
     def training_step(self, batch: Batch, batch_idx):
-        loss, log_dict = self(*batch)
+        loss, log_dict = self.forward(*batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():
-            _, log_dict = self(*batch)
+            _, log_dict = self.forward(*batch)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
 
         if batch_idx == 0:

@@ -61,7 +61,8 @@ model:
     cursor_factor: 1.
     opt_args:
         lr: .01
-    step_ref: 5000
+        betas: [.9,.99]
+    step_ref: 1e4
 
     args:
         h_dim: 128

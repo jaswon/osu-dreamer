@@ -42,27 +42,19 @@ class VectorQuantizer(nn.Module):
 
         return quantized, loss.mean()
 
-
-def resample(x: Float[Tensor, "B D iL"], up: bool) -> Float[Tensor, "B D oL"]:
-    f = th.tensor([1,1], dtype=th.float, device=x.device)
-    f = f / f.sum()
-    c = x.size(1)
-    f = f[None,None].repeat(c,1,1)
-    if up:
-        return F.conv_transpose1d(x, f*2, groups=c, stride=2)
-    return F.conv1d(x, f, groups=c, stride=2)
-
 class Encoder(nn.Module):
     def __init__(self, dim: int, depth: int, blocks_per_depth: int):
         super().__init__()
         self.blocks = nn.ModuleList([
-            nn.Sequential(*( Block(dim) for _ in range(blocks_per_depth) ))
+            MP.ResNet([ MP.Seq(dim, dim) for _ in range(blocks_per_depth) ])
             for _ in range(depth)
         ])
 
     def forward(self, x: Float[Tensor, "B D iL"]) -> Float[Tensor, "B D oL"]:
+        D = x.size(1)
+        f = th.tensor([.5,.5], device=x.device)[None,None].repeat(D,1,1)
         for block in self.blocks:
-            x = resample(x, up=False)
+            x = F.conv1d(x, f, groups=D, stride=2)
             x = block(x)
         return x
 
@@ -70,37 +62,14 @@ class Decoder(nn.Module):
     def __init__(self, dim: int, depth: int, blocks_per_depth: int):
         super().__init__()
         self.blocks = nn.ModuleList([
-            nn.Sequential(*( Block(dim) for _ in range(blocks_per_depth) ))
+            MP.ResNet([ MP.Seq(dim, dim) for _ in range(blocks_per_depth) ])
             for _ in range(depth)
         ])
 
     def forward(self, h: Float[Tensor, "B D iL"]) -> Float[Tensor, "B D oL"]:
+        D = h.size(1)
+        f = 2 * th.tensor([.5,.5], device=h.device)[None,None].repeat(D,1,1)
         for block in self.blocks:
-            h = resample(h, up=True)
+            h = F.conv_transpose1d(h, f, groups=D, stride=2)
             h = block(h)
         return h
-
-class Block(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        expand: int = 1,
-    ):
-        H = dim * expand
-        super().__init__()
-        self.hg = nn.Sequential(
-            MP.Conv1d(dim, H*2, 1),
-            MP.SiLU(),
-        )
-        self.net = nn.Sequential(
-            MP.Conv1d(H, H, 3,1,1, groups=H),
-            MP.SiLU(),
-            MP.minGRU2(H),
-        )
-        self.out = MP.Conv1d(H, dim, 1)
-
-    def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
-        x = MP.pixel_norm(x)
-        h,g = self.hg(x).chunk(2, dim=1)
-        o = self.out(self.net(h) * g)
-        return MP.add(x, o, t=.3)
