@@ -24,7 +24,7 @@ class AudioFeatures(nn.Module):
         super().__init__()
 
         self.proj_in = MP.Conv1d(A_DIM+1, args.dim, 1)
-        self.net = MP.ResNet([ MP.Seq(args.dim, args.dim * args.expand) for _ in range(args.depth) ])
+        self.net = MP.ResNet([ MP.Seq(args.dim, args.expand) for _ in range(args.depth) ])
 
     def forward(
         self,

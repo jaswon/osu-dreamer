@@ -145,9 +145,9 @@ class minGRU2(nn.Module):
         ], dim=1)
     
 class Seq(nn.Module):
-    def __init__(self, dim: int, h_dim: int = -1):
+    def __init__(self, dim: int, expand: int = 1):
         super().__init__()
-        h_dim = dim if h_dim==-1 else h_dim
+        h_dim = dim * expand
         self.h = nn.Sequential(
             SiLU(),
             Conv1d(dim, h_dim, 1),

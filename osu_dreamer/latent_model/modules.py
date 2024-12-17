@@ -46,7 +46,7 @@ class Encoder(nn.Module):
     def __init__(self, dim: int, depth: int, blocks_per_depth: int):
         super().__init__()
         self.blocks = nn.ModuleList([
-            MP.ResNet([ MP.Seq(dim, dim) for _ in range(blocks_per_depth) ])
+            MP.ResNet([ MP.Seq(dim) for _ in range(blocks_per_depth) ])
             for _ in range(depth)
         ])
 
@@ -62,7 +62,7 @@ class Decoder(nn.Module):
     def __init__(self, dim: int, depth: int, blocks_per_depth: int):
         super().__init__()
         self.blocks = nn.ModuleList([
-            MP.ResNet([ MP.Seq(dim, dim) for _ in range(blocks_per_depth) ])
+            MP.ResNet([ MP.Seq(dim) for _ in range(blocks_per_depth) ])
             for _ in range(depth)
         ])
 

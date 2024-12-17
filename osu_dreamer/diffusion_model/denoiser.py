@@ -36,7 +36,6 @@ class Denoiser(nn.Module):
 
         self.proj_h = MP.Conv1d(dim+1, args.h_dim, 1)
 
-        H = args.h_dim * args.expand
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
@@ -45,7 +44,7 @@ class Denoiser(nn.Module):
                     MP.Linear(args.c_dim, args.h_dim),
                     MP.Gain(),
                 )
-                self.seq = MP.Seq(args.h_dim, H)
+                self.seq = MP.Seq(args.h_dim, args.expand)
 
             def forward(
                 self,
