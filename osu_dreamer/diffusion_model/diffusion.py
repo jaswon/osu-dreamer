@@ -10,7 +10,6 @@ from torch import Tensor, nn
 from einops import repeat
 
 import osu_dreamer.modules.mp as MP
-from .modules import RandomFourierFeatures
 
 B = Float[Tensor, "B"]              # noise level, loss weight, uncertainty
 F = Float[Tensor, "B F"]            # noise level features
@@ -40,7 +39,7 @@ class Diffusion(nn.Module):
         self.std_noise = std_noise
         self.std_data = args.std_data
 
-        self.noise_level_features = RandomFourierFeatures(1, args.noise_level_features)
+        self.noise_level_features = MP.RandomFourierFeatures(1, args.noise_level_features)
         self.proj_u = MP.Linear(args.noise_level_features, 1)
 
     def pred_x0(self, model: Denoiser, x_t: X, std: B) -> tuple[X,B]:
