@@ -1,7 +1,7 @@
 
 from functools import partial
 
-from typing import Any
+from typing import Any, Union
 from jaxtyping import Float
 
 import torch as th
@@ -59,6 +59,11 @@ class Model(pl.LightningModule):
             denoiser_args,
         )
 
+        # self.latent.compile()
+        # self.diffusion.compile()
+        # self.audio_features.compile()
+        # self.denoiser.compile()
+
         # validation params
         self.val_batches = val_batches
         self.val_steps = val_steps
@@ -95,8 +100,16 @@ class Model(pl.LightningModule):
         audio: Float[Tensor, str(f"{A_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         num_steps: int = 0,
+        return_latents: bool = False,
         **kwargs,
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+    ) -> Union[
+        Float[Tensor, str(f"B {X_DIM} L")],
+        tuple[
+            Float[Tensor, str(f"B {X_DIM} L")],
+            Float[Tensor, "B A zL"],
+            Float[Tensor, "B X zL"],
+        ]
+    ]:
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
 
@@ -109,7 +122,7 @@ class Model(pl.LightningModule):
                 **kwargs,
             )
 
-        return self.latent.generate(audio, make_latent)
+        return self.latent.generate(audio, make_latent, return_latents=return_latents)
 
 #
 #
@@ -148,12 +161,19 @@ class Model(pl.LightningModule):
         if batch_idx == 0:
             self.plot_sample(batch)
 
+    @th.no_grad()
     def plot_sample(self, b: Batch):
         a, x, label = b
 
-        with th.no_grad():
-            plots = [ x[0].cpu().numpy() for x in [ x, self.sample(a[0], label) ] ]
+        z_x = self.latent.chart_encoder(x)
+        pred_x, z_a, pred_z_x = self.sample(a[0], label, return_latents=True)
 
+        exp: SummaryWriter = self.logger.experiment # type: ignore
+        
+        plots = [ x[0].cpu().numpy() for x in [ x, pred_x ] ]
         with plot_signals(a[0].cpu().numpy(), plots) as fig:
-            exp: SummaryWriter = self.logger.experiment # type: ignore
             exp.add_figure("samples", fig, global_step=self.global_step)
+        
+        plots = [ x[0].cpu().numpy() for x in [ z_x, pred_z_x ] ]
+        with plot_signals(z_a[0].cpu().numpy(), plots, temporal_scale=.01 * self.latent.chunk_size) as fig:
+            exp.add_figure("latents", fig, global_step=self.global_step)

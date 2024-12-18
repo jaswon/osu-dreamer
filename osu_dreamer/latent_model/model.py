@@ -1,5 +1,5 @@
 
-from typing import Any, Callable
+from typing import Any, Callable, Union
 from jaxtyping import Float
 
 from dataclasses import dataclass
@@ -177,9 +177,20 @@ class Model(pl.LightningModule):
         self,
         audio: Float[Tensor, str(f"{A_DIM} L")],
         make_latent: Callable[[Float[Tensor, "A zL"]], Float[Tensor, "B X zL"]],
-    ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+        return_latents: bool = False,
+    ) -> Union[
+        Float[Tensor, str(f"B {X_DIM} L")],
+        tuple[
+            Float[Tensor, str(f"B {X_DIM} L")],
+            Float[Tensor, "B A zL"],
+            Float[Tensor, "B X zL"],
+        ]
+    ]:
         za = self.audio_encoder(audio[None])[0]
-        q_zx, _ = self.vq(make_latent(za))
+        pred_zx = make_latent(za)
+        q_zx, _ = self.vq(pred_zx)
         za = repeat(za, 'a l -> b a l', b=q_zx.size(0))
-        pred_chart = self.decoder(MP.cat([q_zx, za], dim=1))[:,:,:audio.size(-1)]
-        return pred_chart.clamp(min=-1, max=1)
+        pred_chart = self.decoder(MP.cat([q_zx, za], dim=1))[:,:,:audio.size(-1)].clamp(min=-1, max=1)
+        if return_latents:
+            return pred_chart, za, pred_zx
+        return pred_chart

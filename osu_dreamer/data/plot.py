@@ -3,17 +3,20 @@ from contextlib import contextmanager
 
 from jaxtyping import Float
 
-import numpy as np
 from numpy import ndarray
 
 import matplotlib.pyplot as plt
 
 @contextmanager
-def plot_signals(audio: Float[ndarray, "A L"], signals: list[Float[ndarray, "X L"]]):
+def plot_signals(
+    audio: Float[ndarray, "A L"], 
+    signals: list[Float[ndarray, "X L"]],
+    temporal_scale: float = .01,
+):
     margin, margin_left = .1, .5
     height_ratios = [.8] + [.6] * len(signals)
     plots_per_row = len(height_ratios)
-    w, h = audio.shape[-1] * .01, sum(height_ratios) * .4
+    w, h = audio.shape[-1] * temporal_scale, sum(height_ratios) * .4
 
     # split plot across multiple rows
     split = ((w/h)/(3/5)) ** .5 # 3 wide by 5 tall aspect ratio
