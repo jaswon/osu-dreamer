@@ -20,6 +20,7 @@ from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.adabelief import AdaBelief
 
+from osu_dreamer.latent_model.model import Model as LatentModel
 from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
 from .audio_features import AudioFeatures, AudioFeatureArgs
@@ -38,6 +39,7 @@ class Model(pl.LightningModule):
         step_ref: float,
 
         # model hparams
+        latent_ckpt: str,
         diffusion_args: DiffusionArgs,
         denoiser_args: DenoiserArgs,
         audio_feature_args: AudioFeatureArgs,
@@ -46,10 +48,12 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # model
+        self.latent = LatentModel.load_from_checkpoint(latent_ckpt)
+        self.latent.freeze()
         self.diffusion = Diffusion(diffusion_args)
-        self.audio_features = AudioFeatures(audio_feature_args)
+        self.audio_features = AudioFeatures(self.latent.a_dim, audio_feature_args)
         self.denoiser = Denoiser(
-            X_DIM, 
+            self.latent.x_dim, 
             audio_feature_args.dim, 
             diffusion_args.noise_level_features, 
             denoiser_args,
@@ -70,10 +74,15 @@ class Model(pl.LightningModule):
         chart: Float[Tensor, str(f"B {X_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
-        denoiser = partial(self.denoiser,self.audio_features(audio),labels)
-        pred_chart, u, loss_weight = self.diffusion.training_sample(denoiser, chart)
+        
+        with th.no_grad():
+            z_x = self.latent.chart_encoder(chart)
+            z_a = self.latent.audio_encoder(audio)
 
-        pixel_loss = loss_weight * (pred_chart - chart).pow(2).mean((1,2))
+        denoiser = partial(self.denoiser,self.audio_features(z_a),labels)
+        pred_z_x, u, loss_weight = self.diffusion.training_sample(denoiser, z_x)
+
+        pixel_loss = loss_weight * (pred_z_x - z_x).pow(2).mean((1,2))
         loss = (pixel_loss / th.exp(u) + u).mean()
         return loss, {
             "loss": loss.detach(),
@@ -90,16 +99,17 @@ class Model(pl.LightningModule):
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
-        z = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
-        a_f = repeat(self.audio_features(audio[None]), '1 a l -> b a l', b=num_samples)
-        denoiser = partial(self.denoiser,a_f,labels)
 
-        return self.diffusion.sample(
-            denoiser, 
-            num_steps, z,
-            **kwargs,
-        ).clamp(min=-1, max=1)
+        def make_latent(z_a: Float[Tensor, "A zL"]) -> Float[Tensor, "B X zL"]:
+            z = th.randn(num_samples, self.latent.x_dim, z_a.size(-1), device=audio.device)
+            a_f = repeat(self.audio_features(z_a[None]), '1 a l -> b a l', b=num_samples)
+            return self.diffusion.sample(
+                partial(self.denoiser,a_f,labels), 
+                num_steps, z,
+                **kwargs,
+            )
 
+        return self.latent.generate(audio, make_latent)
 
 #
 #

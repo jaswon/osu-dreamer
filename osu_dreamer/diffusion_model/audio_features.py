@@ -6,8 +6,6 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor 
 
-from osu_dreamer.data.load_audio import A_DIM
-
 import osu_dreamer.modules.mp as MP
 
 @dataclass
@@ -19,16 +17,17 @@ class AudioFeatureArgs:
 class AudioFeatures(nn.Module):
     def __init__(
         self,
+        dim: int,
         args: AudioFeatureArgs,
     ):
         super().__init__()
 
-        self.proj_in = MP.Conv1d(A_DIM+1, args.dim, 1)
+        self.proj_in = MP.Conv1d(dim+1, args.dim, 1)
         self.net = MP.ResNet([ MP.Seq(args.dim, args.expand) for _ in range(args.depth) ])
 
     def forward(
         self,
-        audio: Float[Tensor, str(f"B {A_DIM} L")],
+        audio: Float[Tensor, "B A L"],
     ) -> Float[Tensor, "B D L"]:
         audio = MP.cat([audio, th.ones_like(audio[:,:1,:])], dim=1)
         h = self.proj_in(audio)
