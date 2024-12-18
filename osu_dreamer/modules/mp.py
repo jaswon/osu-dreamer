@@ -19,7 +19,7 @@ def normalize(x: Float[Tensor, "..."], dim=None, eps=1e-4) -> Float[Tensor, "...
     return x / norm.to(x.dtype)
 
 def pixel_norm(x: Float[Tensor, "B D ..."]) -> Float[Tensor, "B D ..."]:
-    return normalize(x, dim=1)
+    return F.normalize(x, p=2, dim=1) * x.size(1) ** .5
 
 class PixelNorm(nn.Module):
     def forward(self, x):
