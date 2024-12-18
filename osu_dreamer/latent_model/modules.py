@@ -5,7 +5,7 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from einops import rearrange
+from vector_quantize_pytorch import VectorQuantize
 
 import osu_dreamer.modules.mp as MP
 
@@ -14,11 +14,18 @@ class VectorQuantizer(nn.Module):
         self,
         embedding_dim: int,
         num_embeddings: int,
-        commitment: float = 1.
+        decay: float = 0.8,
+        commitment: float = 0.25,
     ):
         super().__init__()
-        self.commitment = commitment
-        self.embeddings = nn.Parameter(th.randn(num_embeddings, embedding_dim))
+        self.vq = VectorQuantize(
+            dim = embedding_dim,
+            codebook_size = num_embeddings,
+            decay = decay,
+            commitment_weight = commitment,
+            rotation_trick = True,
+            use_cosine_sim = True,
+        )
 
     def forward(
         self,
@@ -27,20 +34,8 @@ class VectorQuantizer(nn.Module):
         Float[Tensor, "B D L"],
         Float[Tensor, ""],
     ]:
-        b = x.size(0)
-        x = rearrange(x, 'b d l -> (b l) d')
-        x = F.normalize(x, p=2, dim=1)
-        cb = MP.get_normed_weight(self.embeddings, self.training)
-        quantized = cb[th.argmax(x @ cb.t(), dim=1)]
-
-        e_loss = 1 - (quantized.detach() * x).sum(dim=1)
-        q_loss = 1 - (quantized * x.detach()).sum(dim=1)
-        loss = self.commitment * e_loss + q_loss
-
-        quantized = x + (quantized - x).detach()
-        quantized = rearrange(quantized, "(b l) d -> b d l", b=b)
-
-        return quantized, loss.mean()
+        q, _, commit_loss = self.vq(x.transpose(1,2))
+        return q.transpose(1,2), commit_loss[0]
 
 class Encoder(nn.Module):
     def __init__(self, dim: int, depth: int, blocks_per_depth: int):

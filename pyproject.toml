@@ -10,13 +10,14 @@ package-mode = false
 python = "^3.9"
 pytorch-lightning = "^2.2.2"
 jsonargparse = {extras = ["signatures"], version = "^4.28.0"}
-einops = "^0.7.0"
+einops = "^0.8.0"
 click = "^8.1.7"
 rosu-pp-py = "^1.1.0"
 torch = "^2.4.0"
 tinytag = "^1.10.1"
 scipy = "~1.13"
 nnaudio = "^0.3.3"
+vector-quantize-pytorch = "^1.20.11"
 
 [tool.poetry.group.dev]
 optional = true
