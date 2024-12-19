@@ -59,6 +59,7 @@ data:
 model:
     # training parameters
     cursor_factor: 1.
+    kl_factor: 1e-4
     opt_args:
         lr: .01
         betas: [.9,.99]
@@ -67,7 +68,6 @@ model:
     args:
         h_dim: 128
         a_dim: 12
-        x_dim: 6
-        depth: 3
+        x_dim: 7 # maximizes hypersphere surface area
+        depth: 4
         blocks_per_depth: 4
-        vocab_size: 8192

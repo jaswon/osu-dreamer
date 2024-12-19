@@ -17,7 +17,6 @@ torch = "^2.4.0"
 tinytag = "^1.10.1"
 scipy = "~1.13"
 nnaudio = "^0.3.3"
-vector-quantize-pytorch = "^1.20.11"
 
 [tool.poetry.group.dev]
 optional = true

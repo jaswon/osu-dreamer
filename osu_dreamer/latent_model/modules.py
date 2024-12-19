@@ -1,4 +1,5 @@
 
+from typing import Union
 from jaxtyping import Float
 
 from functools import partial
@@ -7,37 +8,20 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from vector_quantize_pytorch import VectorQuantize
-
 import osu_dreamer.modules.mp as MP
+from osu_dreamer.modules.power_spherical import HypersphericalUniform, PowerSpherical
 
-class VectorQuantizer(nn.Module):
-    def __init__(
-        self,
-        embedding_dim: int,
-        num_embeddings: int,
-        decay: float = 0.8,
-        commitment: float = 0.25,
-    ):
+class ChunkPad(nn.Module):
+    def __init__(self, chunk_size: int, pad_value: float = 0.):
         super().__init__()
-        self.vq = VectorQuantize(
-            dim = embedding_dim,
-            codebook_size = num_embeddings,
-            decay = decay,
-            commitment_weight = commitment,
-            rotation_trick = True,
-            use_cosine_sim = True,
-        )
+        self.pad_value = pad_value
+        self.chunk_size = chunk_size
 
-    def forward(
-        self,
-        x: Float[Tensor, "B D L"],
-    ) -> tuple[
-        Float[Tensor, "B D L"],
-        Float[Tensor, ""],
-    ]:
-        q, _, commit_loss = self.vq(x.transpose(1,2))
-        return q.transpose(1,2), commit_loss[0]
+    def forward(self, x: Float[Tensor, "B D iL"]) -> Float[Tensor, "B D oL"]:
+        pad = (self.chunk_size - x.size(-1)%self.chunk_size) % self.chunk_size
+        if pad > 0:
+            x = F.pad(x, (0,pad), value=self.pad_value)
+        return x
 
 class Encoder(nn.Module):
     def __init__(self, dim: int, depth: int, blocks_per_depth: int, down: bool):
@@ -61,3 +45,44 @@ class Encoder(nn.Module):
             x = resample(x, groups=D, stride=2)
             x = block(x)
         return x
+    
+class PSVariational(nn.Module):
+    def __init__(
+        self,
+        h_dim: int,
+        dim: int,
+        net: nn.Module,
+    ):
+        super().__init__()
+        self.net = net
+        self.proj_loc = MP.Linear(h_dim, dim)
+        self.proj_logscale = nn.Sequential(
+            MP.Linear(h_dim, 1),
+            MP.Gain(),
+        )
+        self.hs_unif = HypersphericalUniform(dim=dim)
+
+    def forward(
+        self,
+        x: Float[Tensor, "B iD iL"],
+        return_loss: bool = False,
+    ) -> Union[
+        Float[Tensor, "B oD oL"],
+        tuple[
+            Float[Tensor, "B oD oL"],
+            Float[Tensor, ""],
+        ]
+    ]:
+        x = self.net(x).transpose(1,2) # B L D
+        p = PowerSpherical(
+            loc = F.normalize(self.proj_loc(x), p=2, dim=-1),
+            scale = self.proj_logscale(x).squeeze(-1).exp(),
+        )
+
+        z = p.rsample().transpose(1,2)
+        z = z * z.size(1) ** .5
+        if not return_loss:
+            return z
+        
+        kl_div = th.distributions.kl_divergence(p, self.hs_unif)
+        return z, kl_div.mean()
