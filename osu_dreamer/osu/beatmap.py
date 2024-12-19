@@ -157,13 +157,6 @@ class Beatmap:
             
         if len(self.timing_points) == 0:
             raise ValueError("no timing points")
-            
-    def get_active_timing_point(self, t):
-        idx = bisect.bisect(self.timing_points, Timed(t)) - 1
-        if idx < 0:
-            # `t` comes before every timing point
-            idx = 0
-        return self.timing_points[idx]
 
     def parse_hit_objects(self, lines):
         self.hit_objects: list[Union[Circle, Slider, Spinner]] = []
@@ -180,12 +173,15 @@ class Beatmap:
                     np.array(list(map(int, p.split(":"))), dtype=float) for p in control_points
                 ]
                 
-                tp = self.get_active_timing_point(t)
+                # index of timing point active for time `t` or -1 if before all timing points
+                tp_idx = bisect.bisect(self.timing_points, Timed(t)) - 1
+                beat_length = self.timing_points[max(0, tp_idx)].beat_length
+                slider_mult = 1. if tp_idx < 0 else self.timing_points[tp_idx].slider_mult
                 
                 ho = from_control_points(
                     t, 
-                    tp.beat_length, 
-                    self.slider_mult * tp.slider_mult,
+                    beat_length, 
+                    self.slider_mult * slider_mult,
                     new_combo,
                     hit_sound,
                     int(slides),
