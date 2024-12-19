@@ -22,7 +22,7 @@ from osu_dreamer.data.plot import plot_signals
 from osu_dreamer.modules.adabelief import AdaBelief
 import osu_dreamer.modules.mp as MP
 
-from .modules import Encoder, Decoder, VectorQuantizer
+from .modules import Encoder, VectorQuantizer
 
 @dataclass
 class VQGANArgs:
@@ -74,24 +74,42 @@ class Model(pl.LightningModule):
             ChunkPad(pad_value=-1.),
             MP.Conv1d(A_DIM, args.h_dim, 1),
             MP.PixelNorm(),
-            Encoder(args.h_dim, args.depth, args.blocks_per_depth),
+            Encoder(args.h_dim, args.depth, args.blocks_per_depth, down=True),
             MP.Conv1d(args.h_dim, args.a_dim, 1),
         )
         self.chart_encoder = nn.Sequential(
             ChunkPad(),
             MP.Conv1d(X_DIM, args.h_dim, 1),
             MP.PixelNorm(),
-            Encoder(args.h_dim, args.depth, args.blocks_per_depth),
+            Encoder(args.h_dim, args.depth, args.blocks_per_depth, down=True),
             MP.Conv1d(args.h_dim, args.x_dim, 1),
         )
+
+        class Decoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.vq = VectorQuantizer(args.x_dim, args.vocab_size)
+                self.net = nn.Sequential(
+                    MP.Conv1d(args.a_dim + args.x_dim, args.h_dim, 1),
+                    Encoder(args.h_dim, args.depth, args.blocks_per_depth, down=False),
+                    MP.Conv1d(args.h_dim, X_DIM, 1),
+                    MP.Gain(),
+                )
         
-        self.vq = VectorQuantizer(args.x_dim, args.vocab_size)
-        self.decoder = nn.Sequential(
-            MP.Conv1d(args.a_dim + args.x_dim, args.h_dim, 1),
-            Decoder(args.h_dim, args.depth, args.blocks_per_depth),
-            MP.Conv1d(args.h_dim, X_DIM, 1),
-            MP.Gain(),
-        )
+            def forward(
+                self,
+                zx: Float[Tensor, "B D zL"],
+                za: Float[Tensor, "B A zL"],
+                L: int,
+            ) -> tuple[
+                Float[Tensor, str(f"B {X_DIM} L")],
+                Float[Tensor, ""],
+            ]:
+                q_zx, vq_loss = self.vq(zx)
+                x_hat = self.net(MP.cat([q_zx, za], dim=1))[:,:,:L]
+                return x_hat, vq_loss
+            
+        self.decoder = Decoder()
 
     def forward(
         self,
@@ -100,8 +118,7 @@ class Model(pl.LightningModule):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         za = self.audio_encoder(audio)
-        q_zx, vq_loss = self.vq(self.chart_encoder(chart))
-        pred_chart = self.decoder(MP.cat([q_zx, za], dim=1))[:,:,:chart.size(-1)]
+        pred_chart, vq_loss = self.decoder(self.chart_encoder(chart), za, L=chart.size(-1))
         recon_loss = th.mean((chart - pred_chart) ** 2)
         bound_loss = th.mean((pred_chart.abs().clamp(min=1) - 1) ** 2)
 
@@ -156,13 +173,11 @@ class Model(pl.LightningModule):
         a, x, _ = b
 
         with th.no_grad():
-            za = self.audio_encoder(a)
-            q_zx = self.vq(self.chart_encoder(x))[0]
-            x_hat = self.decoder(MP.cat([q_zx, za], dim=1))[:,:,:x.size(-1)]
-            plots = [ x[0].cpu().numpy() for x in [ x, x_hat, repeat(q_zx, 'b d l -> b d (l r)', r=self.chunk_size)[:,:,:x.size(-1)] ] ]
+            x_hat = self.generate(a[0], lambda _: self.chart_encoder(x))
+            plots = [ x[0].cpu().numpy() for x in [ x, x_hat ] ]
 
+        exp: SummaryWriter = self.logger.experiment # type: ignore
         with plot_signals(a[0].cpu().numpy(), plots) as fig:
-            exp: SummaryWriter = self.logger.experiment # type: ignore
             exp.add_figure("samples", fig, global_step=self.global_step)
         
 #
@@ -188,9 +203,8 @@ class Model(pl.LightningModule):
     ]:
         za = self.audio_encoder(audio[None])[0]
         pred_zx = make_latent(za)
-        q_zx, _ = self.vq(pred_zx)
-        za = repeat(za, 'a l -> b a l', b=q_zx.size(0))
-        pred_chart = self.decoder(MP.cat([q_zx, za], dim=1))[:,:,:audio.size(-1)].clamp(min=-1, max=1)
+        za = repeat(za, 'a l -> b a l', b=pred_zx.size(0))
+        pred_chart = self.decoder(pred_zx, za, L=audio.size(-1))[0].clamp(min=-1, max=1)
         if return_latents:
             return pred_chart, za, pred_zx
         return pred_chart

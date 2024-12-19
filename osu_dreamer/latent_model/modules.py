@@ -1,6 +1,8 @@
 
 from jaxtyping import Float
 
+from functools import partial
+
 import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
@@ -38,8 +40,9 @@ class VectorQuantizer(nn.Module):
         return q.transpose(1,2), commit_loss[0]
 
 class Encoder(nn.Module):
-    def __init__(self, dim: int, depth: int, blocks_per_depth: int):
+    def __init__(self, dim: int, depth: int, blocks_per_depth: int, down: bool):
         super().__init__()
+        self.down = down
         self.blocks = nn.ModuleList([
             MP.ResNet([ MP.Seq(dim) for _ in range(blocks_per_depth) ])
             for _ in range(depth)
@@ -48,23 +51,13 @@ class Encoder(nn.Module):
     def forward(self, x: Float[Tensor, "B D iL"]) -> Float[Tensor, "B D oL"]:
         D = x.size(1)
         f = th.tensor([.5,.5], device=x.device)[None,None].repeat(D,1,1)
+        resample = (
+            partial(F.conv1d, weight=f)
+            if self.down else
+            partial(F.conv_transpose1d, weight=2*f)
+        )
+
         for block in self.blocks:
-            x = F.conv1d(x, f, groups=D, stride=2)
+            x = resample(x, groups=D, stride=2)
             x = block(x)
         return x
-
-class Decoder(nn.Module):
-    def __init__(self, dim: int, depth: int, blocks_per_depth: int):
-        super().__init__()
-        self.blocks = nn.ModuleList([
-            MP.ResNet([ MP.Seq(dim) for _ in range(blocks_per_depth) ])
-            for _ in range(depth)
-        ])
-
-    def forward(self, h: Float[Tensor, "B D iL"]) -> Float[Tensor, "B D oL"]:
-        D = h.size(1)
-        f = 2 * th.tensor([.5,.5], device=h.device)[None,None].repeat(D,1,1)
-        for block in self.blocks:
-            h = F.conv_transpose1d(h, f, groups=D, stride=2)
-            h = block(h)
-        return h
