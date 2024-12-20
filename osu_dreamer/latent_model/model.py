@@ -27,7 +27,9 @@ from .modules import Encoder, ChunkPad, PSVariational
 class VQGANArgs:
     x_dim: int
     a_dim: int
-    h_dim: int
+    a_h_dim: int
+    x_h_dim: int
+    dec_h_dim: int
     depth: int
     blocks_per_depth: int
     
@@ -60,25 +62,25 @@ class Model(pl.LightningModule):
 
         self.audio_encoder = nn.Sequential(
             ChunkPad(self.chunk_size, pad_value=-1.),
-            MP.Conv1d(A_DIM, args.h_dim, 1),
+            MP.Conv1d(A_DIM, args.a_h_dim, 1),
             MP.PixelNorm(),
-            Encoder(args.h_dim, args.depth, args.blocks_per_depth, down=True),
-            MP.Conv1d(args.h_dim, args.a_dim, 1),
+            Encoder(args.a_h_dim, args.depth, args.blocks_per_depth, down=True),
+            MP.Conv1d(args.a_h_dim, args.a_dim, 1),
         )
-        self.chart_encoder = PSVariational(args.h_dim, args.x_dim, nn.Sequential(
+        self.chart_encoder = PSVariational(args.x_h_dim, args.x_dim, nn.Sequential(
             ChunkPad(self.chunk_size),
-            MP.Conv1d(X_DIM, args.h_dim, 1),
+            MP.Conv1d(X_DIM, args.x_h_dim, 1),
             MP.PixelNorm(),
-            Encoder(args.h_dim, args.depth, args.blocks_per_depth, down=True),
+            Encoder(args.x_h_dim, args.depth, args.blocks_per_depth, down=True),
         ))
 
         class Decoder(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.net = nn.Sequential(
-                    MP.Conv1d(args.a_dim + args.x_dim, args.h_dim, 1),
-                    Encoder(args.h_dim, args.depth, args.blocks_per_depth, down=False),
-                    MP.Conv1d(args.h_dim, X_DIM, 1),
+                    MP.Conv1d(args.a_dim + args.x_dim, args.dec_h_dim, 1),
+                    Encoder(args.dec_h_dim, args.depth, args.blocks_per_depth, down=False),
+                    MP.Conv1d(args.dec_h_dim, X_DIM, 1),
                     MP.Gain(),
                 )
         
