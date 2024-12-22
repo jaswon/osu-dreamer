@@ -31,7 +31,8 @@ def events(ts: list[Real], frame_times: FrameTimes) -> Float[ndarray, "L"]:
     return (log_time - MIN_TIME) / (MAX_TIME - MIN_TIME)
 
 def decode_events(events: Float[ndarray, "L"]) -> list[int]:
-    return (np.nonzero(events[1:] < events[:-1] - .1)[0] + 1).tolist()
+    events_pp = events[2:] + events[:-2] - 2 * events[1:-1]
+    return (np.nonzero(events_pp > .5)[0] + 1).tolist()
 
 # == extents ==
 
