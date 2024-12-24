@@ -157,6 +157,15 @@ class Beatmap:
             
         if len(self.timing_points) == 0:
             raise ValueError("no timing points")
+        
+    def uninherited_timing_points(self) -> list[TimingPoint]:
+        """returns a list of timing points that have distinct meter and beat length"""
+        utp = []
+        for tp in self.timing_points:
+            x = TimingPoint(tp.t, tp.beat_length, -1, tp.meter)
+            if len(utp) == 0 or utp[-1] != x:
+                utp.append(x)
+        return utp
 
     def parse_hit_objects(self, lines):
         self.hit_objects: list[Union[Circle, Slider, Spinner]] = []
