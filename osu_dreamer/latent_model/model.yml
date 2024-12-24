@@ -59,17 +59,25 @@ data:
 model:
     # training parameters
     cursor_factor: 1.
-    kl_factor: 1e-4
+    kl_factor: 1e-3
     opt_args:
         lr: .01
         betas: [.9,.99]
     step_ref: 1e4
 
     args:
-        x_h_dim: 64
-        a_h_dim: 96
-        dec_h_dim: 192
-        a_dim: 12
-        x_dim: 7 # maximizes hypersphere surface area
         depth: 4
-        blocks_per_depth: 4
+
+        x_dim: 8
+        x_args:
+            dim: 64
+            blocks_per_depth: 4
+        
+        a_dim: 12
+        a_args:
+            dim: 128
+            blocks_per_depth: 6
+
+        dec_args:
+            dim: 256
+            blocks_per_depth: 6

@@ -21,17 +21,16 @@ from osu_dreamer.data.plot import plot_signals
 from osu_dreamer.modules.adabelief import AdaBelief
 import osu_dreamer.modules.mp as MP
 
-from .modules import Encoder, ChunkPad, PSVariational
+from .modules import Encoder, EncoderArgs, ChunkPad, PSVariational
 
 @dataclass
 class VQGANArgs:
-    x_dim: int
-    a_dim: int
-    a_h_dim: int
-    x_h_dim: int
-    dec_h_dim: int
     depth: int
-    blocks_per_depth: int
+    x_dim: int
+    x_args: EncoderArgs
+    a_dim: int
+    a_args: EncoderArgs
+    dec_args: EncoderArgs
     
 class Model(pl.LightningModule):
     def __init__(
@@ -62,25 +61,25 @@ class Model(pl.LightningModule):
 
         self.audio_encoder = nn.Sequential(
             ChunkPad(self.chunk_size, pad_value=-1.),
-            MP.Conv1d(A_DIM, args.a_h_dim, 1),
+            MP.Conv1d(A_DIM, args.a_args.dim, 1),
             MP.PixelNorm(),
-            Encoder(args.a_h_dim, args.depth, args.blocks_per_depth, down=True),
-            MP.Conv1d(args.a_h_dim, args.a_dim, 1),
+            Encoder(args.depth, args.a_args, down=True),
+            MP.Conv1d(args.a_args.dim, args.a_dim, 1),
         )
-        self.chart_encoder = PSVariational(args.x_h_dim, args.x_dim, nn.Sequential(
+        self.chart_encoder = PSVariational(args.x_args.dim, args.x_dim, nn.Sequential(
             ChunkPad(self.chunk_size),
-            MP.Conv1d(X_DIM, args.x_h_dim, 1),
+            MP.Conv1d(X_DIM, args.x_args.dim, 1),
             MP.PixelNorm(),
-            Encoder(args.x_h_dim, args.depth, args.blocks_per_depth, down=True),
+            Encoder(args.depth, args.x_args, down=True),
         ))
 
         class Decoder(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.net = nn.Sequential(
-                    MP.Conv1d(args.a_dim + args.x_dim, args.dec_h_dim, 1),
-                    Encoder(args.dec_h_dim, args.depth, args.blocks_per_depth, down=False),
-                    MP.Conv1d(args.dec_h_dim, X_DIM, 1),
+                    MP.Conv1d(args.a_dim + args.x_dim, args.dec_args.dim, 1),
+                    Encoder(args.depth, args.dec_args, down=False),
+                    MP.Conv1d(args.dec_args.dim, X_DIM, 1),
                     MP.Gain(),
                 )
         

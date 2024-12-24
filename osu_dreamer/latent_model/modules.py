@@ -2,6 +2,8 @@
 from typing import Union
 from jaxtyping import Float
 
+from dataclasses import dataclass
+
 from functools import partial
 
 import torch as th
@@ -23,12 +25,17 @@ class ChunkPad(nn.Module):
             x = F.pad(x, (0,pad), value=self.pad_value)
         return x
 
+@dataclass
+class EncoderArgs:
+    dim: int
+    blocks_per_depth: int
+
 class Encoder(nn.Module):
-    def __init__(self, dim: int, depth: int, blocks_per_depth: int, down: bool):
+    def __init__(self, depth: int, args: EncoderArgs, *, down: bool):
         super().__init__()
         self.down = down
         self.blocks = nn.ModuleList([
-            MP.ResNet([ MP.Seq(dim) for _ in range(blocks_per_depth) ])
+            MP.ResNet([ MP.Seq(args.dim) for _ in range(args.blocks_per_depth) ])
             for _ in range(depth)
         ])
 
