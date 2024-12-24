@@ -70,22 +70,10 @@ def slides(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "L"]:
             continue
 
         t = (frame_times - ho.t) / ho.slide_duration
-        region = (t >= 0) & (t <= ho.slides)
-        slides[region] = abs((t+1)%2-1)[region]
+        region = (t >= 0) & (t < ho.slides)
+        slides[region] = np.floor(1+t[region])/ho.slides
 
     return slides
-
-def decode_slides(slides: Float[ndarray, "L"]) -> Float[ndarray, "L"]:
-    before_below = slides[:-1] <= 0
-    after_below  = slides[1:]  <= 0
-
-    fore_idxs = np.argwhere(before_below & ~after_below)[:,0]
-    back_idxs = np.argwhere(~before_below & after_below)[:,0]
-    
-    slide_locs = np.zeros_like(slides)
-    slide_locs[fore_idxs+1] = 1
-    slide_locs[back_idxs+1] = 1
-    return slide_locs
 
 # == hit signal ==
 
@@ -109,7 +97,7 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     returns an array encoding a beatmap's hits:
     0. onsets
     1. new combos
-    2. the first slide of sliders
+    2. slider progress
     3. sustains (both sliders and spinners)
     4. whistle hit sound
     5. finish hit sound
@@ -171,8 +159,6 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             continue
         sustain_ends[onset_idx] = sustain_end
 
-    slide_locs = decode_slides(hit_signal[HitEncoding.SLIDE])
-
     hits: list[Hit] = []
     for onset_loc, onset_prop, sustain_end in zip(onset_idxs, onset_props, sustain_ends):
         hit = (onset_loc, *onset_prop.tolist())
@@ -182,7 +168,10 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             hits.append(hit)
             continue
 
-        num_slides = int(slide_locs[onset_loc:sustain_end+1].sum())
+        num_slides = round(hit_signal[HitEncoding.SLIDE,onset_loc:sustain_end].mean() ** -1)
+        if num_slides == -1:
+            # spinner
+            num_slides = 0
         hits.append((*hit, sustain_end, num_slides))
     
     return hits
