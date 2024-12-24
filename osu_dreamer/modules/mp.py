@@ -11,7 +11,7 @@ import torch as th
 import torch.nn.functional as F
 from torch import nn, Tensor
 
-def normalize(x: Float[Tensor, "..."], dim=None, eps=1e-4) -> Float[Tensor, "..."]:
+def normalize(x: Float[Tensor, "B ..."], dim=None, eps=1e-4) -> Float[Tensor, "B ..."]:
     if dim is None:
         dim = list(range(1, x.ndim))
     norm = th.linalg.vector_norm(x, dim=dim, keepdim=True, dtype=th.float32)
