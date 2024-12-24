@@ -102,13 +102,11 @@ class Model(pl.LightningModule):
         za = self.audio_encoder(audio)
         zx, kl_loss = self.chart_encoder(chart, return_loss = True)
         pred_chart = self.decoder(zx, za, L=chart.size(-1))
-        recon_loss = th.mean((chart - pred_chart) ** 2)
-        bound_loss = th.mean((pred_chart.abs().clamp(min=1) - 1) ** 2)
+        recon_loss = (chart - pred_chart).pow(2).mean()
+        bound_loss = (pred_chart.abs().clamp(min=1) - 1).pow(2).mean()
 
-        cursor_diff = chart[:, CursorSignals, 1:] - chart[:, CursorSignals, :-1]
-        pred_cursor_diff = pred_chart[:, CursorSignals, 1:] - pred_chart[:, CursorSignals, :-1]
-        cd_map = lambda diff: th.tanh(diff * 20)
-        cursor_loss = (cd_map(cursor_diff) - cd_map(pred_cursor_diff)).pow(2).mean()
+        cd_map = lambda chart: th.tanh(chart[..., CursorSignals, 1:] - chart[..., CursorSignals, :-1] * 20)
+        cursor_loss = (cd_map(chart) - cd_map(pred_chart)).pow(2).mean()
 
         
         loss = ( 
