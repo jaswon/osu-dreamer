@@ -14,12 +14,12 @@ class _TTransform(torch.distributions.Transform):
     codomain = torch.distributions.constraints.real
     
     def _call(self, x):
-        t = x[..., 0].unsqueeze(-1)
+        t = x[..., :1]
         v = x[..., 1:]
         return torch.cat((t, v * torch.sqrt(torch.clamp(1 - t ** 2, _EPS))), -1)
 
     def _inverse(self, y):
-        t = y[..., 0].unsqueeze(-1)
+        t = y[..., :1]
         v = y[..., 1:]
         return torch.cat((t, v / torch.sqrt(torch.clamp(1 - t ** 2, _EPS))), -1)
 
@@ -35,19 +35,17 @@ class _HouseholderRotationTransform(torch.distributions.Transform):
     
     def __init__(self, loc):
         super().__init__()
-        self.loc = loc
-        self.e1 = torch.zeros_like(self.loc)
-        self.e1[..., 0] = 1
+        e1 = torch.zeros_like(loc)
+        e1[..., 0] = 1
+        u = e1 - loc
+        u = u / (u.norm(dim=-1, keepdim=True) + _EPS)
+        self.U = torch.eye(u.size(-1), device=u.device) - 2 * u[...,None,:] * u[...,:,None]
 
     def _call(self, x):
-        u = self.e1 - self.loc
-        u = u / (u.norm(dim=-1, keepdim=True) + _EPS)
-        return x - 2 * (x * u).sum(-1, keepdim=True) * u
+        return torch.matmul(x.unsqueeze(-2), self.U.to(x)).squeeze(-2)
 
     def _inverse(self, y):
-        u = self.e1 - self.loc
-        u = u / (u.norm(dim=-1, keepdim=True) + _EPS)
-        return y - 2 * (y * u).sum(-1, keepdim=True) * u
+        return torch.matmul(y.unsqueeze(-2), self.U.to(y)).squeeze(-2)
 
     def log_abs_det_jacobian(self, x, y):
         return 0
@@ -61,7 +59,7 @@ class HypersphericalUniform(torch.distributions.Distribution):
 
     def __init__(self, dim, device="cpu", dtype=torch.float32, validate_args=None):
         self.dim = dim if isinstance(dim, torch.Tensor) else torch.tensor(dim, device=device)
-        super().__init__(validate_args=validate_args)
+        super().__init__(event_shape=torch.Size([dim]), validate_args=validate_args)
         self.device, self.dtype = device, dtype
 
     def rsample(self, sample_shape=()):
@@ -97,8 +95,8 @@ class MarginalTDistribution(torch.distributions.TransformedDistribution):
 
     has_rsample = True
 
-    def __init__(self, dim, scale, validate_args=None):
-        self.dim = dim if isinstance(dim, torch.Tensor) else torch.tensor(dim, device=scale.device)
+    def __init__(self, dim: int, scale, validate_args=None):
+        self.dim = torch.tensor(dim, device=scale.device)
         self.scale = scale
         super().__init__(
             torch.distributions.Beta(
@@ -125,23 +123,18 @@ class MarginalTDistribution(torch.distributions.TransformedDistribution):
 
 
 class _JointTSDistribution(torch.distributions.Distribution):
-    def __init__(self, marginal_t, marginal_s):
-        super().__init__(validate_args=False)
+    def __init__(self, marginal_t: MarginalTDistribution, marginal_s: HypersphericalUniform):
         self.marginal_t, self.marginal_s = marginal_t, marginal_s
+        super().__init__(marginal_t.batch_shape, (marginal_s.dim + 1,), validate_args=False)
 
     def rsample(self, sample_shape=()):
-        return torch.cat(
-            (
-                self.marginal_t.rsample(sample_shape).unsqueeze(-1),
-                self.marginal_s.rsample(sample_shape + self.marginal_t.scale.shape),
-            ),
-            -1,
-        )
+        return torch.cat([
+            self.marginal_t.rsample(sample_shape).unsqueeze(-1),
+            self.marginal_s.rsample(sample_shape + self.marginal_t.batch_shape),
+        ], dim=-1)
 
     def log_prob(self, value):
-        return self.marginal_t.log_prob(value[..., 0]) + self.marginal_s.log_prob(
-            value[..., 1:]
-        )
+        return self.marginal_t.log_prob(value[..., 0]) + self.marginal_s.log_prob(value[..., 1:])
 
     def entropy(self):
         return self.marginal_t.entropy() + self.marginal_s.entropy()
@@ -157,12 +150,15 @@ class PowerSpherical(torch.distributions.TransformedDistribution):
     has_rsample = True
 
     def __init__(self, loc, scale, validate_args=None):
-
-        self.loc, self.scale, = loc, scale
+        self.scale = scale
+        norm = loc.norm(dim=-1, keepdim=True) + _EPS
+        self.loc = loc / norm
         super().__init__(
             _JointTSDistribution(
                 MarginalTDistribution(
-                    loc.shape[-1], scale, validate_args=validate_args
+                    loc.shape[-1], 
+                    scale, 
+                    validate_args=validate_args,
                 ),
                 HypersphericalUniform(
                     loc.shape[-1] - 1,
@@ -171,14 +167,16 @@ class PowerSpherical(torch.distributions.TransformedDistribution):
                     validate_args=validate_args,
                 ),
             ),
-            [_TTransform(), _HouseholderRotationTransform(loc),],
+            [
+                _TTransform(), 
+                _HouseholderRotationTransform(self.loc),
+                torch.distributions.transforms.AffineTransform(loc=0, scale=norm),
+            ],
         )
         
 
     def log_prob(self, value):
-        return self.log_normalizer() + self.scale * torch.log1p(
-            (self.loc * value).sum(-1)
-        )
+        return self.log_normalizer() + self.scale * torch.log1p((self.loc * value).sum(-1))
 
     def log_normalizer(self):
         alpha = self.base_dist.marginal_t.base_dist.concentration1

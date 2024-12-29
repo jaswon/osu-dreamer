@@ -82,12 +82,11 @@ class PSVariational(nn.Module):
     ]:
         x = self.net(x).transpose(1,2) # B L D
         p = PowerSpherical(
-            loc = F.normalize(self.proj_loc(x), p=2, dim=-1),
+            loc = MP.normalize(self.proj_loc(x), dim=-1),
             scale = self.proj_logscale(x).squeeze(-1).exp(),
         )
 
         z = p.rsample().transpose(1,2)
-        z = z * z.size(1) ** .5
         if not return_loss:
             return z
         
