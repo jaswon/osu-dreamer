@@ -105,7 +105,7 @@ class Model(pl.LightningModule):
         recon_loss = (chart - pred_chart).pow(2).mean()
         bound_loss = (pred_chart.abs().clamp(min=1) - 1).pow(2).mean()
 
-        cd_map = lambda chart: th.tanh(chart[..., CursorSignals, 1:] - chart[..., CursorSignals, :-1] * 20)
+        cd_map = lambda chart: th.tanh(20 * (chart[..., CursorSignals, 1:] - chart[..., CursorSignals, :-1]))
         cursor_loss = (cd_map(chart) - cd_map(pred_chart)).pow(2).mean()
 
         
