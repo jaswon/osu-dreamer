@@ -83,7 +83,7 @@ class PSVariational(nn.Module):
         x = self.net(x).transpose(1,2) # B L D
         p = PowerSpherical(
             loc = MP.normalize(self.proj_loc(x), dim=-1),
-            scale = self.proj_logscale(x).squeeze(-1).exp(),
+            scale = F.softplus(self.proj_logscale(x).squeeze(-1)),
         )
 
         z = p.rsample().transpose(1,2)
