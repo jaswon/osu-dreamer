@@ -85,8 +85,6 @@ HitEncoding = IntEnum('HitEncoding', [
     "WHISTLE",
     "FINISH",
     "CLAP",
-    "BEAT",
-    "METER",
 ], start=0)
 HIT_DIM = len(HitEncoding)
 
@@ -102,16 +100,7 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     4. whistle hit sound
     5. finish hit sound
     6. clap hit sound
-    7. beats
-    8. measures (= beat * meter)
     """
-
-    utp = bm.uninherited_timing_points()
-    beat_times = []
-    meter_times = []
-    for tp, end in zip(utp, [tp.t for tp in utp[1:]] + [frame_times[-1]]):
-        beat_times.extend(np.arange(tp.t, end, tp.beat_length))
-        meter_times.extend(np.arange(tp.t, end, tp.beat_length * tp.meter))
 
     return np.stack([
         events([ ho.t for ho in bm.hit_objects                 ], frame_times), # onsets
@@ -122,11 +111,9 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
             for ho in bm.hit_objects
             if isinstance(ho, (Slider, Spinner))
         ], frame_times), # sustains
-        events([ ho.t for ho in bm.hit_objects if ho.whistle ], frame_times),
-        events([ ho.t for ho in bm.hit_objects if ho.finish ], frame_times),
-        events([ ho.t for ho in bm.hit_objects if ho.clap ], frame_times),
-        events(beat_times, frame_times),
-        events(meter_times, frame_times),
+        events([ ho.t for ho in bm.hit_objects if ho.whistle ], frame_times), # whistles
+        events([ ho.t for ho in bm.hit_objects if ho.finish ], frame_times), # finishes
+        events([ ho.t for ho in bm.hit_objects if ho.clap ], frame_times), # claps
     ]) * 2 - 1
 
 Hit = Union[

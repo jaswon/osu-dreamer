@@ -20,8 +20,6 @@ BeatmapEncoding = IntEnum('BeatmapEncoding', [
     "WHISTLE",
     "FINISH",
     "CLAP",
-    "BEAT",
-    "METER",
 
     # cursor signals
     "X",
@@ -37,8 +35,6 @@ HitSignals = [
     BeatmapEncoding.WHISTLE,
     BeatmapEncoding.FINISH,
     BeatmapEncoding.CLAP,
-    BeatmapEncoding.BEAT,
-    BeatmapEncoding.METER,
 ]
 HIT_DIM = len(HitSignals)
 
