@@ -4,8 +4,6 @@ from jaxtyping import Float
 
 from dataclasses import dataclass
 
-from functools import partial
-
 import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
@@ -33,6 +31,11 @@ class EncoderArgs:
 class Encoder(nn.Module):
     def __init__(self, depth: int, args: EncoderArgs, *, down: bool):
         super().__init__()
+        resample = nn.Conv1d if down else nn.ConvTranspose1d
+        self.resamples = nn.ModuleList([
+            resample(args.dim, args.dim, 4,2,1, groups=args.dim)
+            for _ in range(depth)
+        ])
         self.down = down
         self.blocks = nn.ModuleList([
             MP.ResNet([ MP.Seq(args.dim) for _ in range(args.blocks_per_depth) ])
@@ -40,16 +43,8 @@ class Encoder(nn.Module):
         ])
 
     def forward(self, x: Float[Tensor, "B D iL"]) -> Float[Tensor, "B D oL"]:
-        D = x.size(1)
-        f = th.tensor([.5,.5], device=x.device)[None,None].repeat(D,1,1)
-        resample = (
-            partial(F.conv1d, weight=f)
-            if self.down else
-            partial(F.conv_transpose1d, weight=2*f)
-        )
-
-        for block in self.blocks:
-            x = resample(x, groups=D, stride=2)
+        for resample, block in zip(self.resamples, self.blocks):
+            x = resample(x)
             x = block(x)
         return x
     
