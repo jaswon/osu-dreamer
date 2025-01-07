@@ -89,7 +89,7 @@ class Model(pl.LightningModule):
                 za: Float[Tensor, "B A zL"],
                 L: int,
             ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-                return self.net(MP.cat([MP.pixel_norm(zx), za], dim=1))[:,:,:L]
+                return self.net(MP.cat([zx, MP.pixel_norm(za)], dim=1))[:,:,:L]
             
         self.decoder = Decoder()
 
