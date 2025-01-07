@@ -62,19 +62,6 @@ def decode_extents(extents: Float[ndarray, "L"]) -> tuple[list[int], list[int]]:
 
     return start_idxs[:cursor], end_idxs[:cursor]
 
-def slides(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "L"]:
-    slides = np.zeros_like(frame_times)
-
-    for ho in bm.hit_objects:
-        if not isinstance(ho, Slider):
-            continue
-
-        t = (frame_times - ho.t) / ho.slide_duration
-        region = (t >= 0) & (t < ho.slides)
-        slides[region] = np.floor(1+t[region])/ho.slides
-
-    return slides
-
 # == hit signal ==
 
 HitEncoding = IntEnum('HitEncoding', [
@@ -95,17 +82,23 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     returns an array encoding a beatmap's hits:
     0. onsets
     1. new combos
-    2. slider progress
+    2. slide ends
     3. sustains (both sliders and spinners)
     4. whistle hit sound
     5. finish hit sound
     6. clap hit sound
     """
 
+    slide_times = []
+    for ho in bm.hit_objects:
+        if not isinstance(ho, Slider):
+            continue
+        slide_times.extend([ ho.t + ho.slide_duration * (i+1) for i in range(ho.slides) ])
+
     return np.stack([
         events([ ho.t for ho in bm.hit_objects                 ], frame_times), # onsets
         events([ ho.t for ho in bm.hit_objects if ho.new_combo ], frame_times), # new combos
-        slides(bm, frame_times), # slides
+        events(slide_times, frame_times), # slides
         extents([
             (ho.t, ho.end_time())
             for ho in bm.hit_objects
@@ -146,6 +139,9 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             continue
         sustain_ends[onset_idx] = sustain_end
 
+    slides = np.zeros_like(hit_signal[0])
+    slides[decode_events(hit_signal[HitEncoding.SLIDE])] = 1
+
     hits: list[Hit] = []
     for onset_loc, onset_prop, sustain_end in zip(onset_idxs, onset_props, sustain_ends):
         hit = (onset_loc, *onset_prop.tolist())
@@ -155,10 +151,7 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             hits.append(hit)
             continue
 
-        num_slides = round(hit_signal[HitEncoding.SLIDE,onset_loc:sustain_end].mean() ** -1)
-        if num_slides == -1:
-            # spinner
-            num_slides = 0
+        num_slides = int(slides[onset_loc:sustain_end+1].sum())
         hits.append((*hit, sustain_end, num_slides))
     
     return hits
