@@ -8,6 +8,8 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+from einops import repeat
+
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.power_spherical import HypersphericalUniform, PowerSpherical
 
@@ -58,10 +60,7 @@ class PSVariational(nn.Module):
         super().__init__()
         self.net = net
         self.proj_loc = MP.Linear(h_dim, dim)
-        self.proj_logscale = nn.Sequential(
-            MP.Linear(h_dim, 1),
-            MP.Gain(),
-        )
+        self.logscale = nn.Parameter(th.zeros(1))
         self.hs_unif = HypersphericalUniform(dim=dim)
 
     def forward(
@@ -78,7 +77,7 @@ class PSVariational(nn.Module):
         x = self.net(x).transpose(1,2) # B L D
         p = PowerSpherical(
             loc = MP.normalize(self.proj_loc(x), dim=-1),
-            scale = F.softplus(self.proj_logscale(x).squeeze(-1)),
+            scale = repeat(self.logscale.exp(), '1 -> b l', b=x.size(0), l=x.size(1)),
         )
 
         z = p.rsample().transpose(1,2)
