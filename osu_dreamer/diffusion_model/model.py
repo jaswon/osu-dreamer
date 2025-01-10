@@ -170,10 +170,15 @@ class Model(pl.LightningModule):
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
         
-        plots = [ x[0].cpu().numpy() for x in [ x, pred_x ] ]
-        with plot_signals(a[0].cpu().numpy(), plots) as fig:
+        with plot_signals(
+            a[0].cpu().numpy(),
+            [ x[0].cpu().numpy() for x in [ x, pred_x ] ],
+        ) as fig:
             exp.add_figure("samples", fig, global_step=self.global_step)
         
-        plots = [ x[0].cpu().numpy() for x in [ z_x, pred_z_x ] ]
-        with plot_signals(z_a[0].cpu().numpy(), plots, temporal_scale=.01 * self.latent.chunk_size) as fig:
+        with plot_signals(
+            z_a[0].cpu().numpy(), 
+            [ x[0].cpu().numpy() for x in [ z_x, pred_z_x ] ], 
+            temporal_scale=.01 * .25 * self.latent.chunk_size,
+        ) as fig:
             exp.add_figure("latents", fig, global_step=self.global_step)

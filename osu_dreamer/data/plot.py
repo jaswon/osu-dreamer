@@ -19,8 +19,7 @@ def plot_signals(
     w, h = audio.shape[-1] * temporal_scale, sum(height_ratios) * .4
 
     # split plot across multiple rows
-    split = ((w/h)/(3/5)) ** .5 # 3 wide by 5 tall aspect ratio
-    split = int(split + 1)
+    split = int(1 + ((w/h)/(3/5)) ** .5) # 3 wide by 5 tall aspect ratio
     w = w // split
     h = h * split
     height_ratios = height_ratios * split
@@ -28,7 +27,6 @@ def plot_signals(
     fig, all_axs = plt.subplots(
         len(height_ratios), 1,
         figsize=(w, h),
-        sharex=True,
         gridspec_kw=dict(
             height_ratios=height_ratios,
             hspace=.1,
@@ -41,14 +39,12 @@ def plot_signals(
 
     win_len = audio.shape[-1] // split
     for i in range(split):
-        ax1, *axs = all_axs[i * plots_per_row: (i+1) * plots_per_row]
         sl = (..., slice(i * win_len, (i+1) * win_len))
-        ax1.imshow(audio[sl], origin="lower", aspect='auto')
-        
-        for (i, sample), ax in zip(enumerate(signals), axs):
+        ax1, *axs = all_axs[i * plots_per_row: (i+1) * plots_per_row]
+        ax1.pcolormesh(audio[sl])
+        for sample, ax in zip(signals, axs):
             ax.margins(x=0)
-            for ch in sample[sl]:
-                ax.plot(ch)
+            ax.plot(sample[sl].T)
 
     yield fig
     plt.close(fig)
