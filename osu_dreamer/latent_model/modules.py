@@ -33,20 +33,23 @@ class EncoderArgs:
 class Encoder(nn.Module):
     def __init__(self, depth: int, args: EncoderArgs, *, down: bool):
         super().__init__()
-        resample = MP.Conv1d if down else MP.ConvTranspose1d
-        self.resamples = nn.ModuleList([
-            resample(args.dim, args.dim, 4,2,1, groups=args.dim)
-            for _ in range(depth)
-        ])
-        self.down = down
+        if down:
+            self.resample = F.conv1d
+            self.K = th.full((2,), .5)
+        else:
+            self.resample = F.conv_transpose1d
+            self.K = th.full((2,), 1.)
+
         self.blocks = nn.ModuleList([
             MP.ResNet([ MP.Seq(args.dim) for _ in range(args.blocks_per_depth) ])
             for _ in range(depth)
         ])
 
     def forward(self, x: Float[Tensor, "B D iL"]) -> Float[Tensor, "B D oL"]:
-        for resample, block in zip(self.resamples, self.blocks):
-            x = resample(x)
+        D = x.size(1)
+        K = self.K.to(x)[None,None].repeat(D,1,1)
+        for block in self.blocks:
+            x = self.resample(x, K, groups=D, stride=2)
             x = block(x)
         return x
     
