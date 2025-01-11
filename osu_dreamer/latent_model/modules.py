@@ -33,7 +33,7 @@ class EncoderArgs:
 class Encoder(nn.Module):
     def __init__(self, depth: int, args: EncoderArgs, *, down: bool):
         super().__init__()
-        resample = nn.Conv1d if down else nn.ConvTranspose1d
+        resample = MP.Conv1d if down else MP.ConvTranspose1d
         self.resamples = nn.ModuleList([
             resample(args.dim, args.dim, 4,2,1, groups=args.dim)
             for _ in range(depth)

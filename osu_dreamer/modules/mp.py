@@ -87,6 +87,23 @@ class Conv1d(nn.Conv1d):
     def forward(self, x: Float[Tensor, "B iD iL"]) -> Float[Tensor, "B oD oL"]:
         return self._conv_forward(x, get_normed_weight(self.weight, self.training), None)
 
+class ConvTranspose1d(nn.ConvTranspose1d):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, bias=False)
+        th.nn.init.normal_(self.weight)
+    
+    def forward(self, x: Float[Tensor, "B iD iL"]) -> Float[Tensor, "B oD oL"]:
+        return F.conv_transpose1d(
+            x, 
+            get_normed_weight(self.weight, self.training), 
+            self.bias,
+            self.stride,
+            self.padding,
+            self.output_padding,
+            self.groups,
+            self.dilation,
+        )
+
 class Conv2d(nn.Conv2d):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs, bias=False)
