@@ -90,7 +90,7 @@ class MarginalTDistribution(torch.distributions.TransformedDistribution):
 
     arg_constraints = {
         "dim": torch.distributions.constraints.positive_integer,
-        "scale": torch.distributions.constraints.positive,
+        "scale": torch.distributions.constraints.nonnegative,
     }
 
     has_rsample = True
@@ -144,7 +144,7 @@ class PowerSpherical(torch.distributions.TransformedDistribution):
 
     arg_constraints = {
         "loc": torch.distributions.constraints.real,
-        "scale": torch.distributions.constraints.positive,
+        "scale": torch.distributions.constraints.nonnegative,
     }
 
     has_rsample = True
