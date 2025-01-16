@@ -171,7 +171,7 @@ class Beatmap:
         self.hit_objects: list[Union[Circle, Slider, Spinner]] = []
         for l in lines:
             spl = l.strip().split(",")
-            x, y, t, typ, hit_sound = [int(x) for x in spl[:5]]
+            x, y, t, typ, hit_sound = [int(float(x)) for x in spl[:5]]
             new_combo = (typ&(1<<2)) > 0 
             if typ & (1 << 0):  # hit circle
                 ho = Circle(t, new_combo, hit_sound, x, y)
@@ -179,7 +179,7 @@ class Beatmap:
                 curve, slides, length = spl[5:8]
                 _, *control_points = curve.split("|")
                 control_points = [np.array([x,y], dtype=float)] + [
-                    np.array(list(map(int, p.split(":"))), dtype=float) for p in control_points
+                    np.array(list(map(float, p.split(":"))), dtype=float) for p in control_points
                 ]
                 
                 # index of timing point active for time `t` or -1 if before all timing points

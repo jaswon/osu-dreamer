@@ -86,10 +86,12 @@ def process_mapset(kv: tuple[Path, list[Path]]):
 
         frame_times = get_frame_times(spec.shape[1])
         for bm, map_path in bms:
+            if map_path.exists():
+                continue
             try:
                 bm.parse_map_data()
             except Exception as e:
-                print(f"{map_file}: {e}")
+                print(f"{bm.filename}: {e}")
                 continue
             diff_labels = get_labels(bm)
 
@@ -97,7 +99,7 @@ def process_mapset(kv: tuple[Path, list[Path]]):
             try:
                 x = encode_beatmap(bm, frame_times)
             except Exception as e:
-                print(f"{map_file} [encode]:{e}")
+                print(f"{bm.filename} [encode]:{e}")
                 continue
 
             with open(map_path, "wb") as f:
