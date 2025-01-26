@@ -34,21 +34,21 @@ trainer:
             save_dir: runs
             name: denoiser
 
-    accumulate_grad_batches: 1
+    accumulate_grad_batches: 8
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
     
 data:
     # length of each training subsequence
-    seq_len: 2048 # * 6ms/frame ~= 12.3s
+    seq_len: 4096 # * 6ms/frame ~= 24.6s
     
     # affects how many samples are generated from a single beatmap (per epoch)
     # higher number means more samples from the same beatmap
-    subseq_density: .2
+    subseq_density: .4
     
     # size of training batch
-    batch_size: 16
+    batch_size: 8
     
     # number of workers to use for data loading
     num_workers: 6
@@ -66,25 +66,24 @@ model:
     # training parameters
     step_ref: 1e4
     opt_args:
-        lr: .01 # ~ 1.3 * #params ** -.25
+        lr: .01
         betas: [.9,.99]
 
     # model hyperparameters
     latent_ckpt: latent.ckpt
     
     diffusion_args:
-        log_snr_scale: 5e0
+        log_snr_scale: 3e0
         log_snr_bound: 5e-2
         std_data: 1.
         noise_level_features: 32
 
-    audio_feature_args:
-        dim: 192
-        depth: 8
-        expand: 1
+    audio_encoder_args:
+        dim: 256
+        block_depth: 4
 
     denoiser_args:
-        h_dim: 192
-        c_dim: 192
+        h_dim: 128
+        c_dim: 256
         expand: 1
-        depth: 16
+        depth: 8

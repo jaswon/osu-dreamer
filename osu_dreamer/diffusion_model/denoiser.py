@@ -39,12 +39,15 @@ class Denoiser(nn.Module):
         class layer(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.proj_y = MP.Conv1d(a_dim, args.h_dim, 1)
+                self.proj_y = MP.Seq(a_dim)
                 self.proj_c = nn.Sequential(
-                    MP.Linear(args.c_dim, args.h_dim),
+                    MP.Linear(args.c_dim, args.h_dim + a_dim),
                     MP.Gain(),
                 )
-                self.seq = MP.Seq(args.h_dim, args.expand)
+                self.seq = nn.Sequential(
+                    MP.Seq(args.h_dim + a_dim, args.expand),
+                    MP.Conv1d(args.h_dim + a_dim, args.h_dim, 1),
+                )
 
             def forward(
                 self,
@@ -52,7 +55,7 @@ class Denoiser(nn.Module):
                 y: Float[Tensor, "B Y L"],
                 c: Float[Tensor, "B C"],
             ) -> Float[Tensor, "B X L"]:
-                xy = MP.add(x, self.proj_y(y), t=.1)
+                xy = MP.cat([x, self.proj_y(y)], dim=1)
                 c = self.proj_c(c)[:,:,None] + 1
                 return self.seq(c * xy)
             

@@ -5,7 +5,7 @@ from typing import Any, Union
 from jaxtyping import Float
 
 import torch as th
-from torch import Tensor
+from torch import Tensor, nn
 
 from einops import repeat, rearrange
 
@@ -18,12 +18,13 @@ from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
+import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.adabelief import AdaBelief
 
 from osu_dreamer.latent_model.model import Model as LatentModel
+from osu_dreamer.latent_model.modules import Encoder, EncoderArgs, ChunkPad
 from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
-from .audio_features import AudioFeatures, AudioFeatureArgs
 
     
 class Model(pl.LightningModule):
@@ -42,7 +43,7 @@ class Model(pl.LightningModule):
         latent_ckpt: str,
         diffusion_args: DiffusionArgs,
         denoiser_args: DenoiserArgs,
-        audio_feature_args: AudioFeatureArgs,
+        audio_encoder_args: EncoderArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -51,17 +52,22 @@ class Model(pl.LightningModule):
         self.latent = LatentModel.load_from_checkpoint(latent_ckpt)
         self.latent.freeze()
         self.diffusion = Diffusion(diffusion_args)
-        self.audio_features = AudioFeatures(self.latent.a_dim, audio_feature_args)
+        self.audio_encoder = nn.Sequential(
+            ChunkPad(self.latent.chunk_size),
+            MP.Conv1d(A_DIM, audio_encoder_args.dim, 1),
+            Encoder(self.latent.depth, audio_encoder_args),
+            MP.PixelNorm(),
+        )
         self.denoiser = Denoiser(
             self.latent.x_dim, 
-            audio_feature_args.dim, 
+            audio_encoder_args.dim, 
             diffusion_args.noise_level_features, 
             denoiser_args,
         )
 
         # self.latent.compile()
         # self.diffusion.compile()
-        # self.audio_features.compile()
+        # self.audio_encoder.compile()
         # self.denoiser.compile()
 
         # validation params
@@ -82,9 +88,8 @@ class Model(pl.LightningModule):
         
         with th.no_grad():
             z_x = self.latent.chart_encoder(chart)
-            z_a = self.latent.audio_encoder(audio)
 
-        denoiser = partial(self.denoiser,self.audio_features(z_a),labels)
+        denoiser = partial(self.denoiser,self.audio_encoder(audio),labels)
         pred_z_x, u, loss_weight = self.diffusion.training_sample(denoiser, z_x)
 
         pixel_loss = loss_weight * (pred_z_x - z_x).pow(2).mean((1,2))
@@ -106,18 +111,17 @@ class Model(pl.LightningModule):
         Float[Tensor, str(f"B {X_DIM} L")],
         tuple[
             Float[Tensor, str(f"B {X_DIM} L")],
-            Float[Tensor, "B A zL"],
             Float[Tensor, "B X zL"],
         ]
     ]:
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
 
-        def make_latent(z_a: Float[Tensor, "A zL"]) -> Float[Tensor, "B X zL"]:
+        def make_latent(a: Float[Tensor, "A L"]) -> Float[Tensor, "B X zL"]:
+            z_a = repeat(self.audio_encoder(a[None]), '1 a l -> b a l', b=num_samples)
             z = th.randn(num_samples, self.latent.x_dim, z_a.size(-1), device=audio.device)
-            a_f = repeat(self.audio_features(z_a[None]), '1 a l -> b a l', b=num_samples)
             return self.diffusion.sample(
-                partial(self.denoiser,a_f,labels), 
+                partial(self.denoiser,z_a,labels), 
                 num_steps, z,
                 **kwargs,
             )
@@ -165,8 +169,7 @@ class Model(pl.LightningModule):
     def plot_sample(self, b: Batch):
         a, x, label = b
 
-        z_x = self.latent.chart_encoder(x)
-        pred_x, z_a, pred_z_x = self.sample(a[0], label, return_latents=True)
+        pred_x = self.sample(a[0], label)
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
         
@@ -176,9 +179,10 @@ class Model(pl.LightningModule):
         ) as fig:
             exp.add_figure("samples", fig, global_step=self.global_step)
         
-        with plot_signals(
-            z_a[0].cpu().numpy(), 
-            [ x[0].cpu().numpy() for x in [ z_x, pred_z_x ] ], 
-            temporal_scale=.01 * .25 * self.latent.chunk_size,
-        ) as fig:
-            exp.add_figure("latents", fig, global_step=self.global_step)
+        # z_x = self.latent.encoder(x)
+        # with plot_signals(
+        #     z_a[0].cpu().numpy(), 
+        #     [ x[0].cpu().numpy() for x in [ z_x, pred_z_x ] ], 
+        #     temporal_scale=.01 * .25 * self.latent.chunk_size,
+        # ) as fig:
+        #     exp.add_figure("latents", fig, global_step=self.global_step)

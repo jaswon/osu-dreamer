@@ -32,7 +32,7 @@ trainer:
             save_dir: runs
             name: latent
 
-    accumulate_grad_batches: 1
+    accumulate_grad_batches: 4
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
@@ -46,7 +46,7 @@ data:
     subseq_density: .1
     
     # size of training batch
-    batch_size: 16
+    batch_size: 8
     
     # number of workers to use for data loading
     num_workers: 4
@@ -58,8 +58,8 @@ data:
     
 model:
     # training parameters
-    cursor_factor: 1.
-    kl_factor: 1e-3
+    cursor_factor: .1
+    kl_factor: 1e-6
     opt_args:
         lr: .01
         betas: [.9,.99]
@@ -70,14 +70,9 @@ model:
 
         x_dim: 8
         x_args:
-            dim: 64
-            blocks_per_depth: 4
-        
-        a_dim: 12
-        a_args:
-            dim: 128
-            blocks_per_depth: 6
-
-        dec_args:
             dim: 256
-            blocks_per_depth: 6
+            block_depth: 6
+
+        unet_args:
+            dim: 256
+            block_depth: 3
