@@ -1,35 +1,26 @@
-[tool.poetry]
+[project]
 name = "osu-dreamer"
-version = "5.0"
-description = "a diffusion-based ML model for generating osu! maps from raw audio"
-authors = ["jason <jason@jwon.xyz>"]
+version = "0.1.0"
+description = "Add your description here"
 readme = "README.md"
-package-mode = false
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1.8",
+    "einops>=0.8.0",
+    "jsonargparse[signatures]>=4.36.0",
+    "nnaudio>=0.3.3",
+    "pytorch-lightning==2.2.2",
+    "rosu-pp-py>=2.0.1",
+    "scipy>=1.15.1",
+    "tinytag>=2.0.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.9"
-pytorch-lightning = "^2.2.2"
-jsonargparse = {extras = ["signatures"], version = "^4.28.0"}
-einops = "^0.8.0"
-click = "^8.1.7"
-rosu-pp-py = "^1.1.0"
-torch = "^2.4.0"
-tinytag = "^1.10.1"
-scipy = "~1.13"
-nnaudio = "^0.3.3"
-
-[tool.poetry.group.dev]
-optional = true
-
-[tool.poetry.group.dev.dependencies]
-beartype = "^0.18.3"
-jaxtyping = "^0.2.28"
-tensorboard = "^2.16.2"
-matplotlib = "^3.8.4"
-ipykernel = "^6.29.4"
-librosa = "^0.10.2.post1"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "beartype>=0.19.0",
+    "ipykernel>=6.29.5",
+    "jaxtyping>=0.2.37",
+    "librosa>=0.10.2.post1",
+    "matplotlib>=3.10.0",
+    "tensorboard>=2.18.0",
+]

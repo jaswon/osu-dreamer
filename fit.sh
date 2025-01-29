@@ -20,7 +20,7 @@ fi
 while : ; do
     flags=()
 
-    poetry run python -m osu_dreamer fit-$1 ${LAST_RUN:+--ckpt-path="$LAST_RUN"}
+    uv run python -m osu_dreamer fit-$1 ${LAST_RUN:+--ckpt-path="$LAST_RUN"}
     if [ $? -ne 139 ]; then
         break
     fi

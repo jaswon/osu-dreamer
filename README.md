@@ -16,12 +16,12 @@ osu!dreamer is a generative model for osu! beatmaps based on diffusion
 ### Required dependencies
 - FFmpeg
 - python 3.9
-- [poetry](https://python-poetry.org/docs/#installation) 
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) 
 
 Clone this repo, then run:
 
 ```
-poetry install [--with dev]
+uv sync [--group dev]
 ```
 
 This will install `osu-dreamer`'s dependencies
@@ -29,7 +29,7 @@ This will install `osu-dreamer`'s dependencies
 ## Generate your own maps locally
 
 ```
-$ poetry run python -m osu_dreamer.model predict --help
+$ uv run python -m osu_dreamer.model predict --help
 Usage: python -m osu_dreamer.model predict [OPTIONS]
 
   generate osu!std maps from raw audio
@@ -54,7 +54,7 @@ first you must generate a dataset, using eg. your `osu!/Songs` directory.
 This step only needs to be done once (unless you delete the generated dataset directory).
 
 ```
-$ poetry run python -m osu_dreamer.model generate-data [MAPS_DIR]
+$ uv run python -m osu_dreamer.model generate-data [MAPS_DIR]
 ```
 
 where `[MAPS_DIR]` is the path to eg. your `osu!/Songs` directory
@@ -64,7 +64,7 @@ where `[MAPS_DIR]` is the path to eg. your `osu!/Songs` directory
 after the dataset generation completes, you can start training
 
 ```
-$ poetry run python -m osu_dreamer.model fit
+$ uv run python -m osu_dreamer.model fit
 ```
 
 See `osu_dreamer/model/model.yml` for all training parameters.
