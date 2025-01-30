@@ -1,5 +1,5 @@
 
-from typing import Union
+from typing import Optional, Union
 
 import re
 from pathlib import Path
@@ -166,6 +166,11 @@ class Beatmap:
             if len(utp) == 0 or utp[-1] != x:
                 utp.append(x)
         return utp
+    
+    def timing_point_at(self, t) -> Optional[TimingPoint]:
+        """timing point active for time `t` or None if before all timing points"""
+        tp_idx = bisect.bisect(self.timing_points, Timed(t)) - 1
+        return None if tp_idx < 0 else self.timing_points[tp_idx]
 
     def parse_hit_objects(self, lines):
         self.hit_objects: list[Union[Circle, Slider, Spinner]] = []
@@ -182,10 +187,9 @@ class Beatmap:
                     np.array(list(map(float, p.split(":"))), dtype=float) for p in control_points
                 ]
                 
-                # index of timing point active for time `t` or -1 if before all timing points
-                tp_idx = bisect.bisect(self.timing_points, Timed(t)) - 1
-                beat_length = self.timing_points[max(0, tp_idx)].beat_length
-                slider_mult = 1. if tp_idx < 0 else self.timing_points[tp_idx].slider_mult
+                tp = self.timing_point_at(t)
+                beat_length = tp.beat_length if tp is not None else self.timing_points[0].beat_length
+                slider_mult = tp.slider_mult if tp is not None else 1.
                 
                 ho = from_control_points(
                     t, 
