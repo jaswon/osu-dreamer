@@ -88,6 +88,17 @@ class Spinner(HitObject):
     
     def start_pos(self) -> Vec2:
         return np.array([ 256, 192 ], dtype=float)
+    
+class Break(Timed):
+    def __init__(self, t: int, u: int):
+        super().__init__(t)
+        self.u = u
+
+    def __repr__(self):
+        return f"{super().__repr__()} Break({self.u})"
+    
+    def end_time(self) -> int:
+        return self.u
 
 
 class Slider(HitObject):

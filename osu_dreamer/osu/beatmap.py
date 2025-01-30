@@ -9,7 +9,7 @@ import numpy as np
 
 import rosu_pp_py as rosu
 
-from .hit_objects import Timed, TimingPoint, Circle, Spinner, Slider
+from .hit_objects import Timed, TimingPoint, Circle, Spinner, Slider, Break
 from .sliders import from_control_points
 
 
@@ -109,15 +109,16 @@ class Beatmap:
         self.parse_hit_objects(self.unparsed_hitobjects)
         del self.unparsed_hitobjects
 
-        self.parse_events(self.unparsed_events)
+        self.parse_breaks(self.unparsed_events)
         del self.unparsed_events
 
-    def parse_events(self, lines):
-        self.events = []
+    def parse_breaks(self, lines):
+        self.breaks: list[Break] = []
         for l in lines:
-            ev = l.strip().split(",")
-            if ev[0] == 2:
-                self.events.append(ev)
+            typ, t, *params = l.strip().split(",")
+            if typ == 2:
+                u, = params
+                self.breaks.append(Break(float(t), float(u)))
 
     def parse_timing_points(self, lines):
         self.timing_points: list[TimingPoint] = []
