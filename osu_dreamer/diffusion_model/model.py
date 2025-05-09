@@ -20,6 +20,7 @@ from osu_dreamer.data.plot import plot_signals
 
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.adabelief import AdaBelief
+from osu_dreamer.modules.lr_schedule import make_lr_schedule, LRScheduleArgs
 
 from osu_dreamer.latent_model.model import Model as LatentModel
 from osu_dreamer.latent_model.modules import Encoder, EncoderArgs, ChunkPad
@@ -37,7 +38,7 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        step_ref: float,
+        lr_schedule: LRScheduleArgs,
 
         # model hparams
         latent_ckpt: str,
@@ -76,7 +77,7 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
-        self.step_ref = step_ref
+        self.lr_schedule = make_lr_schedule(lr_schedule)
     
 
     def forward(
@@ -138,11 +139,10 @@ class Model(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = AdaBelief(self.parameters(), **self.opt_args)
-        isqrt = lambda step: max(step / self.step_ref, 1) ** -.5
         return {
             "optimizer": opt,
             "lr_scheduler": {
-                "scheduler": th.optim.lr_scheduler.LambdaLR(opt, isqrt),
+                "scheduler": th.optim.lr_scheduler.LambdaLR(opt, self.lr_schedule),
                 "interval": "step",
             }
         }

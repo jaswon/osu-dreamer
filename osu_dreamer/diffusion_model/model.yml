@@ -64,10 +64,11 @@ model:
     val_batches: 64
 
     # training parameters
-    step_ref: 1e4
     opt_args:
         lr: .01
         betas: [.9,.99]
+    lr_schedule:
+        decay_start: 1e4
 
     # model hyperparameters
     latent_ckpt: latent.ckpt
