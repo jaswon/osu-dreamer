@@ -12,3 +12,4 @@ osu_dreamer/models
 /audio/
 .vscode/settings.json
 .env
+misc/
