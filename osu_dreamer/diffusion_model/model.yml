@@ -38,6 +38,9 @@ trainer:
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
+
+    val_check_interval: 1000
+    check_val_every_n_epoch: null
     
 data:
     # length of each training subsequence
