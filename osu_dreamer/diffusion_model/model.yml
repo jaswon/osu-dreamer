@@ -51,7 +51,7 @@ data:
     subseq_density: .4
     
     # size of training batch
-    batch_size: 8
+    batch_size: 16
     
     # number of workers to use for data loading
     num_workers: 6
@@ -74,17 +74,12 @@ model:
         decay_start: 1e4
 
     # model hyperparameters
-    latent_ckpt: latent.ckpt
     
     diffusion_args:
         log_snr_scale: 3e0
         log_snr_bound: 5e-2
         std_data: 1.
         noise_level_features: 32
-
-    audio_encoder_args:
-        dim: 256
-        block_depth: 4
 
     denoiser_args:
         h_dim: 128
