@@ -10,6 +10,7 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 from torch import nn, Tensor
+from torch.utils.checkpoint import checkpoint
 
 def normalize(x: Float[Tensor, "B ..."], dim=None, eps=1e-4) -> Float[Tensor, "B ..."]:
     if dim is None:
@@ -174,5 +175,6 @@ class ResNet(nn.Module):
     def forward(self, x: Float[Tensor, "B D L"], *args, **kwargs) -> Float[Tensor, "B D L"]:
         for net in self.nets:
             x = pixel_norm(x)
-            x = add(x, net(x,*args,**kwargs), t=.1)
+            h = checkpoint(net, x, *args, **kwargs, use_reentrant=False)
+            x = add(x, h, t=.1)
         return x

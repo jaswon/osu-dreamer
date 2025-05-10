@@ -31,7 +31,7 @@ def min_gru_bidirectional(x: Float[Tensor, "B H ... L"]) -> Float[Tensor, "B H/2
         min_gru(*back.flip(2).chunk(2, dim=1)).flip(2),
     ], dim=1)
 
-class minGRU2(nn.Module):
+class MinGRU2(nn.Module):
     def __init__(self): super().__init__()
     
     def forward(self, x: Float[Tensor, "B H ... L"]) -> Float[Tensor, "B H/2 ... L"]:

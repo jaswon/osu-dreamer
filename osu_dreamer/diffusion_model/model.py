@@ -64,6 +64,11 @@ class Model(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(lr_schedule)
     
+    def preprocess_labels(
+        self, 
+        labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+    ) -> Float[Tensor, str(f"B {NUM_LABELS}")]:
+        return labels - 5
 
     def forward(
         self,
