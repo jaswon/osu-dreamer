@@ -1,5 +1,6 @@
 
 from pathlib import Path
+import pickle
 from torch.multiprocessing import Pool, set_start_method
 
 import numpy as np
@@ -43,8 +44,6 @@ def generate_data(maps_dir: Path, data_dir: Path, num_workers: int):
     with Pool(processes=num_workers) as p:
         for _ in tqdm(p.imap_unordered(process_mapset, src_mapsets.items()), total=len(src_mapsets)):
             reclaim_memory()
-            with torch.no_grad():
-                torch.cuda.empty_cache()
 
 def process_mapset(kv: tuple[Path, list[Path]]):
     mapset_dir, map_files = kv
@@ -62,7 +61,7 @@ def process_mapset(kv: tuple[Path, list[Path]]):
             continue
 
         audio_dir = mapset_dir / "_".join(bm.audio_filename.name.split('.'))
-        map_path = audio_dir / f"{map_file.stem}.map.pt"
+        map_path = audio_dir / f"{map_file.stem}.map.pkl"
         if map_path.exists():
             continue
 
@@ -81,10 +80,7 @@ def process_mapset(kv: tuple[Path, list[Path]]):
             spec_path.parent.mkdir(parents=True, exist_ok=True)
             with open(spec_path, "wb") as f:
                 np.save(f, spec, allow_pickle=False)
-        else:
-            spec = np.load(spec_path)
 
-        frame_times = get_frame_times(spec.shape[1])
         for bm, map_path in bms:
             if map_path.exists():
                 continue
@@ -93,16 +89,6 @@ def process_mapset(kv: tuple[Path, list[Path]]):
             except Exception as e:
                 print(f"{bm.filename}: {e}")
                 continue
-            diff_labels = get_labels(bm)
-
-            # compute map signal
-            try:
-                x = encode_beatmap(bm, frame_times)
-            except Exception as e:
-                print(f"{bm.filename} [encode]:{e}")
-                continue
 
             with open(map_path, "wb") as f:
-                for obj in [x, diff_labels]:
-                    np.save(f, obj, allow_pickle=False)
-        
+                pickle.dump(bm, f)

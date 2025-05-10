@@ -3,6 +3,7 @@ from typing import NamedTuple
 from torch import Tensor
 from jaxtyping import Float
 
+import pickle
 import random
 from collections.abc import Iterator
 
@@ -11,10 +12,12 @@ import numpy as np
 import torch as th
 from torch.utils.data import IterableDataset
 
+from osu_dreamer.osu.beatmap import Beatmap
+
 from .reclaim_memory import reclaim_memory
-from .load_audio import A_DIM
-from .beatmap.encode import X_DIM
-from .labels import NUM_LABELS
+from .load_audio import A_DIM, get_frame_times
+from .beatmap.encode import X_DIM, encode_beatmap
+from .labels import NUM_LABELS, get_labels
 
 
 class Batch(NamedTuple):
@@ -48,24 +51,21 @@ class FullSequenceDataset(IterableDataset):
         random.seed(seed)
         
         dataset = sorted(self.dataset)
-        for i, sample in random.sample(list(enumerate(dataset)), int(len(dataset))):
+        for i, map_file in random.sample(list(enumerate(dataset)), int(len(dataset))):
             if i % num_workers != worker_id:
                 continue
                 
             try:
-                for x in self.sample_stream(sample, i):
-                    yield x
+                audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # A L
+                with open(map_file, 'rb') as f:
+                    bm = pickle.load(f)
+                yield from self.sample_map(audio, bm, i)
             finally:
                 reclaim_memory()
             
-    def sample_stream(self, map_file, map_idx) -> Iterator[Batch]:
-        audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # [A,L]
-        if self.seq_len >= audio.size(-1):
-            return
-        
-        with open(map_file, 'rb') as f:
-            chart  = th.tensor(np.load(f)).float()
-            labels = th.tensor(np.load(f)).float()
+    def sample_map(self, audio: Float[Tensor, "A L"], bm: Beatmap, map_idx: int) -> Iterator[Batch]:
+        chart = th.tensor(encode_beatmap(bm, get_frame_times(audio.size(-1)))).float()
+        labels = th.tensor(get_labels(bm)).float()
             
         yield Batch(audio,chart,labels)
         
@@ -74,25 +74,13 @@ class SubsequenceDataset(FullSequenceDataset):
         self.subseq_density = kwargs.pop("subseq_density", 2)
         super().__init__(**kwargs)
 
-        num_samples = 0
-        for map_file in self.dataset:
-            with open(map_file, 'rb') as f:
-                magic = np.lib.format.read_magic(f)
-                read_header = np.lib.format.read_array_header_1_0 if magic[0] == 1 else np.lib.format.read_array_header_2_0
-                shape = read_header(f, max_header_size=100000)[0] # type: ignore
-                num_samples += int(shape[-1] / self.seq_len * self.subseq_density)
-        
-        self.approx_dataset_size = num_samples
-
-
-    def sample_stream(self, map_file, map_idx):
-        for audio,chart,labels in super().sample_stream(map_file, map_idx):
+    def sample_map(self, audio: Float[Tensor, "A L"], bm: Beatmap, map_idx: int):
+        for audio,chart,labels in super().sample_map(audio, bm, map_idx):
             L = audio.size(-1)
             if self.seq_len >= L:
                 return
 
             num_samples = int(L / self.seq_len * self.subseq_density)
-
             for idx in th.randperm(L - self.seq_len)[:num_samples]:
                 sl = ..., slice(idx,idx+self.seq_len)
-                yield Batch(audio[sl], chart[sl], labels) 
+                yield Batch(audio[sl], chart[sl], labels)
