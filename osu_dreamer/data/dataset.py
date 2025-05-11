@@ -70,17 +70,13 @@ class FullSequenceDataset(IterableDataset):
         yield Batch(audio,chart,labels)
         
 class SubsequenceDataset(FullSequenceDataset):
-    def __init__(self, **kwargs):
-        self.subseq_density = kwargs.pop("subseq_density", 2)
-        super().__init__(**kwargs)
-
     def sample_map(self, audio: Float[Tensor, "A L"], bm: Beatmap, map_idx: int):
         for audio,chart,labels in super().sample_map(audio, bm, map_idx):
             L = audio.size(-1)
             if self.seq_len >= L:
                 return
 
-            num_samples = int(L / self.seq_len * self.subseq_density)
+            num_samples = int(L / self.seq_len)
             for idx in th.randperm(L - self.seq_len)[:num_samples]:
                 sl = ..., slice(idx,idx+self.seq_len)
                 yield Batch(audio[sl], chart[sl], labels)

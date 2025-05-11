@@ -46,10 +46,6 @@ data:
     # length of each training subsequence
     seq_len: 4096 # * 6ms/frame ~= 24.6s
     
-    # affects how many samples are generated from a single beatmap (per epoch)
-    # higher number means more samples from the same beatmap
-    subseq_density: .4
-    
     # size of training batch
     batch_size: 8
     

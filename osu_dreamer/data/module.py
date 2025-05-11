@@ -13,7 +13,6 @@ class Data(pl.LightningDataModule):
         self,
         
         seq_len: int,
-        subseq_density: float,
         batch_size: int,
         num_workers: int,
         
@@ -24,7 +23,6 @@ class Data(pl.LightningDataModule):
         
         self.seq_len = seq_len
         
-        self.subseq_density = subseq_density
         self.batch_size = batch_size
         self.num_workers = num_workers
         
@@ -63,7 +61,6 @@ class Data(pl.LightningDataModule):
         self.train_set = SubsequenceDataset(
             dataset=train_split,
             seq_len=self.seq_len,
-            subseq_density=self.subseq_density,
         )
         self.val_set = FullSequenceDataset(
             dataset=val_split,
