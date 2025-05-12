@@ -39,8 +39,13 @@ class Diffusion(nn.Module):
         self.std_noise = std_noise
         self.std_data = args.std_data
 
-        self.noise_level_features = MP.RandomFourierFeatures(1, args.noise_level_features)
-        self.proj_u = MP.Linear(args.noise_level_features, 1)
+        nlf = args.noise_level_features
+        self.noise_level_features = MP.RandomFourierFeatures(1, nlf)
+        self.proj_u = nn.Sequential(
+            MP.Linear(nlf, nlf),
+            MP.SiLU(),
+            MP.Linear(nlf, 1),
+        )
 
     def pred_x0(self, model: Denoiser, x_t: X, std: B) -> tuple[X,B]:
         """https://arxiv.org/pdf/2206.00364.pdf#section.5"""
@@ -53,7 +58,7 @@ class Diffusion(nn.Module):
         c_noise = th.log(std) / 4
 
         nlf = self.noise_level_features(c_noise[:,None])
-        u = self.proj_u(nlf)[:,0]
+        u = self.proj_u(nlf).squeeze(1)
         model_out = model(c_in[:,None,None] * x_t, nlf)
         pred_x0 = c_skip[:,None,None] * x_t + c_out[:,None,None] * model_out
         return pred_x0, u

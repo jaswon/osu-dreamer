@@ -34,7 +34,7 @@ trainer:
             save_dir: runs
             name: denoiser
 
-    accumulate_grad_batches: 8
+    accumulate_grad_batches: 4
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
@@ -71,11 +71,9 @@ model:
     diffusion_args:
         log_snr_scale: 3e0
         log_snr_bound: 5e-2
-        std_data: 1.
-        noise_level_features: 32
+        std_data: .7
+        noise_level_features: 256
 
     denoiser_args:
-        h_dim: 384
+        h_dim: 512
         depth: 12
-        label_head_dim: 8
-        label_num_heads: 16

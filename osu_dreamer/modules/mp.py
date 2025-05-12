@@ -107,15 +107,3 @@ class RandomFourierFeatures(nn.Module):
 
     def forward(self, x: Float[Tensor, "B C"]) -> Float[Tensor, "B N"]:
         return 2**.5 * th.cos(x @ self.f + self.p)
-    
-class ResNet(nn.Module):
-    def __init__(self, nets: Sequence[nn.Module]):
-        super().__init__()
-        self.nets = nn.ModuleList(nets)
-
-    def forward(self, x: Float[Tensor, "B D L"], *args, **kwargs) -> Float[Tensor, "B D L"]:
-        for net in self.nets:
-            x = pixel_norm(x)
-            h = checkpoint(net, x, *args, **kwargs, use_reentrant=False)
-            x = add(x, h, t=.1)
-        return x
