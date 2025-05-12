@@ -43,8 +43,8 @@ class Diffusion(nn.Module):
         self.noise_level_features = MP.RandomFourierFeatures(1, nlf)
         self.proj_u = nn.Sequential(
             MP.Linear(nlf, nlf),
-            MP.SiLU(),
-            MP.Linear(nlf, 1),
+            nn.SiLU(),
+            nn.Linear(nlf, 1),
         )
 
     def pred_x0(self, model: Denoiser, x_t: X, std: B) -> tuple[X,B]:
