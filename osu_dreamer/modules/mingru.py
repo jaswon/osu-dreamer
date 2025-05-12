@@ -27,11 +27,12 @@ def min_gru(
     return log_h.exp().real
 
 class MinGRU(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, out_dim: int = None):
         super().__init__()
+        out_dim = out_dim or dim
         self.conv = MP.Conv1d(dim, dim, 5,1,2, groups=dim)
-        self.h = MP.Conv1d(dim, dim, 1)
-        self.g = MP.Conv1d(dim, dim-2, 1)
+        self.h = MP.Conv1d(dim, out_dim, 1)
+        self.g = MP.Conv1d(dim, out_dim-2, 1)
 
     def _polarize(self, g: Float[Tensor, "B D L"]) -> Float[Tensor, "B D+2 L"]:
         """https://arxiv.org/abs/2501.00658"""
@@ -41,7 +42,7 @@ class MinGRU(nn.Module):
         g1 = g.new_full([*b, 1, l], +1000)
         return th.cat([ g0, g1, g ], dim=-2)
 
-    def forward( self, x: Float[Tensor, "B D L"] ) -> Float[Tensor, "B D L"]:
+    def forward( self, x: Float[Tensor, "B D L"] ) -> Float[Tensor, "B O L"]:
         c = self.conv(x)
         return min_gru(self.h(c), self._polarize(self.g(c)))
 

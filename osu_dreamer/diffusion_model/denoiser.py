@@ -23,9 +23,11 @@ class DenoiserArgs:
 class sequenceMixer(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
-        self.fore = MinGRU(dim)
-        self.back = MinGRU(dim)
-        self.out = MP.Conv1d(2*dim, dim, 1)
+        h_dim = dim // 2
+        assert h_dim * 2 == dim
+        self.fore = MinGRU(dim, out_dim = h_dim)
+        self.back = MinGRU(dim, out_dim = h_dim)
+        self.out = MP.Conv1d(dim, dim, 1)
 
     def forward(
         self,
