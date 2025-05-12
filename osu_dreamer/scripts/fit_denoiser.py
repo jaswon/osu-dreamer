@@ -8,7 +8,7 @@ import click
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from pytorch_lightning import Trainer
 
-from osu_dreamer.data.module import Data
+from osu_dreamer.diffusion_model.data.module import Data
 from osu_dreamer.diffusion_model.model import Model
 
 file_option_type = click.Path(exists=True, dir_okay=False)

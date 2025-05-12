@@ -12,7 +12,6 @@ from einops import repeat, rearrange
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from osu_dreamer.data.dataset import Batch
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.labels import NUM_LABELS
@@ -20,6 +19,7 @@ from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.muon import Muon
 
+from .data.dataset import Batch
 from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
 
