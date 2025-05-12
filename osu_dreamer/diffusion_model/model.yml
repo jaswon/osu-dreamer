@@ -64,10 +64,7 @@ model:
 
     # training parameters
     opt_args:
-        lr: .01
-        betas: [.9,.99]
-    lr_schedule:
-        decay_start: 1e4
+        lr: .02
 
     # model hyperparameters
     

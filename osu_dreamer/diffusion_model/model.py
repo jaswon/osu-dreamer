@@ -18,8 +18,7 @@ from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
-from osu_dreamer.modules.adabelief import AdaBelief
-from osu_dreamer.modules.lr_schedule import make_lr_schedule, LRScheduleArgs
+from osu_dreamer.modules.muon import Muon
 
 from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
@@ -35,7 +34,6 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        lr_schedule: LRScheduleArgs,
 
         # model hparams
         diffusion_args: DiffusionArgs,
@@ -62,7 +60,6 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
-        self.lr_schedule = make_lr_schedule(lr_schedule)
     
     def preprocess_labels(
         self, 
@@ -115,14 +112,7 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-        opt = AdaBelief(self.parameters(), **self.opt_args)
-        return {
-            "optimizer": opt,
-            "lr_scheduler": {
-                "scheduler": th.optim.lr_scheduler.LambdaLR(opt, self.lr_schedule),
-                "interval": "step",
-            }
-        }
+        return Muon(self.parameters(), **self.opt_args)
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(*batch)
