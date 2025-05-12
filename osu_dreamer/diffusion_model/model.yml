@@ -81,4 +81,4 @@ model:
         h_dim: 256
         depth: 12
         label_head_dim: 8
-        label_num_heads: 8
+        label_num_heads: 16

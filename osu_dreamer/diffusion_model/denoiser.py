@@ -9,7 +9,7 @@ from torch import nn, Tensor
 from osu_dreamer.data.labels import NUM_LABELS
 
 import osu_dreamer.modules.mp as MP
-from osu_dreamer.modules.mingru import MinGRU2
+from osu_dreamer.modules.mingru import MinGRU
 from osu_dreamer.modules.attend_label import AttendLabel
 
 
@@ -21,28 +21,32 @@ class DenoiserArgs:
     label_num_heads: int
 
 class sequenceMixer(nn.Module):
-    def __init__(self, dim: int, a_dim: int, f_dim: int, args: DenoiserArgs):
+    def __init__(self, dim: int):
         super().__init__()
-        self.net = nn.Sequential(
-            MP.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
-            MP.Conv1d(args.h_dim, 2*args.h_dim, 1),
-            MinGRU2(),
-        )
+        self.fore = MinGRU(dim)
+        self.back = MinGRU(dim)
+        self.out = MP.Conv1d(2*dim, dim, 1)
 
     def forward(
         self,
         x: Float[Tensor, "B X L"],
         c: Float[Tensor, "B C"],
     ) -> Float[Tensor, "B X L"]:
-        return self.net(x)
+        return self.out(MP.cat([self.fore(x), self.back(x)], dim=1))
     
 class labelMixer(nn.Module):
-    def __init__(self, dim: int, a_dim: int, f_dim: int, args: DenoiserArgs):
+    def __init__(
+        self, 
+        dim: int, 
+        label_dim: int, 
+        label_head_dim: int, 
+        label_num_heads: int,
+    ):
         super().__init__()
         self.net = AttendLabel(
-            args.h_dim, f_dim + NUM_LABELS,
-            head_dim = args.label_head_dim,
-            num_heads = args.label_num_heads,
+            dim, label_dim,
+            head_dim = label_head_dim,
+            num_heads = label_num_heads,
         )
 
     def forward(
@@ -53,19 +57,19 @@ class labelMixer(nn.Module):
         return self.net(x,c)
     
 class channelMixer(nn.Module):
-    def __init__(self, dim: int, a_dim: int, f_dim: int, args: DenoiserArgs):
+    def __init__(self, dim: int):
         super().__init__()
-        self.proj_in = MP.Conv1d(args.h_dim, args.h_dim, 1)
+        self.proj_in = MP.Conv1d(dim, dim, 1)
         self.proj_h = nn.Sequential(
-            MP.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
-            MP.Conv1d(args.h_dim, args.h_dim, 1),
+            MP.Conv1d(dim, dim, 3,1,1, groups=dim),
+            MP.Conv1d(dim, dim, 1),
         )
         self.proj_g = nn.Sequential(
-            MP.Conv1d(args.h_dim, args.h_dim, 3,1,1, groups=args.h_dim),
-            MP.Conv1d(args.h_dim, args.h_dim, 1),
+            MP.Conv1d(dim, dim, 3,1,1, groups=dim),
+            MP.Conv1d(dim, dim, 1),
             MP.SiLU(),
         )
-        self.proj_out = MP.Conv1d(args.h_dim, args.h_dim, 1)
+        self.proj_out = MP.Conv1d(dim, dim, 1)
 
     def forward(
         self,
@@ -89,12 +93,12 @@ class Denoiser(nn.Module):
         self.proj_h = MP.Conv1d(dim+a_dim, args.h_dim, 1)
             
         self.net = MP.ResNet([ 
-            layer(dim, a_dim, f_dim, args)
+            layer
             for _ in range(args.depth)
             for layer in [
-                sequenceMixer,
-                labelMixer,
-                channelMixer,
+                sequenceMixer(args.h_dim),
+                labelMixer(args.h_dim, f_dim + NUM_LABELS, args.label_head_dim, args.label_num_heads),
+                channelMixer(args.h_dim),
             ]
         ])
 

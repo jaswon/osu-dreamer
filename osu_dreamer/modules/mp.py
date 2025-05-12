@@ -3,7 +3,7 @@
 
 from typing import Union
 from collections.abc import Sequence
-from jaxtyping import Complex, Float
+from jaxtyping import Float
 
 import numpy as np
 
@@ -107,65 +107,6 @@ class RandomFourierFeatures(nn.Module):
 
     def forward(self, x: Float[Tensor, "B C"]) -> Float[Tensor, "B N"]:
         return 2**.5 * th.cos(x @ self.f + self.p)
-    
-def complex_log(float_input: Float[Tensor, "..."], eps=1e-6) -> Complex[Tensor, "..."]:
-    real = th.clamp_min(float_input.abs(), eps).log()
-    imag = (float_input < 0) * th.pi
-    return th.complex(real, imag.float())
-
-@th.compiler.disable()
-def min_gru(
-    h: Float[Tensor, "... L"], 
-    g: Float[Tensor, "... L"],
-) -> Float[Tensor, "... L"]:
-    log_scale = .5 * th.log(1/th.cosh(g)+1) # mp
-    log_coeffs = -F.softplus(g) + log_scale
-    log_values = -F.softplus(-g) + log_scale + complex_log(h)
-
-    # heinsen associative scan (log-space)
-    a_star = log_coeffs.cumsum(dim=-1)
-    log_h0_plus_b_star = (log_values - a_star).logcumsumexp(dim=-1)
-    log_h = a_star + log_h0_plus_b_star
-    
-    return log_h.exp().real
-
-class minGRU2(nn.Module):
-    def __init__(self, dim: int):
-        super().__init__()
-        assert dim%2==0
-        self.fb_hg = Conv1d(dim, dim*2, 1)
-
-    def forward(
-        self,
-        x: Float[Tensor, "B H L"],
-    ) -> Float[Tensor, "B H L"]:
-        fore_hg, back_hg = self.fb_hg(x).chunk(2, dim=1)
-        return cat([
-            min_gru(*fore_hg.chunk(2, dim=1)),
-            min_gru(*back_hg.flip(2).chunk(2, dim=1)).flip(2),
-        ], dim=1)
-    
-class Seq(nn.Module):
-    def __init__(self, dim: int, expand: int = 1):
-        super().__init__()
-        h_dim = dim * expand
-        self.h = nn.Sequential(
-            SiLU(),
-            Conv1d(dim, h_dim, 1),
-            Conv1d(h_dim, h_dim, 3,1,1, groups=h_dim),
-            SiLU(),
-            minGRU2(h_dim),
-            PixelNorm(),
-        )
-        self.g = nn.Sequential(
-            SiLU(),
-            Conv1d(dim, h_dim, 1),
-            SiLU(),
-        )
-        self.out = Conv1d(h_dim, dim, 1)
-
-    def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
-        return self.out(self.h(x) * self.g(x))
     
 class ResNet(nn.Module):
     def __init__(self, nets: Sequence[nn.Module]):

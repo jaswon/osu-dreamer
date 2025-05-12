@@ -5,6 +5,8 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+import osu_dreamer.modules.mp as MP
+
 def complex_log(float_input: Float[Tensor, "..."], eps=1e-6) -> Complex[Tensor, "..."]:
     real = th.clamp_min(float_input.abs(), eps).log()
     imag = (float_input < 0) * th.pi
@@ -23,6 +25,25 @@ def min_gru(
     log_h = a_star + log_h0_plus_b_star
     
     return log_h.exp().real
+
+class MinGRU(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.conv = MP.Conv1d(dim, dim, 5,1,2, groups=dim)
+        self.h = MP.Conv1d(dim, dim, 1)
+        self.g = MP.Conv1d(dim, dim-2, 1)
+
+    def _polarize(self, g: Float[Tensor, "B D L"]) -> Float[Tensor, "B D+2 L"]:
+        """https://arxiv.org/abs/2501.00658"""
+
+        *b, _, l = g.shape
+        g0 = g.new_full([*b, 1, l], -1000)
+        g1 = g.new_full([*b, 1, l], +1000)
+        return th.cat([ g0, g1, g ], dim=-2)
+
+    def forward( self, x: Float[Tensor, "B D L"] ) -> Float[Tensor, "B D L"]:
+        c = self.conv(x)
+        return min_gru(self.h(c), self._polarize(self.g(c)))
 
 def min_gru_bidirectional(x: Float[Tensor, "B H ... L"]) -> Float[Tensor, "B H/2 ... L"]:
     fore, back = x.chunk(2, dim=1)
