@@ -9,13 +9,13 @@ from osu_dreamer.modules.mingru import MinGRU
 
 
 class sequenceMixer(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, expand: int):
         super().__init__()
         h_dim = dim // 2
         assert h_dim * 2 == dim
-        self.fore = MinGRU(dim, out_dim = h_dim)
-        self.back = MinGRU(dim, out_dim = h_dim)
-        self.out = MP.Conv1d(dim, dim, 1)
+        self.fore = MinGRU(dim, out_dim = h_dim * expand)
+        self.back = MinGRU(dim, out_dim = h_dim * expand)
+        self.out = MP.Conv1d(dim * expand, dim, 1)
 
     def forward(
         self,
@@ -24,19 +24,19 @@ class sequenceMixer(nn.Module):
         return self.out(MP.cat([self.fore(x), self.back(x)], dim=1))
     
 class channelMixer(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, expand: int):
         super().__init__()
         self.proj_in = MP.Conv1d(dim, dim, 1)
         self.proj_h = nn.Sequential(
             MP.Conv1d(dim, dim, 3,1,1, groups=dim),
-            MP.Conv1d(dim, dim, 1),
+            MP.Conv1d(dim, dim * expand, 1),
         )
         self.proj_g = nn.Sequential(
             MP.Conv1d(dim, dim, 3,1,1, groups=dim),
-            MP.Conv1d(dim, dim, 1),
+            MP.Conv1d(dim, dim * expand, 1),
             MP.SiLU(),
         )
-        self.proj_out = MP.Conv1d(dim, dim, 1)
+        self.proj_out = MP.Conv1d(dim * expand, dim, 1)
 
     def forward(
         self,
@@ -73,10 +73,11 @@ class DiTBlock(nn.Module):
         self,
         dim: int,
         c_dim: int,
+        expand: int,
     ):
         super().__init__()
-        self.seq_mixer = block(dim, c_dim, sequenceMixer(dim))
-        self.chn_mixer = block(dim, c_dim, channelMixer(dim))
+        self.seq_mixer = block(dim, c_dim, sequenceMixer(dim, expand))
+        self.chn_mixer = block(dim, c_dim, channelMixer(dim, expand))
 
     def forward(
         self,
@@ -93,9 +94,10 @@ class DiT(nn.Module):
         dim: int,
         c_dim: int,
         depth: int,
+        expand: int,
     ):
         super().__init__()
-        self.blocks = nn.ModuleList([ DiTBlock(dim, c_dim) for _ in range(depth) ])
+        self.blocks = nn.ModuleList([ DiTBlock(dim, c_dim, expand) for _ in range(depth) ])
 
     def forward(
         self,

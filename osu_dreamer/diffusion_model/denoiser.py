@@ -15,6 +15,7 @@ from osu_dreamer.modules.dit import DiT
 class DenoiserArgs:
     h_dim: int
     depth: int
+    expand: int
 
 class Denoiser(nn.Module):
     def __init__(
@@ -38,7 +39,7 @@ class Denoiser(nn.Module):
             MP.Linear(f_dim, f_dim),
         )
             
-        self.net = DiT(args.h_dim, f_dim, args.depth)
+        self.net = DiT(args.h_dim, f_dim, args.depth, args.expand)
 
         self.proj_out = nn.Sequential(
             MP.PixelNorm(),
