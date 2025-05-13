@@ -21,7 +21,10 @@ class sequenceMixer(nn.Module):
         self,
         x: Float[Tensor, "B X L"],
     ) -> Float[Tensor, "B X L"]:
-        return self.out(MP.cat([self.fore(x), self.back(x)], dim=1))
+        return self.out(MP.cat([
+            self.fore(x), 
+            self.back(x.flip(2)).flip(2),
+        ], dim=1))
     
 class channelMixer(nn.Module):
     def __init__(self, dim: int, expand: int):
