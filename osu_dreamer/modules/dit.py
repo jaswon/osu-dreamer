@@ -1,6 +1,7 @@
 
 from jaxtyping import Float
 
+import torch as th
 from torch import nn, Tensor
 from torch.utils.checkpoint import checkpoint
 
@@ -49,7 +50,7 @@ class channelMixer(nn.Module):
         h,g = self.proj_h(x), self.proj_g(x)
         return self.proj_out(h*g)
     
-class block(nn.Module):
+class condBlock(nn.Module):
     def __init__(self, dim: int, c_dim: int, op: nn.Module):
         super().__init__()
         self.op = op
@@ -77,21 +78,41 @@ class block(nn.Module):
         r = self.alpha(c)[:,:,None] * r
         return x + r
     
+class uncondBlock(nn.Module):
+    def __init__(self, dim: int, _: None, op: nn.Module):
+        super().__init__()
+        self.op = op
+        self.scale = nn.Parameter(th.zeros(dim, 1))
+        self.shift = nn.Parameter(th.zeros(dim, 1))
+        self.alpha = nn.Parameter(th.zeros(dim, 1))
+
+    def forward(
+        self, 
+        x: Float[Tensor, "B X L"],
+        _: None,
+    ) -> Float[Tensor, "B X L"]:
+        r = MP.pixel_norm(x)
+        r = r * (1+self.scale) + self.shift
+        r = self.op(r)
+        r = self.alpha * r
+        return x + r
+    
 class DiTBlock(nn.Module):
     def __init__(
         self,
         dim: int,
-        c_dim: int,
+        c_dim: None | int,
         expand: int,
     ):
         super().__init__()
+        block = uncondBlock if c_dim is None else condBlock
         self.seq_mixer = block(dim, c_dim, sequenceMixer(dim, expand))
         self.chn_mixer = block(dim, c_dim, channelMixer(dim, expand))
 
     def forward(
         self,
         x: Float[Tensor, "B X L"],
-        c: Float[Tensor, "B C"],
+        c: None | Float[Tensor, "B C"],
     ) -> Float[Tensor, "B X L"]:
         x = self.seq_mixer(x,c)
         x = self.chn_mixer(x,c)
@@ -101,7 +122,7 @@ class DiT(nn.Module):
     def __init__(
         self,
         dim: int,
-        c_dim: int,
+        c_dim: None | int,
         depth: int,
         expand: int,
     ):
@@ -111,7 +132,7 @@ class DiT(nn.Module):
     def forward(
         self,
         x: Float[Tensor, "B X L"],
-        c: Float[Tensor, "B C"],
+        c: None | Float[Tensor, "B C"] = None,
     ) -> Float[Tensor, "B X L"]:
         for block in self.blocks:
             x = checkpoint(block, x, c, use_reentrant=False)
