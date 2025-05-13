@@ -116,7 +116,7 @@ class Beatmap:
         self.breaks: list[Break] = []
         for l in lines:
             typ, t, *params = l.strip().split(",")
-            if typ == 2:
+            if typ == '2' or typ == 'Break':
                 u, = params
                 self.breaks.append(Break(float(t), float(u)))
 
