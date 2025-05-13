@@ -53,8 +53,14 @@ class block(nn.Module):
     def __init__(self, dim: int, c_dim: int, op: nn.Module):
         super().__init__()
         self.op = op
-        self.scale = MP.Linear(c_dim, dim)
-        self.shift = MP.Linear(c_dim, dim)
+        self.scale = nn.Sequential(
+            MP.Linear(c_dim, dim),
+            MP.Gain(),
+        )
+        self.shift = nn.Sequential(
+            MP.Linear(c_dim, dim),
+            MP.Gain(),
+        )
         self.alpha = nn.Sequential(
             MP.Linear(c_dim, dim),
             MP.Gain(),
@@ -66,10 +72,10 @@ class block(nn.Module):
         c: Float[Tensor, "B C"],
     ) -> Float[Tensor, "B X L"]:
         r = MP.pixel_norm(x)
-        r = r * self.scale(c)[:,:,None] + self.shift(c)[:,:,None]
+        r = r * (1+self.scale(c)[:,:,None]) + self.shift(c)[:,:,None]
         r = self.op(r)
         r = self.alpha(c)[:,:,None] * r
-        return r
+        return x + r
     
 class DiTBlock(nn.Module):
     def __init__(
@@ -87,8 +93,8 @@ class DiTBlock(nn.Module):
         x: Float[Tensor, "B X L"],
         c: Float[Tensor, "B C"],
     ) -> Float[Tensor, "B X L"]:
-        x = x + self.seq_mixer(x,c)
-        x = x + self.chn_mixer(x,c)
+        x = self.seq_mixer(x,c)
+        x = self.chn_mixer(x,c)
         return x
     
 class DiT(nn.Module):
