@@ -64,7 +64,7 @@ model:
 
     # training parameters
     opt_args:
-        lr: .02
+        lr: .01
 
     # model hyperparameters
     
