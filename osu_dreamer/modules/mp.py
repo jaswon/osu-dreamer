@@ -3,14 +3,13 @@
 
 from typing import Union
 from collections.abc import Sequence
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 import numpy as np
 
 import torch as th
 import torch.nn.functional as F
 from torch import nn, Tensor
-from torch.utils.checkpoint import checkpoint
 
 def normalize(x: Float[Tensor, "B ..."], dim=None, eps=1e-4) -> Float[Tensor, "B ..."]:
     if dim is None:
@@ -67,7 +66,7 @@ class Gain(nn.Module):
 ### Magnitude-preserving learned layers
 
 def get_normed_weight(W: Float[Tensor, "O ..."], training: bool) -> Float[Tensor, "O ..."]:
-    if training:
+    if training and W._version < 2:
         with th.no_grad():
             W.copy_(normalize(W))
     return normalize(W) / np.sqrt(W[0].numel())
@@ -79,6 +78,22 @@ class Linear(nn.Linear):
 
     def forward(self, x: Float[Tensor, "... I"]) -> Float[Tensor, "... O"]:
         return F.linear(x, get_normed_weight(self.weight, self.training))
+    
+class Embedding(nn.Embedding):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        th.nn.init.normal_(self.weight)
+
+    def forward(self, x: Int[Tensor, "... I"]) -> Float[Tensor, "... O"]:
+        return F.embedding(
+            x,
+            get_normed_weight(self.weight, self.training),
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
 
 class Conv1d(nn.Conv1d):
     def __init__(self, *args, **kwargs):
