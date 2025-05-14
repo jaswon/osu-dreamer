@@ -8,18 +8,18 @@ import click
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from pytorch_lightning import Trainer
 
-from osu_dreamer.data.module import Data
-from osu_dreamer.latent_model.model import Model
+from osu_dreamer.vqvae.data.module import Data
+from osu_dreamer.vqvae.model import Model
 
 file_option_type = click.Path(exists=True, dir_okay=False)
 
-default_config_path = './osu_dreamer/latent_model/model.yml'
+default_config_path = './osu_dreamer/vqvae/model.yml'
 
 @click.command()
 @click.option('-c', '--config', type=file_option_type, default=default_config_path, help='config file')
 @click.option(   '--ckpt-path', type=file_option_type, help='if provided, checkpoint from which to resume training')
-def fit_latent(config: str, ckpt_path: Optional[str]):
-    """begin a training run for the latent model"""
+def fit_vqvae(config: str, ckpt_path: Optional[str]):
+    """begin a training run for the vqvae model"""
 
     parser = LightningArgumentParser()
     parser.add_argument('seed_everything', type=Union[int, bool])
