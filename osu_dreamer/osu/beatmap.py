@@ -118,7 +118,7 @@ class Beatmap:
             typ, t, *params = l.strip().split(",")
             if typ == '2' or typ == 'Break':
                 u, = params
-                self.breaks.append(Break(float(t), float(u)))
+                self.breaks.append(Break(int(float(t)), int(float(u))))
 
     def parse_timing_points(self, lines):
         self.timing_points: list[TimingPoint] = []
@@ -203,7 +203,7 @@ class Beatmap:
                     control_points,
                 )
             elif typ & (1 << 3):  # spinner
-                ho = Spinner(t, new_combo, hit_sound, int(spl[5]))
+                ho = Spinner(t, new_combo, hit_sound, int(float(spl[5])))
             else:
                 raise ValueError(f"invalid hit object type: {typ}")
                 
