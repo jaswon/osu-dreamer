@@ -1,4 +1,5 @@
 
+from dataclasses import dataclass
 from jaxtyping import Float
 
 import torch as th
@@ -118,16 +119,24 @@ class DiTBlock(nn.Module):
         x = self.chn_mixer(x,c)
         return x
     
+
+@dataclass
+class DiTArgs:
+    depth: int
+    expand: int
+
 class DiT(nn.Module):
     def __init__(
         self,
         dim: int,
         c_dim: None | int,
-        depth: int,
-        expand: int,
+        args: DiTArgs,
     ):
         super().__init__()
-        self.blocks = nn.ModuleList([ DiTBlock(dim, c_dim, expand) for _ in range(depth) ])
+        self.blocks = nn.ModuleList([
+            DiTBlock(dim, c_dim, args.expand)
+            for _ in range(args.depth)
+        ])
 
     def forward(
         self,
