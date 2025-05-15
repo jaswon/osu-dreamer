@@ -3,7 +3,7 @@
 
 from typing import Union
 from collections.abc import Sequence
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, Shaped
 
 import numpy as np
 
@@ -45,9 +45,9 @@ def add(
     return ((1-t)*a + t*b) * ((1-t)**2 + t**2) ** -.5
 
 def cat(
-    xs: Sequence[Float[Tensor, "..."]], 
+    xs: Sequence[Shaped[Tensor, "..."]], 
     dim: int,
-) -> Float[Tensor, "..."]:
+) -> Shaped[Tensor, "..."]:
     Ns = [ x.size(dim) for x in xs ]
     return np.mean(Ns) ** .5 * th.cat([
         x * n ** -.5

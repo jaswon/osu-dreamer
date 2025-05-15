@@ -106,9 +106,12 @@ class DiTBlock(nn.Module):
         expand: int,
     ):
         super().__init__()
-        block = uncondBlock if c_dim is None else condBlock
-        self.seq_mixer = block(dim, c_dim, sequenceMixer(dim, expand))
-        self.chn_mixer = block(dim, c_dim, channelMixer(dim, expand))
+        if c_dim is None:
+            block = lambda op: uncondBlock(dim, None, op)
+        else:
+            block = lambda op: condBlock(dim, c_dim, op)
+        self.seq_mixer = block(sequenceMixer(dim, expand))
+        self.chn_mixer = block(channelMixer(dim, expand))
 
     def forward(
         self,
@@ -144,5 +147,5 @@ class DiT(nn.Module):
         c: None | Float[Tensor, "B C"] = None,
     ) -> Float[Tensor, "B X L"]:
         for block in self.blocks:
-            x = checkpoint(block, x, c, use_reentrant=False)
+            x = checkpoint(block, x, c, use_reentrant=False) # type: ignore
         return x
