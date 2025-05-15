@@ -1,0 +1,76 @@
+# pytorch_lightning==1.7.6
+seed_everything: true
+trainer:
+
+    # comment this line out if you're training without a gpu
+    accelerator: 'gpu'
+    
+    # number of epochs to run for. `-1` means run forever (until you interrupt manually)
+    max_epochs: -1
+    
+    devices: 1
+    precision: 16-mixed
+
+    enable_checkpointing: true
+    callbacks:
+        - # keep the best performing checkpoint
+            class_path: pytorch_lightning.callbacks.ModelCheckpoint
+            init_args:
+                monitor: val/loss
+                mode: min
+                save_top_k: 1
+        - # early stopping
+            class_path: pytorch_lightning.callbacks.EarlyStopping
+            init_args:
+                monitor: val/loss
+                mode: min
+                patience: 60
+        - # learning rate monitor
+            class_path: pytorch_lightning.callbacks.LearningRateMonitor
+
+    logger:
+        class_path: pytorch_lightning.loggers.TensorBoardLogger
+        init_args:
+            save_dir: runs
+            name: audio_encoder
+
+    accumulate_grad_batches: 1
+    enable_progress_bar: true
+    log_every_n_steps: 1
+    enable_model_summary: true
+
+    val_check_interval: 100
+    check_val_every_n_epoch: null
+    
+data:
+    # length of each training subsequence
+    seq_len: 4096 # * 6ms/frame ~= 24.6s
+    
+    # size of training batch
+    batch_size: 64
+    
+    # number of workers to use for data loading
+    num_workers: 6
+    
+    # number of samples to hold out for validation
+    # must be at least one in order to render validation plots
+    val_size: 128
+    # val_split: .1
+    
+model:
+    # training parameters
+    opt_args:
+        lr: .001
+    focal_gamma: 2
+    class_weights: [1,50,2,30,15]
+    mask_rate_beta_w: .3
+    mask_rate_beta_c: 10
+
+    # model hyperparameters
+    head_dim: 12
+    
+    a_dim: 8
+    h_dim: 64
+    encoder_args: 
+        depth: 8
+        expand: 1
