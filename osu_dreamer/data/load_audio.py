@@ -22,6 +22,13 @@ HOP_LEN = (SR * MS_PER_FRAME + 500) // 1000
 
 FrameTimes = Float[np.ndarray, "L"]
 
+def get_frame_for_time(t_ms: int|float) -> int:
+    """returns the frame index corresponding to t (ms)"""
+    t_sec = t_ms / 1000
+    sample = t_sec * SR
+    frame = sample / HOP_LEN
+    return int(frame)
+
 def get_frame_times(num_frames: int) -> FrameTimes:
     """returns the time (ms) corresponding to frames"""
     frames = np.arange(num_frames)
