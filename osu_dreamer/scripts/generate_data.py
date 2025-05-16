@@ -1,18 +1,16 @@
 
 from pathlib import Path
 import pickle
+from functools import partial
 from torch.multiprocessing import Pool, set_start_method
 
 import numpy as np
-import torch
 
 from tqdm import tqdm
 
 from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.data.reclaim_memory import reclaim_memory
-from osu_dreamer.data.beatmap.encode import encode_beatmap
-from osu_dreamer.data.labels import get_labels
-from osu_dreamer.data.load_audio import load_audio, get_frame_times
+from osu_dreamer.data.load_audio import load_audio
 
 import click
 
@@ -22,7 +20,8 @@ dir_option_type = click.Path(exists=True, file_okay=False, path_type=Path)
 @click.option('--maps-dir', type=dir_option_type, required=True, help='directory containing uncompressed osu! mapsets (eg. the `osu!/Songs` directory)')
 @click.option('--data-dir', type=click.Path(path_type=Path), default=Path('./data'), help='directory to store pre-processed training samples')
 @click.option('--num-workers', type=click.IntRange(min=1), default=2, help='number of workers to use for dataset generation')
-def generate_data(maps_dir: Path, data_dir: Path, num_workers: int):
+@click.option('--force', is_flag=True, help='whether to overwrite existing pre-processed maps')
+def generate_data(maps_dir: Path, data_dir: Path, num_workers: int, force: bool):
     """
     generate training dataset from an `osu!/Songs` directory.
     
@@ -42,10 +41,10 @@ def generate_data(maps_dir: Path, data_dir: Path, num_workers: int):
     data_dir.mkdir(exist_ok=True)
     set_start_method('spawn')
     with Pool(processes=num_workers) as p:
-        for _ in tqdm(p.imap_unordered(process_mapset, src_mapsets.items()), total=len(src_mapsets)):
+        for _ in tqdm(p.imap_unordered(partial(process_mapset, force=force), src_mapsets.items()), total=len(src_mapsets)):
             reclaim_memory()
 
-def process_mapset(kv: tuple[Path, list[Path]]):
+def process_mapset(kv: tuple[Path, list[Path]], force: bool):
     mapset_dir, map_files = kv
     audio_map: dict[tuple[Path, Path], list[tuple[Beatmap, Path]]] = {}
     for map_file in map_files:
@@ -62,7 +61,7 @@ def process_mapset(kv: tuple[Path, list[Path]]):
 
         audio_dir = mapset_dir / "_".join(bm.audio_filename.name.split('.'))
         map_path = audio_dir / f"{map_file.stem}.map.pkl"
-        if map_path.exists():
+        if not force and map_path.exists():
             continue
 
         audio_map.setdefault((audio_dir, bm.audio_filename), []).append((bm, map_path))
@@ -82,8 +81,6 @@ def process_mapset(kv: tuple[Path, list[Path]]):
                 np.save(f, spec, allow_pickle=False)
 
         for bm, map_path in bms:
-            if map_path.exists():
-                continue
             try:
                 bm.parse_map_data()
             except Exception as e:
