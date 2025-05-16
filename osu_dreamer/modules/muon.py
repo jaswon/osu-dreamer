@@ -31,34 +31,31 @@ class Muon(torch.optim.Optimizer):
     """
     Muon - MomentUm Orthogonalized by Newton-schulz
 
-    Muon internally runs standard SGD-momentum, and then performs an orthogonalization post-
-    processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
-    matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration, which has
-    the advantage that it can be stably run in bfloat16 on the GPU.
-
-    Some warnings:
-    - We believe this optimizer is unlikely to work well for training with small batch size.
-    - We believe it may not work well for finetuning pretrained models, but we haven't tested this.
-
-    Arguments:
-        muon_params: The parameters to be optimized by Muon.
-        lr: The learning rate. The updates will have spectral norm of `lr`. (0.02 is a good default)
-        momentum: The momentum used by the internal SGD. (0.95 is a good default)
-        nesterov: Whether to use Nesterov-style momentum in the internal SGD. (recommended)
-        ns_steps: The number of Newton-Schulz iterations to run. (6 is probably always enough)
-        adamw_params: The parameters to be optimized by AdamW. Any parameters in `muon_params` which are
-        {0, 1}-D or are detected as being the embed or lm_head will be optimized by AdamW as well.
-        adamw_lr: The learning rate for the internal AdamW.
-        adamw_betas: The betas for the internal AdamW.
-        adamw_eps: The epsilon for the internal AdamW.
-        adamw_wd: The weight decay for the internal AdamW.
+    - https://github.com/KellerJordan/Muon/blob/master/muon.py
+    - https://github.com/MoonshotAI/Moonlight/blob/master/examples/toy_train.py
     """
-    def __init__(self, muon_params, lr=0.02, momentum=0.95, nesterov=True, ns_steps=6,
-                 adamw_params=None, adamw_lr=3e-4, adamw_betas=(0.95, 0.95), adamw_eps=1e-8, adamw_wd=0):
+    def __init__(
+        self, 
+        muon_params, 
+        lr=1e-3, 
+        weight_decay=0.1,
+        momentum=0.95, 
+        nesterov=True, 
+        ns_steps=6,
+        adamw_params=None, 
+        adamw_betas=(0.95, 0.95), 
+        adamw_eps=1e-8, 
+    ):
 
-        defaults = dict(lr=lr, momentum=momentum, nesterov=nesterov, ns_steps=ns_steps,
-                        adamw_lr_ratio=adamw_lr/lr, adamw_betas=adamw_betas,
-                        adamw_eps=adamw_eps, adamw_wd=adamw_wd)
+        defaults = dict(
+            lr=lr, 
+            momentum=momentum, 
+            nesterov=nesterov, 
+            weight_decay=weight_decay,
+            ns_steps=ns_steps,
+            adamw_betas=adamw_betas, 
+            adamw_eps=adamw_eps, 
+        )
 
         # handle list of params or list of dicts
         if isinstance(muon_params, Generator):
@@ -116,14 +113,17 @@ class Muon(torch.optim.Optimizer):
         for group in self.param_groups:
             lr = group["lr"]
             momentum = group['momentum']
-            for i, p in enumerate(group['params']):
-                if self.state[p]['use_muon'] == 1:
-                    g = p.grad
-                    if g is None:
-                        continue
+            weight_decay = group['weight_decay']
+            for p in group['params']:
+                state = self.state[p]
+                g = p.grad
+                if g is None:
+                    continue
+
+                if state['use_muon'] == 1:
                     if g.ndim > 2:
                         g = g.view(g.size(0), -1)
-                    state = self.state[p]
+
                     if 'momentum_buffer' not in state:
                         state['momentum_buffer'] = torch.zeros_like(g)
                     buf = state['momentum_buffer']
@@ -133,16 +133,12 @@ class Muon(torch.optim.Optimizer):
 
                     # gives NaNs when done with Dtensor, instead of throwing a typical op not supported error, quite sneaky
                     g = zeropower_via_newtonschulz5(g, steps=group['ns_steps'])
-                    g *= max(1, g.size(0)/g.size(1))**0.5
-
-                    g = g.view_as(p.data).type_as(p.data)
-                    p.data.add_(g, alpha=-lr)
+                    p.data.mul_(1 - lr * weight_decay)
+                    p.data.add_(
+                        g.view_as(p.data).type_as(p.data), 
+                        alpha = -lr * .2 * max(g.size(0),g.size(1))**0.5,
+                    )
                 else:
-                    # these are all pointwise so we can stay in Dtensor
-                    g = p.grad
-                    if g is None:
-                        continue
-                    state = self.state[p]
                     if 'step' not in state:
                         state['step'] = 0
                         state['moment1'] = torch.zeros_like(g)
@@ -159,7 +155,7 @@ class Muon(torch.optim.Optimizer):
                     bias_correction1 = 1 - group['adamw_betas'][0]**step
                     bias_correction2 = 1 - group['adamw_betas'][1]**step
                     scale = bias_correction1 / bias_correction2**0.5
-                    p.data.mul_(1 - lr * group['adamw_wd'])
+                    p.data.mul_(1 - lr * weight_decay)
                     p.data.add_(g, alpha=-lr/scale)
 
 
