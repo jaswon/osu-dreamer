@@ -63,14 +63,13 @@ model:
         lr: .001
     focal_gamma: 2
     class_weights: [1,50,2,30,15]
-    mask_rate_beta_w: .3
-    mask_rate_beta_c: 10
+    mask_rate: .15
 
     # model hyperparameters
     head_dim: 12
-    
+
     a_dim: 8
-    h_dim: 64
+    h_dim: 128
     encoder_args: 
         depth: 8
         expand: 1

@@ -39,8 +39,7 @@ class Model(pl.LightningModule):
         opt_args: dict[str, Any],
         focal_gamma: float,
         class_weights: list[float],
-        mask_rate_beta_w: float,    # 0<=w<=1 - beta distribution mode 
-        mask_rate_beta_c: float,    # c>0     - beta distribution "concentration" (a+b-2)
+        mask_rate: float,
 
         # model hparams
         h_dim: int,
@@ -57,11 +56,8 @@ class Model(pl.LightningModule):
         self.class_weights: Tensor
         self.register_buffer('class_weights', th.tensor(class_weights).float(), persistent=False)
 
-        assert mask_rate_beta_c > 0
-        assert 0 <= mask_rate_beta_w <= 1
-        c1 = 1 + mask_rate_beta_c * (mask_rate_beta_w)
-        c2 = 1 + mask_rate_beta_c * (1-mask_rate_beta_w)
-        self.mask_rate_dist = th.distributions.Beta(c1, c2)
+        assert 0 <= mask_rate <= 1
+        self.mask_rate = mask_rate
 
         # model
         self.proj_audio = nn.Sequential(
@@ -85,9 +81,8 @@ class Model(pl.LightningModule):
         b, L = events.size()
         l = L // a
 
-        mask_rates = self.mask_rate_dist.rsample((b,)) # B
-        num_mask = (1+mask_rates*l).long() # B ~ Z[1, l] - how many tokens to mask per batch
-        mask = (th.arange(l)[None] < num_mask[:,None])[th.arange(b)[:,None], th.rand(b,l).argsort(dim=-1)] # B l
+        num_mask = (1+self.mask_rate*l) # B ~ Z[1, l] - how many tokens to mask per batch
+        mask = (th.arange(l).repeat(b,1) < num_mask)[th.arange(b)[:,None], th.rand(b,l).argsort(dim=-1)] # B l
 
         mask = mask.repeat_interleave(a, dim=1) # B l*a
         pad = L - mask.size(1)
@@ -95,7 +90,15 @@ class Model(pl.LightningModule):
             offset = int(th.randint(0, pad+1, ()))
             mask = F.pad(mask, (offset, pad-offset))
 
-        masked_events = th.where(mask.to(events.device), NUM_EVENTS, events) # B L
+        mask_tokens = th.randint_like(events, NUM_EVENTS)       # mask with random token
+        mask_tokens[th.rand(events.shape) < .8] = NUM_EVENTS    # mask with <MASK>
+        mask_unchanged = th.rand(events.shape) < .1             # mask with original
+
+        masked_events = th.where(
+            (mask & ~mask_unchanged).to(events.device), 
+            mask_tokens, 
+            events,
+        ) # B L
         masked_event_embs = F.one_hot(masked_events, NUM_EVENTS+1).float() * (NUM_EVENTS+1)**.5 # B L E+1
 
         return mask, masked_event_embs
@@ -117,8 +120,8 @@ class Model(pl.LightningModule):
         events: Int[Tensor, "B L"],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
-        mask, masked_events = self.mask_events(events)
-        pred_logits = self.pred_unmask(self.proj_audio(audio), masked_events)
+        mask, masked_event_embs = self.mask_events(events)
+        pred_logits = self.pred_unmask(self.proj_audio(audio), masked_event_embs)
 
         loss = focal_loss(
             pred_logits[mask], 
@@ -161,8 +164,8 @@ class Model(pl.LightningModule):
     @th.no_grad()
     def plot_val(self, batch: Batch):
         a, e = batch
-        _, masked_events = self.mask_events(e)
-        pred_logits = self.pred_unmask(self.encode(a), masked_events)
+        _, masked_event_embs = self.mask_events(e)
+        pred_logits = self.pred_unmask(self.encode(a), masked_event_embs)
         pred_e = pred_logits.argmax(dim=-1) # B L
 
         guides = th.arange(1, NUM_EVENTS).repeat(e.size(-1),1).T # E L
