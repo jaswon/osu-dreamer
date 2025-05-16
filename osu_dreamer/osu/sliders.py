@@ -17,25 +17,29 @@ def from_control_points(
     length: float,
     ctrl_pts: list[Vec2],
 ) -> Slider:
+    slider_args = t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts
+
     if len(ctrl_pts) < 2:
         raise Exception(f"bad slider: {ctrl_pts}")
     if len(ctrl_pts) == 2:  # L type
         A, B = ctrl_pts
-        return Line(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, A, B)
+        return Line(*slider_args, A, B)
     if len(ctrl_pts) == 3:  # check P type
         A, B, C = ctrl_pts
 
         if (B == C).all():
-            return Line(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, A, C)
+            ctrl_pts.pop(1)
+            return Line(*slider_args, A, C)
 
         ABC = np.cross(B - A, C - B)
 
         if ABC == 0:  # collinear
             if np.dot(B - A, C - B) > 0:  # A -- B -- C
-                return Line(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, A, C)
+                ctrl_pts.pop(1)
+                return Line(*slider_args, A, C)
             else:  # A -- C -- B
                 ctrl_pts.insert(1, ctrl_pts[1])  # [A,B,B,C]
-                return Bezier(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts)
+                return Bezier(*slider_args)
 
         a = np.linalg.norm(C - B)
         b = np.linalg.norm(C - A)
@@ -44,7 +48,7 @@ def from_control_points(
         R = a * b * c / 4.0 / np.sqrt(s * (s - a) * (s - b) * (s - c))
 
         if R > 320 and np.dot(C - B, B - A) < 0:  # circle too large
-            return Bezier(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts)
+            return Bezier(*slider_args)
 
         b1 = a * a * (b * b + c * c - a * a)
         b2 = b * b * (a * a + c * c - b * b)
@@ -62,10 +66,9 @@ def from_control_points(
             while start_angle > end_angle:
                 start_angle -= 2 * np.pi
 
-        return Perfect(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, P, R, start_angle, end_angle)
+        return Perfect(*slider_args, P, R, start_angle, end_angle)
     else:  # B type
-        return Bezier(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts)
-
+        return Bezier(*slider_args)
 
 class Line(Slider):
     def __init__(
@@ -77,15 +80,21 @@ class Line(Slider):
         hit_sound: int,
         slides: int,
         length: float,
+        ctrl_pts: list[Vec2],
         start: Vec2,
         end: Vec2,
     ):
-        super().__init__(t, beat_length, slider_mult, new_combo, hit_sound, slides, length)
-
+        super().__init__(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts)
         self.start = start
 
-        vec = end - self.start
-        self.end = self.start + vec / np.linalg.norm(vec) * length
+        if length > 0:
+            # reparametrize based on length
+            vec = end - self.start
+            self.end = self.ctrl_pts[-1] = self.start + vec / np.linalg.norm(vec) * length
+        else: 
+            # compute length based on parameters
+            self.end = end
+            self.length = np.linalg.norm(self.end - self.start)
 
     def __repr__(self):
         return f"{super().__repr__()} Line[*{self.slides}]({self.start} -> {self.end})"
@@ -108,17 +117,24 @@ class Perfect(Slider):
         hit_sound: int, 
         slides: int,
         length: float,
+        ctrl_pts: list[Vec2],
         center: Vec2,
         radius: float,
         start: float,
         end: float,
     ):
-        super().__init__(t, beat_length, slider_mult, new_combo, hit_sound, slides, length)
+        super().__init__(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts)
         self.center = center
         self.radius = radius
         self.start = start
 
-        self.end = start + length / radius * np.sign(end - start)
+        if length > 0:
+            # reparametrize based on length
+            self.end = start + length / radius * np.sign(end - start)
+            self.ctrl_pts[-1] = self.lerp(np.array([1.]))[0]
+        else: 
+            # compute length based on parameters
+            self.length = abs(end - start) * radius
 
     def __repr__(self):
         return f"{super().__repr__()} Perfect[*{self.slides}](O:{self.center} R:{self.radius} {self.start} -> {self.end})"
@@ -132,7 +148,6 @@ class Perfect(Slider):
         return self.radius * np.stack([-np.sin(angle), np.cos(angle)], axis=1) * (self.end - self.start) / self.slide_duration
 
 
-
 class Bezier(Slider):
     def __init__(
         self,
@@ -143,11 +158,9 @@ class Bezier(Slider):
         hit_sound: int,
         slides: int,
         length: float,
-        ctrl_pts, # n x 2
+        ctrl_pts: list[Vec2], # n x 2
     ):
-        super().__init__(t, beat_length, slider_mult, new_combo, hit_sound, slides, length)
-
-        self.ctrl_pts = ctrl_pts
+        super().__init__(t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts)
 
         # split control points at repeat points
         ctrl_curves: list[list[Vec2]] = []
@@ -169,24 +182,36 @@ class Bezier(Slider):
             total_len += curve.length
             curves.append(curve)
 
-        self.hold_max_t = length / total_len
+        if length > 0:
+            # reparametrize based on length
+            if abs(length - total_len) < 10:
+                # close enough, ignore
+                pass
+            elif length > total_len:
+                # longer than defined, extend in a straight line
 
-        tail_len = self.length - total_len
-        if tail_len > 0:
-            # computed length less than defined length
-            # -> extend slider in a straight line
-            self.hold_max_t = 1
+                # end of bezier curve is tangent to last segment in control points
+                last_curve_nodes = curves[-1].p
+                p = last_curve_nodes[:, -1]
+                v = p - last_curve_nodes[:, -2]
 
-            # end of bezier curve is tangent to last segment in control points
-            last_curve_nodes = curves[-1].p
-            p = last_curve_nodes[:, -1]
-            v = p - last_curve_nodes[:, -2]
+                nodes = np.array([p, p + v / np.linalg.norm(v) * (length - total_len)])
+                curves.append(BezierCurve(nodes.T))
+                self.ctrl_pts.extend(nodes)
+            else:
+                # shorter than defined, shorten last segment
+                while total_len - length >= curves[-1].length:
+                    # slider doesn't reach last segment - shouldn't happen via editor, but possible to encode
+                    total_len -= curves.pop().length
+                curves[-1], _ = curves[-1].split_at( 1 - (total_len - length) / curves[-1].length )
 
-            nodes = np.array([p, p + v / np.linalg.norm(v) * tail_len]).T
-            curves.append(BezierCurve(nodes))
+                # recompute control points
+                self.ctrl_pts = [ p for curve in curves for p in curve.p.T ]
+        else: 
+            # compute length based on parameters
+            self.length = total_len
             
-        self.path_segments: list[BezierCurve]
-        self.path_segments = curves
+        self.path_segments: list[BezierCurve] = curves
         self.cum_t = np.cumsum([ c.length for c in curves ])
         self.cum_t /= self.cum_t[-1]
 
@@ -195,9 +220,9 @@ class Bezier(Slider):
 
     def curve_reparameterize(self, t: Float[ndarray, "L"]) -> tuple[Int[ndarray, "L"], Float[ndarray, "L"]]:
         """
-        converts the parameter to an index into the sequence of curves and a new parameter localized to that curve
+        converts the parameter to a segment index and a new parameter localized to that segment
         """
-        t = np.clip(t, 0, 1) * self.hold_max_t
+        t = np.clip(t, 0, 1)
         idx = np.searchsorted(self.cum_t, t)
 
         range_start = np.insert(self.cum_t, 0, 0)[idx]

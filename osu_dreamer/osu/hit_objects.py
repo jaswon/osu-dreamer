@@ -111,12 +111,14 @@ class Slider(HitObject):
         hit_sound: int,
         slides: int,
         length: float,
+        ctrl_pts: list[Vec2],
     ):
         super().__init__(t, new_combo, hit_sound)
         self.slides = slides
         self.length = length
         self.beat_length = beat_length
         self.slider_mult = slider_mult
+        self.ctrl_pts = ctrl_pts
         
         # the duration of a single slide (no repeats)
         self.slide_duration = length / (slider_mult * 100) * beat_length

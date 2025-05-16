@@ -8,6 +8,7 @@ import numpy as np
 
 class BezierCurve:
     def __init__(self, p: Float[ndarray, "2 N"]):
+        assert p.shape[1] > 0
         self.p = p
     
     def __repr__(self):
@@ -53,3 +54,14 @@ class BezierCurve:
         while p.shape[1] > 1:
             p = (1-t) * p[:,:-1] + t * p[:,1:]
         return p[:,0]
+    
+    def split_at(self, t: float) -> tuple["BezierCurve", "BezierCurve"]:
+        assert 0 <= t <= 1
+        p, left, right = self.p, [], []
+        while True:
+            left.append(p[:,0])
+            right.append(p[:,-1])
+            if p.shape[1] == 1:
+                break
+            p = (1-t) * p[:,:-1] + t * p[:,1:]
+        return BezierCurve(np.array(left).T), BezierCurve(np.array(right).T)
