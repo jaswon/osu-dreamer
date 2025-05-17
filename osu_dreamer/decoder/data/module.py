@@ -14,12 +14,14 @@ from torch.utils.data import Dataset, DataLoader
 
 from osu_dreamer.data.module import BeatmapDataModule, BeatmapDataset
 from osu_dreamer.data.load_audio import A_DIM
+from osu_dreamer.data.labels import NUM_LABELS, get_labels
 
 from .tokenize import to_tokens_and_timestamps
 
 
 class Batch(NamedTuple):
-    audio: Float[Tensor, str(f"{A_DIM} L")]
+    labels: Float[Tensor, str(f"B {NUM_LABELS}")]
+    audio: Float[Tensor, str(f"B {A_DIM} L")]
     tokens: Int[Tensor, "B N"]
     timestamps: Int[Tensor, "B N"]
 
@@ -29,8 +31,10 @@ class TokenDataset(BeatmapDataset):
         with open(map_file, 'rb') as f:
             bm = pickle.load(f)
         tokens, timestamps = to_tokens_and_timestamps(bm)
-
+        labels = get_labels(bm)
+        
         yield Batch(
+            th.tensor(labels).float(),
             th.tensor(audio).float(),
             th.tensor(tokens).long(),
             th.tensor(timestamps).long(),

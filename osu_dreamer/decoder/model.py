@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.load_audio import A_DIM, get_frame_times
 from osu_dreamer.data.plot import plot_signals
 
@@ -20,6 +21,8 @@ from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
 from .data.module import Batch
 from .data.events import PAD, BOS, EOS, vocab_size
+
+from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 
 
 def focal_loss(
@@ -46,6 +49,9 @@ class Model(pl.LightningModule):
         # model hparams
         audio_encoder_ckpt: str,
         embed_dim: int,
+
+        label_dim: int,
+        label_emb_args: LabelEmbeddingArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -73,6 +79,8 @@ class Model(pl.LightningModule):
             MP.Linear(embed_dim, seq_len),
             MP.Gain(),
         )
+
+        self.label_emb = LabelEmbedding(label_dim, label_emb_args)
 
     def make_batch(
         self,
@@ -120,6 +128,7 @@ class Model(pl.LightningModule):
 
     def forward(
         self,
+        labels: Float[Tensor, str(f"1 {NUM_LABELS}")],
         audio: Float[Tensor, str(f"1 {A_DIM} L")],
         tokens: Int[Tensor, "1 N"],
         timestamps: Float[Tensor, "1 N"],
@@ -134,6 +143,7 @@ class Model(pl.LightningModule):
             embed_positions = b_timestamps,
             ctx = b_features,
             ctx_positions = b_frame_times,
+            conditioning = self.label_emb(labels).expand(2,-1),
         ) # B N E
 
         pred_logits = self.token_head(h) # B N V
