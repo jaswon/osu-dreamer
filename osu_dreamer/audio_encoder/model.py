@@ -49,6 +49,7 @@ class Model(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
+        self.a_dim = a_dim
 
         # training params
         self.opt_args = opt_args
