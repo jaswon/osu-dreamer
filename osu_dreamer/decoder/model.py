@@ -146,12 +146,16 @@ class Model(pl.LightningModule):
         
         b_frame_times, b_features, b_timestamps, b_tokens = self.make_batch(audio, tokens, timestamps)
 
+        # randomly mask labels for training
+        b_labels = labels.repeat(self.batch_size, 1)
+        label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, 1, b_labels))
+
         h = self.decoder(
             x = self.embed(b_tokens),
             x_t = b_timestamps,
             ctx = b_features,
             ctx_t = b_frame_times,
-            c = self.label_emb(labels).expand(2,-1),
+            c = label_embs,
         ) # B N E
 
         pred_logits = self.token_head(h) # B N V
