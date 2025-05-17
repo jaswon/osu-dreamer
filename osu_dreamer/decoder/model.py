@@ -15,7 +15,6 @@ from osu_dreamer.data.plot import plot_signals
 
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.muon import Muon
-from osu_dreamer.modules.dit import DiT, DiTArgs
 
 from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
@@ -23,6 +22,7 @@ from .data.module import Batch
 from .data.events import PAD, BOS, EOS, vocab_size
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
+from .modules.decoder import Decoder, DecoderArgs
 
 
 def focal_loss(
@@ -52,6 +52,8 @@ class Model(pl.LightningModule):
 
         label_dim: int,
         label_emb_args: LabelEmbeddingArgs,
+
+        decoder_args: DecoderArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -81,6 +83,14 @@ class Model(pl.LightningModule):
         )
 
         self.label_emb = LabelEmbedding(label_dim, label_emb_args)
+
+        self.decoder = Decoder(
+            embed_dim,
+            self.a_dim,
+            label_dim,
+            decoder_args,
+            self.seq_len,
+        )
 
     def make_batch(
         self,
@@ -136,12 +146,12 @@ class Model(pl.LightningModule):
         
         b_frame_times, b_features, b_timestamps, b_tokens = self.make_batch(audio, tokens, timestamps)
 
-        h = self.net(
-            embeds = self.embed(b_tokens), # B N E
-            embed_positions = b_timestamps,
+        h = self.decoder(
+            x = self.embed(b_tokens),
+            x_t = b_timestamps,
             ctx = b_features,
-            ctx_positions = b_frame_times,
-            conditioning = self.label_emb(labels).expand(2,-1),
+            ctx_t = b_frame_times,
+            c = self.label_emb(labels).expand(2,-1),
         ) # B N E
 
         pred_logits = self.token_head(h) # B N V
