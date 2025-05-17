@@ -16,7 +16,7 @@ import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.dit import DiT, DiTArgs
 
-from .data.dataset import Batch
+from .data.module import Batch
 from .data.events import NUM_EVENTS
 
 

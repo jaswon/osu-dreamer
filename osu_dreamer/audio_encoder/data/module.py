@@ -1,74 +1,70 @@
 
+from typing import NamedTuple
+from torch import Tensor
+from jaxtyping import Float, Int
+
+import pickle
 from pathlib import Path
+from collections.abc import Iterator
 
-from torch.utils.data import DataLoader, random_split
+import numpy as np
 
-import pytorch_lightning as pl
+import torch as th
+from torch.utils.data import DataLoader
 
-from .dataset import FullSequenceDataset, SubsequenceDataset
+from osu_dreamer.data.module import BeatmapDataModule, BeatmapDataset
+from osu_dreamer.data.load_audio import A_DIM, get_frame_times
+
+from .events import beatmap_events
 
 
-class Data(pl.LightningDataModule):
+class Batch(NamedTuple):
+    audio: Float[Tensor, str(f"{A_DIM} L")]
+    events: Int[Tensor, "L"]
+    
+
+class BeatmapEventDataset(BeatmapDataset):
+    def __init__(self, dataset, seq_len: int):
+        super().__init__(dataset)
+        self.seq_len = seq_len
+
+    def make_samples(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
+        audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # A L
+        frame_times = get_frame_times(audio.size(-1))
+        with open(map_file, 'rb') as f:
+            bm = pickle.load(f)
+        events = th.tensor(beatmap_events(bm, frame_times)).long()
+            
+        yield Batch(audio,events)
+
+        
+class SubsequenceBeatmapEventDataset(BeatmapEventDataset):
+    def make_samples(self, map_file: Path, map_idx: int):
+        for audio,events in super().make_samples(map_file, map_idx):
+            L = audio.size(-1)
+            if self.seq_len >= L:
+                return
+
+            num_samples = int(L / self.seq_len)
+            for idx in th.randperm(L - self.seq_len)[:num_samples]:
+                sl = ..., slice(idx,idx+self.seq_len)
+                yield Batch(audio[sl], events[sl])
+
+
+class Data(BeatmapDataModule):
     def __init__(
         self,
         
         seq_len: int,
         batch_size: int,
+
         num_workers: int,
-        
         val_size: float | int,
         data_path: str = "./data",
     ):
-        super().__init__()
-        
+        super().__init__(num_workers, val_size, data_path)
         self.seq_len = seq_len
-        
         self.batch_size = batch_size
-        self.num_workers = num_workers
-        
-        # check if data dir exists
-        self.data_dir = Path(data_path)
-        if not self.data_dir.exists():
-            raise ValueError(f'data dir `{self.data_dir}` does not exist, generate dataset first')
-        
-        # data dir exists, check for samples
-        self.full_set = list(self.data_dir.rglob("*.map.pkl"))
-        if len(self.full_set) == 0:
-            raise ValueError(f'data dir `{self.data_dir}` is empty, generate dataset first')
-        
-        # check validation size
-        if val_size <= 0:
-            raise ValueError(f'invalid {val_size=}')
-        elif val_size < 1:
-            # interpret as fraction of full set
-            val_size = int(len(self.full_set) * val_size)
-            if val_size == 0:
-                raise ValueError(f'empty validation set, given {val_size=} and {len(self.full_set)=}')
-        else:
-            # interpret as number of samples
-            val_size = round(val_size)
-            if val_size > len(self.full_set):
-                raise ValueError(f"{val_size=} is greater than {len(self.full_set)=}")
-        self.val_size = val_size
-
-            
-    def setup(self, stage: str):
-        
-        train_size = len(self.full_set) - self.val_size
-        print(f'train: {train_size} | val: {self.val_size}')
-        train_split, val_split = random_split(
-            self.full_set, # type: ignore
-            [train_size, self.val_size],
-        )
-        
-        self.train_set = SubsequenceDataset(
-            dataset=train_split,
-            seq_len=self.seq_len,
-        )
-        self.val_set = FullSequenceDataset(
-            dataset=val_split,
-            seq_len=self.seq_len,
-        )
             
     def train_dataloader(self):
         return DataLoader(
@@ -83,3 +79,10 @@ class Data(pl.LightningDataModule):
             batch_size=1,
             num_workers=self.num_workers,
         )
+    
+    def make_train_set(self, split) -> SubsequenceBeatmapEventDataset:
+        return SubsequenceBeatmapEventDataset(split, self.seq_len)
+    
+    def make_val_set(self, split) -> BeatmapEventDataset:
+        return BeatmapEventDataset(split, self.seq_len)
+            
