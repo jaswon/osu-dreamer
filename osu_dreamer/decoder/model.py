@@ -89,23 +89,23 @@ class Model(pl.LightningModule):
         timestamps: Float[Tensor, "1 N"],
     ) -> tuple[
         Float[Tensor, "B bL"],      # audio timestamps 
-        Float[Tensor, "B H bL"],    # audio features
+        Float[Tensor, "B bL H"],    # audio features
         Float[Tensor, "B bN"],      # token timestamps
         Int[Tensor, "B bN"],        # tokens
     ]:
         
         L = audio.size(-1)
-        audio_features = self.audio_encoder(audio)
+        audio_features = self.audio_encoder(audio).transpose(1,2)
         frame_times = th.tensor(get_frame_times(L)).float()
 
-        b_features = th.empty(self.batch_size, audio_features.size(1), self.seq_len) # B H bL
+        b_features = th.empty(self.batch_size, self.seq_len, audio_features.size(-1)) # B H bL
         b_frame_times = th.empty(self.batch_size, self.seq_len) # B bL
         b_ranges: list[tuple[int,int]] = []
         max_tokens: int = 0
 
         for start_idx in th.randperm(L - self.seq_len)[:self.batch_size]:
             end_idx = start_idx+self.seq_len
-            b_features[start_idx] = audio_features[0,:,start_idx:end_idx]
+            b_features[start_idx] = audio_features[0,start_idx:end_idx]
             b_frame_times[start_idx] = frame_times[start_idx:end_idx]
 
             left_idx = int(th.searchsorted(timestamps, frame_times[start_idx], right=False))
@@ -136,10 +136,8 @@ class Model(pl.LightningModule):
         
         b_frame_times, b_features, b_timestamps, b_tokens = self.make_batch(audio, tokens, timestamps)
 
-        embeds = self.embed(b_tokens) # B N E
-
         h = self.net(
-            embeds = embeds,
+            embeds = self.embed(b_tokens), # B N E
             embed_positions = b_timestamps,
             ctx = b_features,
             ctx_positions = b_frame_times,
