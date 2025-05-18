@@ -1,4 +1,5 @@
 
+import time
 from typing import Any
 from jaxtyping import Float, Int, Shaped
 
@@ -18,7 +19,7 @@ from osu_dreamer.modules.muon import Muon
 from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
 from .data.module import Batch
-from .data.events import PAD, BOS, EOS, vocab_size
+from .data.events import PAD, BOS, EOS, decode, vocab_size
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -192,7 +193,10 @@ class Model(pl.LightningModule):
         self,
         audio: Float[Tensor, str(f"{A_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+        time_budget: float = float('inf'), # max allowed time (sec)
     ) -> list[list[tuple[int, float]]]:
+        
+        end_time = time.time() + time_budget
         
         c = self.label_emb(labels) # B C
         B = c.size(0)
@@ -213,6 +217,11 @@ class Model(pl.LightningModule):
         output_tokens: list[list[tuple[int, float]]] = [ [] for _ in range(B) ]
 
         while True:
+            
+            if time.time() > end_time:
+                # time limit reached
+                break
+
             cur_ctx_idx = th.arange(self.seq_len)[None] + cur_i[:,None]
             cur_ctx = ctx[cur_ctx_idx] # B bL H
             cur_ctx_t = ctx_t[cur_ctx_idx] # B bL
@@ -334,14 +343,12 @@ class Model(pl.LightningModule):
             sr, ar, od, cs, hp = map(partial(round, ndigits=1), label)
             return f'{sr=} {ar=} {od=} {cs=} {hp=}'
 
-        samples, labels = self.sample(audio[0], l.repeat(2,1), max_tokens=400)
-        for i, (sample, label) in enumerate(zip(samples, labels)):
+        samples = self.sample(audio[0], label.repeat(2,1), time_budget=10)
+        for i, sample in enumerate(samples):
             sample_text = '\n'.join([
                 f'pred: {f_label(label)}',
-                f'true: {f_label(l[0].cpu().tolist())}'
             ] + [
-                str(token)
-                if isinstance(token, float) else str(Token(token)) 
-                for token in sample
+                f"{timestamp:0>10}: {str(decode(token))}"
+                for token, timestamp in sample
             ])
             exp.add_text(f'sample/{i}', sample_text, global_step=self.global_step)
