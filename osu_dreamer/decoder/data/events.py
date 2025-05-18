@@ -9,6 +9,7 @@ EventType = Enum('EventType', [
     "BOS",
     "EOS",
     "PAD",
+    "DIFF",
 
     # object types
     "CIRCLE",
@@ -46,6 +47,7 @@ _token2event: tuple[Event, ...] = (
     Event(EventType.BOS),
     Event(EventType.EOS),
     Event(EventType.PAD),
+    Event(EventType.DIFF),
 
     Event(EventType.CIRCLE),
     Event(EventType.SLIDER),
@@ -83,3 +85,4 @@ _event2token = { t: i for i, t in enumerate(_token2event) }
 BOS = encode(Event(EventType.BOS))
 EOS = encode(Event(EventType.EOS))
 PAD = encode(Event(EventType.PAD))
+DIFF = encode(Event(EventType.DIFF))

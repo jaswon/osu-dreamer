@@ -19,7 +19,7 @@ from osu_dreamer.modules.muon import Muon
 from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
 from .data.module import Batch
-from .data.events import PAD, BOS, EOS, decode, vocab_size
+from .data.events import PAD, BOS, EOS, decode, vocab_size, DIFF
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -92,6 +92,7 @@ class Model(pl.LightningModule):
         )
 
         self.label_emb = LabelEmbedding(label_dim, label_emb_args)
+        self.label_head = nn.Linear(embed_dim, label_dim)
 
         self.decoder = Decoder(
             embed_dim,
@@ -132,16 +133,15 @@ class Model(pl.LightningModule):
             b_ranges.append((left_idx, right_idx))
             max_tokens = max(max_tokens, right_idx - left_idx)
 
-        b_tokens = th.full((self.batch_size, max_tokens+2), PAD)
-        b_timestamps = th.full((self.batch_size, max_tokens+2), th.inf).float()
-        b_tokens[:,0] = BOS
+        b_tokens = th.full((self.batch_size, max_tokens+1), PAD)
+        b_timestamps = th.full((self.batch_size, max_tokens+1), th.inf).float()
 
         for idx, (left_idx, right_idx) in enumerate(b_ranges):
             num_tokens = right_idx-left_idx
-            b_tokens[idx, 1:][:,:num_tokens] = tokens[0,left_idx:right_idx]
-            b_tokens[idx, 1:][:,num_tokens] = EOS
-            b_timestamps[idx, 1:][:,:num_tokens] = timestamps[0,left_idx:right_idx]
-            b_timestamps[idx, 1:][:,num_tokens] = th.inf
+            b_tokens[idx, :num_tokens] = tokens[0,left_idx:right_idx]
+            b_tokens[idx, num_tokens] = EOS
+            b_timestamps[idx, :num_tokens] = timestamps[0,left_idx:right_idx]
+            b_timestamps[idx, num_tokens] = th.inf
 
         return b_frame_times, b_features, b_timestamps, b_tokens
 
@@ -158,20 +158,27 @@ class Model(pl.LightningModule):
 
         # randomly mask labels for training
         b_labels = labels.repeat(self.batch_size, 1)
-        label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, 1, b_labels))
+        label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
+
+        b_prelude_tokens = th.tensor([DIFF, BOS]).repeat(self.batch_size, 1)
+        b_prelude_timestamps = th.zeros(self.batch_size, 2)
 
         h = self.decoder(
-            x = self.embed(b_tokens),
-            x_t = b_timestamps,
+            x = self.embed(th.cat([b_prelude_tokens, b_tokens], dim=1)),
+            x_t = th.cat([b_prelude_timestamps, b_timestamps], dim=1),
             ctx = b_features,
             ctx_t = b_frame_times,
             c = label_embs,
-        ) # B N E
+        ) # B N+2 E
+
+        diff_emb, h = h[:,0], h[:,1:-1] # B E, B N E
+        pred_labels = self.label_head(diff_emb) # B NUM_LABELS
+        label_loss = (b_labels - pred_labels).pow(2).mean()
 
         pred_logits = self.token_head(h) # B N V
         token_loss = focal_loss(
-            pred_logits[:,:-1].transpose(1,2),
-            b_tokens[:,1:],
+            pred_logits.transpose(1,2),
+            b_tokens,
             gamma = self.focal_gamma,
         ).mean()
 
@@ -181,11 +188,12 @@ class Model(pl.LightningModule):
         true_timing_cdf = (b_frame_times[:,None,:] >= b_timestamps[:,:,None]).long() # B N L
         timing_loss = (pred_timing_cdf - true_timing_cdf).pow(2).mean()
 
-        loss = token_loss + timing_loss
+        loss = token_loss + timing_loss + label_loss
         return loss, {
             "loss": loss.detach(),
             "token": token_loss.detach(),
             "timing": timing_loss.detach(),
+            "label": label_loss.detach(),
         }
     
     @th.no_grad
@@ -194,19 +202,23 @@ class Model(pl.LightningModule):
         audio: Float[Tensor, str(f"{A_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         time_budget: float = float('inf'), # max allowed time (sec)
-    ) -> list[list[tuple[int, float]]]:
+    ) -> tuple[
+        list[list[tuple[int, float]]],          # list of B lists of (token, timestamp) tuples
+        Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
+    ]:
         
         end_time = time.time() + time_budget
         
         c = self.label_emb(labels) # B C
+        pred_labels = []
         B = c.size(0)
         
         L = audio.size(-1)
         ctx = self.audio_encoder(F.pad(audio, (0, self.seq_len-1))[None]).transpose(1,2) # L+s-1 H
         ctx_t = th.tensor(get_frame_times(L+self.seq_len-1))[None].float() # L+s-1
 
-        bos = th.full((B,1), BOS)
-        t0 = th.full((B,1), 0)
+        prelude_tokens = th.tensor([DIFF, BOS]).repeat(B,1)
+        prelude_timestamps = th.full((B,2), 0)
 
         active_batches = th.arange(B)
         cur_i = th.zeros(B)
@@ -217,7 +229,6 @@ class Model(pl.LightningModule):
         output_tokens: list[list[tuple[int, float]]] = [ [] for _ in range(B) ]
 
         while True:
-            
             if time.time() > end_time:
                 # time limit reached
                 break
@@ -226,14 +237,17 @@ class Model(pl.LightningModule):
             cur_ctx = ctx[cur_ctx_idx] # B bL H
             cur_ctx_t = ctx_t[cur_ctx_idx] # B bL
 
-            cur_x = self.embed(th.cat([bos, cur_tokens], dim=1)) # B n E
-            cur_x_t = th.cat([t0, cur_timestamps], dim=1) # B n
+            cur_x = self.embed(th.cat([prelude_tokens, cur_tokens], dim=1)) # B n+2 E
+            cur_x_t = th.cat([prelude_timestamps, cur_timestamps], dim=1) # B n+2
 
-            h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c ) # B n E
-            cur_tail = h[th.arange(B),cur_tail_idx] # B E
+            h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c ) # B n+2 E
+            diff_emb, h = h[:,0], h[:,1:] # B E, B n+1 E
+            cur_tail_emb = h[th.arange(B),cur_tail_idx] # B E
 
-            pred_token_logits = self.token_head(cur_tail) # B V
-            pred_timing_logits = self.timing_head(cur_tail) # B s
+            pred_labels.append(self.label_head(diff_emb)) # B NUM_LABELS
+
+            pred_token_logits = self.token_head(cur_tail_emb) # B V
+            pred_timing_logits = self.timing_head(cur_tail_emb) # B s
 
             # disallow timing into the past
             cur_latest_offsets = cur_x_t[th.arange(B),cur_tail_idx] - ctx_t[cur_i] # B
@@ -284,8 +298,8 @@ class Model(pl.LightningModule):
                 # all completed
                 break
 
-            bos = bos[next_active]
-            t0 = t0[next_active]
+            prelude_tokens = prelude_tokens[next_active]
+            prelude_timestamps = prelude_timestamps[next_active]
             active_batches = active_batches[next_active]
             cur_i = cur_i[next_active]
             cur_tail_idx = cur_tail_idx[next_active]
@@ -305,7 +319,7 @@ class Model(pl.LightningModule):
                 for token, timestamp in zip(cur_tokens[sl], cur_timestamps[sl])
             ))
 
-        return output_tokens
+        return output_tokens, th.stack(pred_labels).mean(dim=0)
 
 
 #
@@ -333,20 +347,23 @@ class Model(pl.LightningModule):
 
     @th.no_grad()
     def plot_val(self, batch: Batch):
-        from functools import partial
 
-        label, audio, tokens, timestamps = batch
+        true_label = batch[0][0]
+        audio = batch[1][0]
+        label = true_label.repeat(2,1)
+        label = th.where(th.rand_like(label) < .5, -1, label)
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
 
         def f_label(label):
-            sr, ar, od, cs, hp = map(partial(round, ndigits=1), label)
-            return f'{sr=} {ar=} {od=} {cs=} {hp=}'
+            sr, ar, od, cs, hp = [ round(l, ndigits=1) for l in label ]
+            return f'{sr=:>4} {ar=:>4} {od=:>4} {cs=:>4} {hp=:>4}'
 
-        samples = self.sample(audio[0], label.repeat(2,1), time_budget=10)
-        for i, sample in enumerate(samples):
+        samples, pred_labels = self.sample(audio, label, time_budget=10)
+        for i, (sample, pred_label) in enumerate(zip(samples, pred_labels)):
             sample_text = '\n'.join([
-                f'pred: {f_label(label)}',
+                f'true: {f_label(true_label)}',
+                f'pred: {f_label(pred_label)}',
             ] + [
                 f"{timestamp:0>10}: {str(decode(token))}"
                 for token, timestamp in sample
