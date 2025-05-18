@@ -1,5 +1,7 @@
 
 from typing import NamedTuple, Any
+
+from itertools import product
 from enum import Enum
 
 EventType = Enum('EventType', [
@@ -23,12 +25,7 @@ EventType = Enum('EventType', [
     "KNOT",
     "BEZIER_END",
 
-    # flag tokens
-    "NEW_COMBO",
-    "WHISTLE",
-    "FINISH",
-    "CLAP",
-
+    "ONSET",
     "LOCATION",
 ])
 
@@ -44,10 +41,6 @@ def decode(token: int) -> Event:
 
 def vocab_size() -> int:
     return len(_event2token)
-
-BOS = encode(Event(EventType.BOS))
-EOS = encode(Event(EventType.EOS))
-PAD = encode(Event(EventType.PAD))
 
 _token2event: tuple[Event, ...] = (
     Event(EventType.BOS),
@@ -67,15 +60,9 @@ _token2event: tuple[Event, ...] = (
     Event(EventType.KNOT),
     Event(EventType.BEZIER_END),
 
-    *(
-        Event(flag, value)
-        for flag in [
-            EventType.NEW_COMBO,
-            EventType.WHISTLE,
-            EventType.FINISH,
-            EventType.CLAP,
-        ]
-        for value in [False, True]
+    *( # new combo, whistle, finish, clap
+        Event(EventType.ONSET, flags)
+        for flags in product([False, True], repeat=4)
     ),
 
     *( # hi-res on-screen coordinates
@@ -92,3 +79,7 @@ _token2event: tuple[Event, ...] = (
 )
 
 _event2token = { t: i for i, t in enumerate(_token2event) }
+
+BOS = encode(Event(EventType.BOS))
+EOS = encode(Event(EventType.EOS))
+PAD = encode(Event(EventType.PAD))
