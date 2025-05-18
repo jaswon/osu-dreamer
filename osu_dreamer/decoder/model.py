@@ -170,8 +170,8 @@ class Model(pl.LightningModule):
 
         pred_logits = self.token_head(h) # B N V
         token_loss = focal_loss(
-            pred_logits.transpose(1,2),
-            b_tokens,
+            pred_logits[:,:-1].transpose(1,2),
+            b_tokens[:,1:],
             gamma = self.focal_gamma,
         ).mean()
 
