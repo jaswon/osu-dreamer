@@ -223,8 +223,13 @@ class Model(pl.LightningModule):
             h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c ) # B n E
             cur_tail = h[th.arange(B),cur_tail_idx] # B E
 
-            pred_token_logits = self.token_head(cur_tail)
-            pred_timing_logits = self.timing_head(cur_tail)
+            pred_token_logits = self.token_head(cur_tail) # B V
+            pred_timing_logits = self.timing_head(cur_tail) # B s
+
+            # disallow timing into the past
+            cur_latest_offsets = cur_x_t[th.arange(B),cur_tail_idx] - ctx_t[cur_i] # B
+            disallow_timing_mask = cur_latest_offsets[:,None] > th.arange(self.seq_len)[None]
+            pred_timing_logits[disallow_timing_mask] = -th.inf
 
             pred_tokens = th.multinomial(pred_token_logits.softmax(dim=-1), num_samples=1)[:,0] # B
             pred_offsets = th.multinomial(pred_timing_logits.softmax(dim=-1), num_samples=1)[:,0] # B
