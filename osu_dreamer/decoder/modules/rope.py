@@ -32,6 +32,6 @@ class RoPE(nn.Module):
         x: Float[Tensor, "B N D"],
         t: Float[Tensor, "B N"]
     ) -> Float[Tensor, "B N D"]:
-        theta = t[:,:,None] * self.fs # B N D/2
+        theta = th.nan_to_num(t[:,:,None], posinf=0.) * self.fs # B N D/2
         theta = repeat(theta, 'l d -> l (d r)', r=2) # B N D
         return x * theta.cos() + rotate_half(x) * theta.sin()

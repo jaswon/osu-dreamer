@@ -1,6 +1,6 @@
 
 from typing import Any
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, Shaped
 
 import torch as th
 from torch import Tensor, nn
@@ -11,7 +11,6 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.load_audio import A_DIM, get_frame_times
-from osu_dreamer.data.plot import plot_signals
 
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.muon import Muon
@@ -34,6 +33,15 @@ def focal_loss(
     logpt = F.log_softmax(inputs, dim=1)
     inputs = (1 - logpt.exp()).pow(gamma) * logpt
     return F.nll_loss(inputs, target, weight, reduction='none')
+
+def roll_by_shifts(
+    input: Shaped[Tensor, "B N"], 
+    shifts: Int[Tensor, "B"],
+) -> Shaped[Tensor, "B N"]:
+    b,n = input.size()
+    col_idxs = th.arange(n).repeat(b,1)
+    shifted_idxs = (col_idxs - shifts[:,None]) % n
+    return th.gather(input, 1, shifted_idxs.long())
 
     
 class Model(pl.LightningModule):
@@ -124,7 +132,7 @@ class Model(pl.LightningModule):
             max_tokens = max(max_tokens, right_idx - left_idx)
 
         b_tokens = th.full((self.batch_size, max_tokens+2), PAD)
-        b_timestamps = th.full((self.batch_size, max_tokens+2), 0).float()
+        b_timestamps = th.full((self.batch_size, max_tokens+2), th.inf).float()
         b_tokens[:,0] = BOS
 
         for idx, (left_idx, right_idx) in enumerate(b_ranges):
@@ -132,6 +140,7 @@ class Model(pl.LightningModule):
             b_tokens[idx, 1:][:,:num_tokens] = tokens[0,left_idx:right_idx]
             b_tokens[idx, 1:][:,num_tokens] = EOS
             b_timestamps[idx, 1:][:,:num_tokens] = timestamps[0,left_idx:right_idx]
+            b_timestamps[idx, 1:][:,num_tokens] = th.inf
 
         return b_frame_times, b_features, b_timestamps, b_tokens
 
@@ -182,62 +191,107 @@ class Model(pl.LightningModule):
     def sample(
         self,
         audio: Float[Tensor, str(f"{A_DIM} L")],
-        labels: Float[Tensor, str(f"{NUM_LABELS}")],
-    ) -> tuple[
-        Int[Tensor, "N"],   # tokens
-        Float[Tensor, "N"], # timestamps
-    ]:
+        labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+    ) -> list[list[tuple[int, float]]]:
         
-        c = self.label_emb(labels[None]) # 1 C
+        c = self.label_emb(labels) # B C
+        B = c.size(0)
         
         L = audio.size(-1)
         ctx = self.audio_encoder(F.pad(audio, (0, self.seq_len-1))[None]).transpose(1,2) # L+s-1 H
         ctx_t = th.tensor(get_frame_times(L+self.seq_len-1))[None].float() # L+s-1
 
-        cur_i = 0
-        cur_tokens: list[int] = []
-        cur_timestamps: list[float] = []
+        bos = th.full((B,1), BOS)
+        t0 = th.full((B,1), 0)
 
-        output_tokens: list[int] = []
-        output_timestamps: list[float] = []
+        active_batches = th.arange(B)
+        cur_i = th.zeros(B)
+        cur_tail_idx = th.zeros(B)
+        cur_tokens = th.empty(B,0)
+        cur_timestamps = th.empty(B,0)
+
+        output_tokens: list[list[tuple[int, float]]] = [ [] for _ in range(B) ]
 
         while True:
-            cur_j = cur_i+self.seq_len
-            cur_ctx = ctx[None,cur_i:cur_j] # 1 bL H
-            cur_ctx_t = ctx_t[None,cur_i:cur_j] # 1 bL
+            cur_ctx_idx = th.arange(self.seq_len)[None] + cur_i[:,None]
+            cur_ctx = ctx[cur_ctx_idx] # B bL H
+            cur_ctx_t = ctx_t[cur_ctx_idx] # B bL
 
-            cur_x = self.embed(th.tensor([BOS] + cur_tokens)[None]) # 1 n E
-            cur_x_t = th.tensor([0] + cur_timestamps)[None] # 1 n
+            cur_x = self.embed(th.cat([bos, cur_tokens], dim=1)) # B n E
+            cur_x_t = th.cat([t0, cur_timestamps], dim=1) # B n
 
-            h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c )[0,-1] # E
+            h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c ) # B n E
+            cur_tail = h[th.arange(B),cur_tail_idx] # B E
 
-            pred_token = int(th.multinomial(self.token_head(h).softmax(dim=0), num_samples=1).item())
-            pred_offset = int(th.multinomial(self.timing_head(h).softmax(dim=0), num_samples=1).item())
-            pred_timestamp = float(ctx_t[cur_i + pred_offset])
+            pred_token_logits = self.token_head(cur_tail)
+            pred_timing_logits = self.timing_head(cur_tail)
 
-            cur_tokens.append(pred_token)
-            cur_timestamps.append(pred_timestamp)
+            pred_tokens = th.multinomial(pred_token_logits.softmax(dim=-1), num_samples=1)[:,0] # B
+            pred_offsets = th.multinomial(pred_timing_logits.softmax(dim=-1), num_samples=1)[:,0] # B
+            pred_timestamps = ctx_t[cur_i + pred_offsets] # B
 
-            if pred_token == EOS:
-                # no tokens remaining for current window, go to next window
-                cur_i += self.seq_len
-            elif pred_offset > self.seq_len * .5:
-                # less than half of window remains for future context, slide window forward
-                cur_i += pred_offset - int(self.seq_len * .5)
+            # update windows
+            cur_i += th.where(
+                pred_tokens == EOS,                                     # no tokens remaining for current window
+                self.seq_len,                                           # - go to next window
+                th.clamp(pred_offsets - int(self.seq_len * .5), min=0)  # - slide window forward until half of window is future context
+            )
 
-            if cur_i >= L:
-                # no more context
-                break
+            # grow sequence
+            if (cur_tail_idx >= cur_tokens.size(1)).any():
+                cur_tokens = th.cat([cur_tokens, th.full((active_batches.size(0), 1), PAD)], dim=1)
+                cur_timestamps = th.cat([cur_timestamps, th.full((active_batches.size(0), 1), th.inf)], dim=1)
+
+            # update sequence
+            pred_tokens[pred_tokens == EOS] = PAD
+            cur_tokens[:, cur_tail_idx] = pred_tokens
+            cur_timestamps[:, cur_tail_idx] = pred_timestamps
+            cur_tail_idx += (pred_tokens != PAD).long()
 
             # dequeue tokens that are before start of new window
-            while ctx_t[cur_i] > cur_timestamps[0]:
-                output_tokens.append(cur_tokens.pop(0))
-                output_timestamps.append(cur_timestamps.pop(0))
+            shifts = th.searchsorted(cur_timestamps, ctx_t[cur_i,None])[:,0] # B
+            cur_tokens = roll_by_shifts(cur_tokens, shifts)
+            cur_timestamps = roll_by_shifts(cur_timestamps, shifts)
+            cur_tail_idx -= shifts
 
-        output_tokens.extend(cur_tokens)
-        output_timestamps.extend(cur_timestamps)
+            for b, (shift,o) in enumerate(zip(shifts, output_tokens)):
+                sl = (b, slice(-shift,None)) # ...[b,-shift:]
 
-        return th.tensor(output_tokens), th.tensor(output_timestamps)
+                o.extend((
+                    (int(token), float(timestamp)) 
+                    for token, timestamp in zip(cur_tokens[sl], cur_timestamps[sl])
+                ))
+                cur_tokens[sl] = PAD
+                cur_timestamps[sl] = th.inf
+
+            # remove completed samples from batch 
+            next_active = cur_i < L
+            if not next_active.any():
+                # all completed
+                break
+
+            bos = bos[next_active]
+            t0 = t0[next_active]
+            active_batches = active_batches[next_active]
+            cur_i = cur_i[next_active]
+            cur_tail_idx = cur_tail_idx[next_active]
+            cur_tokens = cur_tokens[next_active]
+            cur_timestamps = cur_timestamps[next_active]
+
+            # shrink sequence
+            all_pad = (cur_tokens == PAD).all(dim=0) # N
+            num_all_pad = th.argmax(th.cat([~all_pad.flip(dims=[0]), th.tensor([True])], dim=0))
+            cur_tokens = cur_tokens[:,:num_all_pad]
+            cur_timestamps = cur_timestamps[:,:num_all_pad]
+
+        for b, (tail_idx,o) in enumerate(zip(cur_tail_idx, output_tokens)):
+            sl = (b, slice(tail_idx)) # ...[b,:tail_idx]
+            o.extend((
+                (int(token), float(timestamp)) 
+                for token, timestamp in zip(cur_tokens[sl], cur_timestamps[sl])
+            ))
+
+        return output_tokens
 
 
 #
@@ -265,17 +319,24 @@ class Model(pl.LightningModule):
 
     @th.no_grad()
     def plot_val(self, batch: Batch):
-        a, e = batch
-        _, masked_events = self.mask_events(e)
-        pred_logits = self.pred_unmask(self.encode(a), masked_events)
-        pred_e = pred_logits.argmax(dim=-1) # B L
+        from functools import partial
 
-        guides = th.arange(1, NUM_EVENTS).repeat(e.size(-1),1).T # E L
+        label, audio, tokens, timestamps = batch
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
-        with plot_signals(
-            a[0].cpu().numpy(),
-            [ th.cat([guides, x[0,None].cpu()], dim=0).float().numpy() for x in [ e, pred_e ] ],
-        ) as fig:
-            exp.add_figure("samples", fig, global_step=self.global_step)
-        
+
+        def f_label(label):
+            sr, ar, od, cs, hp = map(partial(round, ndigits=1), label)
+            return f'{sr=} {ar=} {od=} {cs=} {hp=}'
+
+        samples, labels = self.sample(audio[0], l.repeat(2,1), max_tokens=400)
+        for i, (sample, label) in enumerate(zip(samples, labels)):
+            sample_text = '\n'.join([
+                f'pred: {f_label(label)}',
+                f'true: {f_label(l[0].cpu().tolist())}'
+            ] + [
+                str(token)
+                if isinstance(token, float) else str(Token(token)) 
+                for token in sample
+            ])
+            exp.add_text(f'sample/{i}', sample_text, global_step=self.global_step)
