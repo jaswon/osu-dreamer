@@ -124,14 +124,14 @@ class Model(pl.LightningModule):
             max_tokens = max(max_tokens, right_idx - left_idx)
 
         b_tokens = th.full((self.batch_size, max_tokens+2), PAD)
-        b_timestamps = th.full((self.batch_size, max_tokens+2), -1).float()
+        b_timestamps = th.full((self.batch_size, max_tokens+2), 0).float()
         b_tokens[:,0] = BOS
 
         for idx, (left_idx, right_idx) in enumerate(b_ranges):
             num_tokens = right_idx-left_idx
             b_tokens[idx, 1:][:,:num_tokens] = tokens[0,left_idx:right_idx]
             b_tokens[idx, 1:][:,num_tokens] = EOS
-            b_timestamps[idx,1:][:,:num_tokens] = timestamps[0,left_idx:right_idx]
+            b_timestamps[idx, 1:][:,:num_tokens] = timestamps[0,left_idx:right_idx]
 
         return b_frame_times, b_features, b_timestamps, b_tokens
 
@@ -177,6 +177,68 @@ class Model(pl.LightningModule):
             "token": token_loss.detach(),
             "timing": timing_loss.detach(),
         }
+    
+    @th.no_grad
+    def sample(
+        self,
+        audio: Float[Tensor, str(f"{A_DIM} L")],
+        labels: Float[Tensor, str(f"{NUM_LABELS}")],
+    ) -> tuple[
+        Int[Tensor, "N"],   # tokens
+        Float[Tensor, "N"], # timestamps
+    ]:
+        
+        c = self.label_emb(labels[None]) # 1 C
+        
+        L = audio.size(-1)
+        ctx = self.audio_encoder(F.pad(audio, (0, self.seq_len-1))[None]).transpose(1,2) # L+s-1 H
+        ctx_t = th.tensor(get_frame_times(L+self.seq_len-1))[None].float() # L+s-1
+
+        cur_i = 0
+        cur_tokens: list[int] = []
+        cur_timestamps: list[float] = []
+
+        output_tokens: list[int] = []
+        output_timestamps: list[float] = []
+
+        while True:
+            cur_j = cur_i+self.seq_len
+            cur_ctx = ctx[None,cur_i:cur_j] # 1 bL H
+            cur_ctx_t = ctx_t[None,cur_i:cur_j] # 1 bL
+
+            cur_x = self.embed(th.tensor([BOS] + cur_tokens)[None]) # 1 n E
+            cur_x_t = th.tensor([0] + cur_timestamps)[None] # 1 n
+
+            h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c )[0,-1] # E
+
+            pred_token = int(th.multinomial(self.token_head(h).softmax(dim=0), num_samples=1).item())
+            pred_offset = int(th.multinomial(self.timing_head(h).softmax(dim=0), num_samples=1).item())
+            pred_timestamp = float(ctx_t[cur_i + pred_offset])
+
+            cur_tokens.append(pred_token)
+            cur_timestamps.append(pred_timestamp)
+
+            if pred_token == EOS:
+                # no tokens remaining for current window, go to next window
+                cur_i += self.seq_len
+            elif pred_offset > self.seq_len * .5:
+                # less than half of window remains for future context, slide window forward
+                cur_i += pred_offset - int(self.seq_len * .5)
+
+            if cur_i >= L:
+                # no more context
+                break
+
+            # dequeue tokens that are before start of new window
+            while ctx_t[cur_i] > cur_timestamps[0]:
+                output_tokens.append(cur_tokens.pop(0))
+                output_timestamps.append(cur_timestamps.pop(0))
+
+        output_tokens.extend(cur_tokens)
+        output_timestamps.extend(cur_timestamps)
+
+        return th.tensor(output_tokens), th.tensor(output_timestamps)
+
 
 #
 #
