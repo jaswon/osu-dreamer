@@ -37,7 +37,7 @@ class TokenDataset(BeatmapDataset):
             th.tensor(labels).float(),
             th.tensor(audio).float(),
             th.tensor(tokens).long(),
-            th.tensor(timestamps).long(),
+            th.tensor(timestamps).float(),
         )
 
     

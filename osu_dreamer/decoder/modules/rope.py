@@ -16,7 +16,7 @@ class RoPE(nn.Module):
     def __init__(
         self, 
         dim: int, 
-        max_timescale: float = 10_000,
+        max_timescale: int | float = 10_000,
     ):
         """
         - `max_timescale` should be at least 2x the largest difference expected between any two positions
@@ -29,9 +29,9 @@ class RoPE(nn.Module):
 
     def forward(
         self, 
-        x: Float[Tensor, "B N D"],
+        x: Float[Tensor, "B H N D"],
         t: Float[Tensor, "B N"]
-    ) -> Float[Tensor, "B N D"]:
-        theta = th.nan_to_num(t[:,:,None], posinf=0.) * self.fs # B N D/2
-        theta = repeat(theta, 'l d -> l (d r)', r=2) # B N D
+    ) -> Float[Tensor, "B H N D"]:
+        theta = th.nan_to_num(t[:,:,None], posinf=0.) * self.fs.to(t.device) # B N D/2
+        theta = repeat(theta, 'b n d -> b 1 n (d r)', r=2) # B 1 N D
         return x * theta.cos() + rotate_half(x) * theta.sin()

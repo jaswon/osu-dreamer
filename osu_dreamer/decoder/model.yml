@@ -32,42 +32,39 @@ trainer:
         class_path: pytorch_lightning.loggers.TensorBoardLogger
         init_args:
             save_dir: runs
-            name: audio_encoder
+            name: decoder
 
-    accumulate_grad_batches: 64
+    accumulate_grad_batches: 8
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
 
-    val_check_interval: 100
+    val_check_interval: 1000
     check_val_every_n_epoch: null
     
 data:
-    # length of each training subsequence
-    seq_len: 4096 # * 6ms/frame ~= 24.6s
-    
-    # number of workers to use for data loading
     num_workers: 6
-    
-    # number of samples to hold out for validation
-    # must be at least one in order to render validation plots
     val_size: 128
-    # val_split: .1
     
 model:
     # training parameters
+    batch_size: 8
+    seq_len: 2048 # * 6ms/frame ~= 12.3s
     opt_args:
-        lr: .001
+        lr: .002
     focal_gamma: 2
-    class_weights: [1,50,2,30,15]
-    mask_rate_beta_w: .3
-    mask_rate_beta_c: 10
 
     # model hyperparameters
-    head_dim: 16
+    audio_encoder_ckpt: audio_encoder.ckpt
+    embed_dim: 512
 
-    a_dim: 8
-    h_dim: 128
-    encoder_args: 
-        depth: 8
+    label_dim: 16
+    label_emb_args:
+        features: 8
+
+    decoder_args:
+        depth: 6
         expand: 1
+        attn_args:
+            head_dim: 64
+            n_heads: 8

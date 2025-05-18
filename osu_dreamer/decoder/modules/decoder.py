@@ -54,7 +54,7 @@ class condBlock(nn.Module):
         c: Float[Tensor, "B C"],
         *args,
     ) -> Float[Tensor, "B L D"]:
-        r = MP.pixel_norm(x)
+        r = MP.normalize(x, dim=-1)
         r = r * (1+self.scale(c)[:,None,:]) + self.shift(c)[:,None,:]
         r = self.op(r, *args)
         r = self.alpha(c)[:,None,:] * r
@@ -82,7 +82,7 @@ class DecoderBlock(nn.Module):
         ctx: Float[Tensor, "B L H"],
         ctx_t: Float[Tensor, "B L"],
         c: Float[Tensor, "B C"],
-    ) -> Float[Tensor, "B X L"]:
+    ) -> Float[Tensor, "B N E"]:
         x = self.seq_mixer(x,c)
         x = self.ctx_mixer(x,c,x_t,ctx,ctx_t)
         x = self.chn_mixer(x,c)

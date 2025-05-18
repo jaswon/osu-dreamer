@@ -4,7 +4,11 @@ from typing import NamedTuple, Any
 from itertools import product
 from enum import Enum
 
-EventType = Enum('EventType', [
+class CustomReprEnum(Enum):
+    def __repr__(self):
+        return self.name
+
+EventType = CustomReprEnum('EventType', [
     # special tokens
     "BOS",
     "EOS",
@@ -33,6 +37,9 @@ EventType = Enum('EventType', [
 class Event(NamedTuple):
     typ: EventType
     value: Any = None
+
+    def __repr__(self):
+        return f"{repr(self.typ)}({"" if self.value is None else repr(self.value)})"
 
 def encode(event: Event) -> int:
     return _event2token[event]

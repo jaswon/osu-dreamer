@@ -10,7 +10,9 @@ from osu_dreamer.osu.sliders import Bezier, Line, Perfect
 
 from .events import EventType, Event, encode
 
-def location_event(x: int, y: int) -> Event:
+def location_event(x: int|float, y: int|float) -> Event:
+    x = min(512+256,max(-256,x))
+    y = min(384+256,max(-256,y))
     r = 4 if (0<=x<=512) and (0<=y<=384) else 16
     return Event(EventType.LOCATION, (round(x/r)*r, round(y/r)*r))
 

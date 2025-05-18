@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import torch as th
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 from einops.layers.torch import Rearrange
 from einops import pack, unpack
@@ -38,8 +39,8 @@ def exp_taylor_map(x: Float[Tensor, "... d"]) -> Float[Tensor, "... D"]:
 
 def linear_attn(
     q: Float[Tensor, "B H Lq Dqk"],
-    k: Float[Tensor, "B H Lkv Dqk"],
-    v: Float[Tensor, "B H Lkv Dv"],
+    k: Float[Tensor, "B #H Lkv Dqk"],
+    v: Float[Tensor, "B #H Lkv Dv"],
     eps: float = 1e-6,
 ) -> Float[Tensor, "B H Lq Dv"]:
     q = exp_taylor_map(q)
@@ -101,4 +102,6 @@ class CrossAttn(nn.Module):
         q = self.rope(q, x_t) * self.scale
         k = self.rope(k, ctx_t)
 
-        return self.out(linear_attn(q,k,v))
+        # attn = linear_attn(q,k,v)
+        attn = F.scaled_dot_product_attention(q,k,v, enable_gqa=True)
+        return self.out(attn)

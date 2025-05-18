@@ -40,8 +40,8 @@ def roll_by_shifts(
     shifts: Int[Tensor, "B"],
 ) -> Shaped[Tensor, "B N"]:
     b,n = input.size()
-    col_idxs = th.arange(n).repeat(b,1)
-    shifted_idxs = (col_idxs - shifts[:,None]) % n
+    col_idxs = th.arange(n, device=shifts.device).repeat(b,1)
+    shifted_idxs = (col_idxs + shifts[:,None]) % n
     return th.gather(input, 1, shifted_idxs.long())
 
     
@@ -92,7 +92,7 @@ class Model(pl.LightningModule):
         )
 
         self.label_emb = LabelEmbedding(label_dim, label_emb_args)
-        self.label_head = nn.Linear(embed_dim, label_dim)
+        self.label_head = nn.Linear(embed_dim, NUM_LABELS)
 
         self.decoder = Decoder(
             embed_dim,
@@ -113,28 +113,28 @@ class Model(pl.LightningModule):
         Float[Tensor, "B bN"],      # token timestamps
         Int[Tensor, "B bN"],        # tokens
     ]:
-        
+        D = audio.device
         L = audio.size(-1)
         audio_features = self.audio_encoder(audio).transpose(1,2)
-        frame_times = th.tensor(get_frame_times(L)).float()
+        frame_times = th.tensor(get_frame_times(L), device=D).float()
 
-        b_features = th.empty(self.batch_size, self.seq_len, audio_features.size(-1)) # B H bL
-        b_frame_times = th.empty(self.batch_size, self.seq_len) # B bL
+        b_features = th.empty(self.batch_size, self.seq_len, audio_features.size(-1), device=D) # B H bL
+        b_frame_times = th.empty(self.batch_size, self.seq_len, device=D) # B bL
         b_ranges: list[tuple[int,int]] = []
         max_tokens: int = 0
 
-        for start_idx in th.randperm(L - self.seq_len)[:self.batch_size]:
+        for idx, start_idx in enumerate(th.randperm(L - self.seq_len)[:self.batch_size]):
             end_idx = start_idx+self.seq_len
-            b_features[start_idx] = audio_features[0,start_idx:end_idx]
-            b_frame_times[start_idx] = frame_times[start_idx:end_idx]
+            b_features[idx] = audio_features[0,start_idx:end_idx]
+            b_frame_times[idx] = frame_times[start_idx:end_idx]
 
-            left_idx = int(th.searchsorted(timestamps, frame_times[start_idx], right=False))
-            right_idx = int(th.searchsorted(timestamps, frame_times[end_idx], right=True))
+            left_idx = int(th.searchsorted(timestamps[0], frame_times[start_idx], right=False))
+            right_idx = int(th.searchsorted(timestamps[0], frame_times[end_idx], right=True))
             b_ranges.append((left_idx, right_idx))
             max_tokens = max(max_tokens, right_idx - left_idx)
 
-        b_tokens = th.full((self.batch_size, max_tokens+1), PAD)
-        b_timestamps = th.full((self.batch_size, max_tokens+1), th.inf).float()
+        b_tokens = th.full((self.batch_size, max_tokens+1), PAD, device=D)
+        b_timestamps = th.full((self.batch_size, max_tokens+1), th.inf, device=D).float()
 
         for idx, (left_idx, right_idx) in enumerate(b_ranges):
             num_tokens = right_idx-left_idx
@@ -154,14 +154,15 @@ class Model(pl.LightningModule):
         timestamps: Float[Tensor, "1 N"],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
+        D = audio.device
         b_frame_times, b_features, b_timestamps, b_tokens = self.make_batch(audio, tokens, timestamps)
 
         # randomly mask labels for training
         b_labels = labels.repeat(self.batch_size, 1)
         label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
 
-        b_prelude_tokens = th.tensor([DIFF, BOS]).repeat(self.batch_size, 1)
-        b_prelude_timestamps = th.zeros(self.batch_size, 2)
+        b_prelude_tokens = th.tensor([DIFF, BOS], device=D).repeat(self.batch_size, 1)
+        b_prelude_timestamps = th.zeros(self.batch_size, 2, device=D)
 
         h = self.decoder(
             x = self.embed(th.cat([b_prelude_tokens, b_tokens], dim=1)),
@@ -194,7 +195,7 @@ class Model(pl.LightningModule):
             "token": token_loss.detach(),
             "timing": timing_loss.detach(),
             "label": label_loss.detach(),
-            "src_len": th.tensor(b_tokens.size(1)+2),
+            "src_len": th.tensor(b_tokens.size(1)+2).float(),
         }
     
     @th.no_grad
@@ -202,30 +203,30 @@ class Model(pl.LightningModule):
         self,
         audio: Float[Tensor, str(f"{A_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
-        time_budget: float = float('inf'), # max allowed time (sec)
+        time_budget: int | float = float('inf'), # max allowed time (sec)
     ) -> tuple[
         list[list[tuple[int, float]]],          # list of B lists of (token, timestamp) tuples
         Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
     ]:
-        
+        D = audio.device
         end_time = time.time() + time_budget
         
         c = self.label_emb(labels) # B C
-        pred_labels = []
         B = c.size(0)
+        pred_labels = [ [] for _ in range(B) ]
         
         L = audio.size(-1)
-        ctx = self.audio_encoder(F.pad(audio, (0, self.seq_len-1))[None]).transpose(1,2) # L+s-1 H
-        ctx_t = th.tensor(get_frame_times(L+self.seq_len-1))[None].float() # L+s-1
+        ctx = self.audio_encoder(F.pad(audio, (0, self.seq_len-1))[None])[0].transpose(0,1) # L+s-1 H
+        ctx_t = th.tensor(get_frame_times(L+self.seq_len-1), device=D).float() # L+s-1
 
-        prelude_tokens = th.tensor([DIFF, BOS]).repeat(B,1)
-        prelude_timestamps = th.full((B,2), 0)
+        prelude_tokens = th.tensor([DIFF, BOS], device=D).long().repeat(B,1)
+        prelude_timestamps = th.full((B,2), 0, device=D)
 
-        active_batches = th.arange(B)
-        cur_i = th.zeros(B)
-        cur_tail_idx = th.zeros(B)
-        cur_tokens = th.empty(B,0)
-        cur_timestamps = th.empty(B,0)
+        active_batches = th.arange(B, device=D)
+        cur_i = th.zeros(B, device=D).long()
+        cur_tail_idx = th.zeros(B, device=D).long()
+        cur_tokens = th.empty(B,0, device=D).long()
+        cur_timestamps = th.empty(B,0, device=D)
 
         output_tokens: list[list[tuple[int, float]]] = [ [] for _ in range(B) ]
 
@@ -234,7 +235,7 @@ class Model(pl.LightningModule):
                 # time limit reached
                 break
 
-            cur_ctx_idx = th.arange(self.seq_len)[None] + cur_i[:,None]
+            cur_ctx_idx = th.arange(self.seq_len, device=D)[None] + cur_i[:,None]
             cur_ctx = ctx[cur_ctx_idx] # B bL H
             cur_ctx_t = ctx_t[cur_ctx_idx] # B bL
 
@@ -243,16 +244,17 @@ class Model(pl.LightningModule):
 
             h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c ) # B n+2 E
             diff_emb, h = h[:,0], h[:,1:] # B E, B n+1 E
-            cur_tail_emb = h[th.arange(B),cur_tail_idx] # B E
+            cur_tail_emb = h[th.arange(active_batches.size(0)),cur_tail_idx] # B E
 
-            pred_labels.append(self.label_head(diff_emb)) # B NUM_LABELS
+            for i, pred_label in zip(active_batches, self.label_head(diff_emb)):
+                pred_labels[i].append(pred_label)
 
             pred_token_logits = self.token_head(cur_tail_emb) # B V
             pred_timing_logits = self.timing_head(cur_tail_emb) # B s
 
             # disallow timing into the past
-            cur_latest_offsets = cur_x_t[th.arange(B),cur_tail_idx] - ctx_t[cur_i] # B
-            disallow_timing_mask = cur_latest_offsets[:,None] > th.arange(self.seq_len)[None]
+            cur_latest_timestamps = cur_x_t[th.arange(active_batches.size(0)),1+cur_tail_idx] # B
+            disallow_timing_mask = cur_ctx_t < cur_latest_timestamps[:,None]
             pred_timing_logits[disallow_timing_mask] = -th.inf
 
             pred_tokens = th.multinomial(pred_token_logits.softmax(dim=-1), num_samples=1)[:,0] # B
@@ -268,25 +270,25 @@ class Model(pl.LightningModule):
 
             # grow sequence
             if (cur_tail_idx >= cur_tokens.size(1)).any():
-                cur_tokens = th.cat([cur_tokens, th.full((active_batches.size(0), 1), PAD)], dim=1)
-                cur_timestamps = th.cat([cur_timestamps, th.full((active_batches.size(0), 1), th.inf)], dim=1)
+                cur_tokens = th.cat([cur_tokens, th.full((active_batches.size(0), 1), PAD, device=D)], dim=1)
+                cur_timestamps = th.cat([cur_timestamps, th.full((active_batches.size(0), 1), th.inf, device=D)], dim=1)
 
             # update sequence
             pred_tokens[pred_tokens == EOS] = PAD
-            cur_tokens[:, cur_tail_idx] = pred_tokens
-            cur_timestamps[:, cur_tail_idx] = pred_timestamps
+            cur_tokens[th.arange(active_batches.size(0)), cur_tail_idx] = pred_tokens
+            cur_timestamps[th.arange(active_batches.size(0)), cur_tail_idx] = pred_timestamps
             cur_tail_idx += (pred_tokens != PAD).long()
 
             # dequeue tokens that are before start of new window
-            shifts = th.searchsorted(cur_timestamps, ctx_t[cur_i,None])[:,0] # B
+            shifts = th.searchsorted(cur_timestamps.contiguous(), ctx_t[cur_i,None])[:,0] # B
             cur_tokens = roll_by_shifts(cur_tokens, shifts)
             cur_timestamps = roll_by_shifts(cur_timestamps, shifts)
             cur_tail_idx -= shifts
 
-            for b, (shift,o) in enumerate(zip(shifts, output_tokens)):
-                sl = (b, slice(-shift,None)) # ...[b,-shift:]
+            for b, (shift,batch_idx) in enumerate(zip(shifts, active_batches)):
+                sl = (b, slice(cur_tokens.size(1)-shift,None)) # ...[b,-shift:]
 
-                o.extend((
+                output_tokens[batch_idx].extend((
                     (int(token), float(timestamp)) 
                     for token, timestamp in zip(cur_tokens[sl], cur_timestamps[sl])
                 ))
@@ -299,28 +301,29 @@ class Model(pl.LightningModule):
                 # all completed
                 break
 
-            prelude_tokens = prelude_tokens[next_active]
-            prelude_timestamps = prelude_timestamps[next_active]
-            active_batches = active_batches[next_active]
-            cur_i = cur_i[next_active]
-            cur_tail_idx = cur_tail_idx[next_active]
-            cur_tokens = cur_tokens[next_active]
-            cur_timestamps = cur_timestamps[next_active]
+            if not next_active.all():
+                prelude_tokens = prelude_tokens[next_active]
+                prelude_timestamps = prelude_timestamps[next_active]
+                active_batches = active_batches[next_active]
+                cur_i = cur_i[next_active]
+                cur_tail_idx = cur_tail_idx[next_active]
+                cur_tokens = cur_tokens[next_active]
+                cur_timestamps = cur_timestamps[next_active]
+                c = c[next_active]
 
             # shrink sequence
-            all_pad = (cur_tokens == PAD).all(dim=0) # N
-            num_all_pad = th.argmax(th.cat([~all_pad.flip(dims=[0]), th.tensor([True])], dim=0))
-            cur_tokens = cur_tokens[:,:num_all_pad]
-            cur_timestamps = cur_timestamps[:,:num_all_pad]
+            while (cur_tokens[:,-1] == PAD).all():
+                cur_tokens = cur_tokens[:,:-1]
+                cur_timestamps = cur_timestamps[:,:-1]
 
-        for b, (tail_idx,o) in enumerate(zip(cur_tail_idx, output_tokens)):
+        for b, (tail_idx,batch_idx) in enumerate(zip(cur_tail_idx, active_batches)):
             sl = (b, slice(tail_idx)) # ...[b,:tail_idx]
-            o.extend((
+            output_tokens[batch_idx].extend((
                 (int(token), float(timestamp)) 
                 for token, timestamp in zip(cur_tokens[sl], cur_timestamps[sl])
             ))
 
-        return output_tokens, th.stack(pred_labels).mean(dim=0)
+        return output_tokens, th.stack([ th.stack(l).mean(dim=0) for l in pred_labels ])
 
 
 #
@@ -356,8 +359,8 @@ class Model(pl.LightningModule):
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
 
-        def f_label(label):
-            sr, ar, od, cs, hp = [ round(l, ndigits=1) for l in label ]
+        def f_label(label: Float[Tensor, str(f"{NUM_LABELS}")]):
+            sr, ar, od, cs, hp = [ round(l.item(), ndigits=1) for l in label ]
             return f'{sr=:>4} {ar=:>4} {od=:>4} {cs=:>4} {hp=:>4}'
 
         samples, pred_labels = self.sample(audio, label, time_budget=10)
@@ -365,8 +368,11 @@ class Model(pl.LightningModule):
             sample_text = '\n'.join([
                 f'true: {f_label(true_label)}',
                 f'pred: {f_label(pred_label)}',
+                '',
+                '|timestamp|token|',
+                '|-|-|',
             ] + [
-                f"{timestamp:0>10}: {str(decode(token))}"
+                f"|{round(timestamp/1000, ndigits=2)}|{str(decode(token))}|"
                 for token, timestamp in sample
             ])
             exp.add_text(f'sample/{i}', sample_text, global_step=self.global_step)
