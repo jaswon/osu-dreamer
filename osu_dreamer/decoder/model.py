@@ -194,6 +194,7 @@ class Model(pl.LightningModule):
             "token": token_loss.detach(),
             "timing": timing_loss.detach(),
             "label": label_loss.detach(),
+            "src_len": th.tensor(b_tokens.size(1)+2),
         }
     
     @th.no_grad
