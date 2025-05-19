@@ -222,6 +222,7 @@ class Model(pl.LightningModule):
         D = audio.device
         end_time = time.time() + time_budget
         
+        labels[:,0] = -1 # zero out sr label
         c = self.label_emb(labels) # B C
         B = c.size(0)
         pred_labels = [ [] for _ in range(B) ]
