@@ -111,6 +111,7 @@ class Model(pl.LightningModule):
         tokens: Int[Tensor, "N"],
         timestamps: Float[Tensor, "N"],
     ) -> tuple[
+        int,                        # batch size
         Int[Tensor, "B S"],         # audio positioning 
         Int[Tensor, "B T"],         # token positioning
         Int[Tensor, "B T"],         # tokens
@@ -122,7 +123,7 @@ class Model(pl.LightningModule):
         b_tokens = th.full((self.batch_size, self.max_tokens+1), PAD, device=D)
         b_token_idxs = th.full((self.batch_size, self.max_tokens+1), -1, device=D, dtype=th.int)
 
-        timestamp_frame_idxs = th.argmin(abs(timestamps[:,None] - frame_times[None,:]), dim=1) # N
+        timestamp_frame_idxs = th.searchsorted(frame_times, timestamps)
 
         idx = 0
         for start_idx in th.randperm(L - self.seq_len).tolist():
@@ -153,7 +154,12 @@ class Model(pl.LightningModule):
 
             idx += 1
 
-        return b_feature_idxs, b_token_idxs, b_tokens
+        if idx < self.batch_size:
+            b_feature_idxs = b_feature_idxs[:idx]
+            b_token_idxs = b_token_idxs[:idx]
+            b_tokens = b_tokens[:idx]
+
+        return idx, b_feature_idxs, b_token_idxs, b_tokens
 
 
     def forward(
@@ -165,16 +171,16 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
         D = audio.device
-        b_features = th.empty(self.batch_size, self.seq_len, self.a_dim)
-        b_feature_idxs, b_token_idxs, b_tokens = self.make_batch(audio.size(-1), tokens[0], timestamps[0])
-        b_features = self.audio_encoder(audio)[0].transpose(0,1)[b_feature_idxs,:]
+        features = self.audio_encoder(audio)[0].transpose(0,1) # L H
+        batch_size, b_feature_idxs, b_token_idxs, b_tokens = self.make_batch(features.size(0), tokens[0], timestamps[0])
+        b_features = features[b_feature_idxs]
 
         # randomly mask labels for training
-        b_labels = labels.repeat(self.batch_size, 1)
+        b_labels = labels.repeat(batch_size, 1)
         label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
 
-        b_prelude_tokens = th.tensor([DIFF, BOS], device=D).repeat(self.batch_size, 1)
-        b_prelude_idxs = th.full((self.batch_size,2), th.inf, device=D)
+        b_prelude_tokens = th.tensor([DIFF, BOS], device=D).repeat(batch_size, 1)
+        b_prelude_idxs = th.full((batch_size,2), th.inf, device=D)
 
         b_prelude_idxs = b_feature_idxs[:,:1].repeat(1, 2)
         h = self.decoder(

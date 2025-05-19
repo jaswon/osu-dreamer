@@ -53,7 +53,7 @@ model:
     opt_args:
         lr: .002
     focal_gamma: 2
-    max_tokens: 360
+    max_tokens: 512
 
     # model hyperparameters
     audio_encoder_ckpt: audio_encoder.ckpt
