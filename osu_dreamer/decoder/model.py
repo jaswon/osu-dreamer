@@ -19,7 +19,7 @@ from osu_dreamer.modules.muon import Muon
 from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
 from .data.module import Batch
-from .data.events import PAD, BOS, EOS, decode, vocab_size, DIFF
+from .data.events import PAD, BOS, EOS, decode, VOCAB_SIZE, DIFF
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -80,8 +80,8 @@ class Model(pl.LightningModule):
         self.audio_encoder = audio_encoder.proj_audio
         self.a_dim = audio_encoder.a_dim
 
-        self.embed = MP.Embedding(vocab_size(), embed_dim)
-        token_head = MP.Linear(embed_dim, vocab_size())
+        self.embed = MP.Embedding(VOCAB_SIZE, embed_dim)
+        token_head = MP.Linear(embed_dim, VOCAB_SIZE)
         token_head.weight = self.embed.weight
         self.token_head = nn.Sequential(
             token_head,

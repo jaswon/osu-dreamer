@@ -30,7 +30,7 @@ EventType = CustomReprEnum('EventType', [
     "KNOT",
     "BEZIER_END",
 
-    "ONSET",
+    "FLAGS",
     "LOCATION",
 ])
 
@@ -46,9 +46,6 @@ def encode(event: Event) -> int:
 
 def decode(token: int) -> Event:
     return _token2event[token]
-
-def vocab_size() -> int:
-    return len(_event2token)
 
 _token2event: tuple[Event, ...] = (
     Event(EventType.BOS),
@@ -70,7 +67,7 @@ _token2event: tuple[Event, ...] = (
     Event(EventType.BEZIER_END),
 
     *( # new combo, whistle, finish, clap
-        Event(EventType.ONSET, flags)
+        Event(EventType.FLAGS, flags)
         for flags in product([False, True], repeat=4)
     ),
 
@@ -88,6 +85,8 @@ _token2event: tuple[Event, ...] = (
 )
 
 _event2token = { t: i for i, t in enumerate(_token2event) }
+
+VOCAB_SIZE = len(_event2token)
 
 BOS = encode(Event(EventType.BOS))
 EOS = encode(Event(EventType.EOS))

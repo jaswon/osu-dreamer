@@ -17,7 +17,7 @@ def location_event(x: int|float, y: int|float) -> Event:
     return Event(EventType.LOCATION, (round(x/r)*r, round(y/r)*r))
 
 def onset_events(ho: HitObject) -> Iterator[Event]:
-    yield Event(EventType.ONSET, (ho.new_combo, ho.whistle, ho.finish, ho.clap))
+    yield Event(EventType.FLAGS, (ho.new_combo, ho.whistle, ho.finish, ho.clap))
 
 def slider_events(ho: Slider) -> Iterator[Event]:
     yield Event(EventType.SLIDES, ho.slides)
