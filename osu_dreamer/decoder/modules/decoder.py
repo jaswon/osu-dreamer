@@ -1,9 +1,8 @@
 
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 from dataclasses import dataclass
 
-import torch as th
 from torch import nn, Tensor
 from torch.utils.checkpoint import checkpoint
 
@@ -78,9 +77,9 @@ class DecoderBlock(nn.Module):
     def forward(
         self,
         x: Float[Tensor, "B N E"],
-        x_t: Float[Tensor, "B N"],
+        x_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L H"],
-        ctx_t: Float[Tensor, "B L"],
+        ctx_t: Int[Tensor, "B L"],
         c: Float[Tensor, "B C"],
     ) -> Float[Tensor, "B N E"]:
         x = self.seq_mixer(x,c)
@@ -113,9 +112,9 @@ class Decoder(nn.Module):
     def forward(
         self,
         x: Float[Tensor, "B N E"],
-        x_t: Float[Tensor, "B N"],
+        x_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L H"],
-        ctx_t: Float[Tensor, "B L"],
+        ctx_t: Int[Tensor, "B L"],
         c: Float[Tensor, "B C"],
     ) -> Float[Tensor, "B N E"]:
         for block in self.blocks:

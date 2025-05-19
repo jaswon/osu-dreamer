@@ -1,5 +1,5 @@
 
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 from dataclasses import dataclass
 
@@ -92,9 +92,9 @@ class CrossAttn(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B Lq Dq"], 
-        x_t: Float[Tensor, "B Lq"],
+        x_t: Int[Tensor, "B Lq"],
         ctx: Float[Tensor, "B Lkv Dkv"], 
-        ctx_t: Float[Tensor, "B Lkv"], 
+        ctx_t: Int[Tensor, "B Lkv"], 
     ) -> Float[Tensor, "B Lq Dq"]:
         q = self.q(x).float() # b h m d
         k,v = self.kv(ctx).float() # b h n d

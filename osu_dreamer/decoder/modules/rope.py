@@ -1,5 +1,5 @@
 
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 import torch as th
 from torch import nn, Tensor
@@ -30,8 +30,8 @@ class RoPE(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B H N D"],
-        t: Float[Tensor, "B N"]
+        t: Int[Tensor, "B N"]
     ) -> Float[Tensor, "B H N D"]:
-        theta = th.nan_to_num(t[:,:,None], posinf=0.) * self.fs.to(t.device) # B N D/2
+        theta = th.where(t<0,0,t)[:,:,None].float() * self.fs.to(t.device) # B N D/2
         theta = repeat(theta, 'b n d -> b 1 n (d r)', r=2) # B 1 N D
         return x * theta.cos() + rotate_half(x) * theta.sin()

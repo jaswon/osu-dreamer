@@ -32,6 +32,7 @@ EventType = CustomReprEnum('EventType', [
 
     "FLAGS",
     "LOCATION",
+    "TIMESTAMP",
 ])
 
 class Event(NamedTuple):
@@ -59,7 +60,10 @@ _token2event: tuple[Event, ...] = (
     Event(EventType.BREAK),
     Event(EventType.RELEASE),
 
-    *( Event(EventType.SLIDES, i) for i in range(1, 100) ),
+    *(
+        Event(EventType.SLIDES, i) 
+        for i in range(1, 100)
+    ),
     Event(EventType.LINE),
     Event(EventType.PERFECT),
     Event(EventType.BEZIER),
@@ -70,7 +74,6 @@ _token2event: tuple[Event, ...] = (
         Event(EventType.FLAGS, flags)
         for flags in product([False, True], repeat=4)
     ),
-
     *( # hi-res on-screen coordinates
         Event(EventType.LOCATION, (x,y))
         for x in range(0, 512+4, 4)
@@ -82,6 +85,10 @@ _token2event: tuple[Event, ...] = (
         for y in range(-256, 384+256+16, 16)
         if not ((0<=x<=512) and (0<=y<=384))
     ),
+    *( # one timestamp event per context frame
+        Event(EventType.TIMESTAMP, i)
+        for i in range(2048) # TODO: sync with seq_len
+    )
 )
 
 _event2token = { t: i for i, t in enumerate(_token2event) }
@@ -92,3 +99,4 @@ BOS = encode(Event(EventType.BOS))
 EOS = encode(Event(EventType.EOS))
 PAD = encode(Event(EventType.PAD))
 DIFF = encode(Event(EventType.DIFF))
+T0 = encode(Event(EventType.TIMESTAMP, 0))

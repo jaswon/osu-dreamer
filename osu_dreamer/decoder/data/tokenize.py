@@ -1,7 +1,7 @@
 
-from typing import Union, Iterator
+from typing import Iterator
 
-from jaxtyping import UInt, Float
+from jaxtyping import Int, Float
 import numpy as np
 
 from osu_dreamer.osu.beatmap import Beatmap
@@ -9,6 +9,9 @@ from osu_dreamer.osu.hit_objects import Circle, HitObject, Slider, Spinner
 from osu_dreamer.osu.sliders import Bezier, Line, Perfect
 
 from .events import EventType, Event, encode
+
+def timing_event(t: int|float) -> float:
+    return float(t)
 
 def location_event(x: int|float, y: int|float) -> Event:
     x = min(512+256,max(-256,x))
@@ -47,19 +50,19 @@ def slider_events(ho: Slider) -> Iterator[Event]:
         case _:
             raise ValueError(f'unexpected slider type and control points: ({type(ho)}) {ho.ctrl_pts}')
 
-def beatmap_events(bm: Beatmap) -> Iterator[Union[Event, int]]:
+def beatmap_events(bm: Beatmap) -> Iterator[Event | float]:
     breaks = iter(bm.breaks)
     next_break = next(breaks, None)
     for ho in bm.hit_objects:
         if next_break is not None and next_break.t < ho.t:
-            yield next_break.t
+            yield timing_event(next_break.t)
             yield Event(EventType.BREAK)
 
-            yield next_break.end_time()
+            yield timing_event(next_break.end_time())
             yield Event(EventType.RELEASE)
             next_break = next(breaks, None)
 
-        yield ho.t
+        yield timing_event(ho.t)
         match ho:
             case Circle(): yield Event(EventType.CIRCLE)
             case Spinner(): yield Event(EventType.SPINNER)
@@ -68,7 +71,7 @@ def beatmap_events(bm: Beatmap) -> Iterator[Union[Event, int]]:
         if isinstance(ho, Circle):
             yield location_event(ho.x, ho.y)
         else:
-            yield ho.end_time()
+            yield timing_event(ho.end_time())
             yield Event(EventType.RELEASE)
             if isinstance(ho, Slider):
                 try:
@@ -77,23 +80,25 @@ def beatmap_events(bm: Beatmap) -> Iterator[Union[Event, int]]:
                     raise ValueError(f'bad slider @ {ho.t} in {bm.filename}') from e
 
 def to_tokens_and_timestamps(bm: Beatmap) -> tuple[
-    UInt[np.ndarray, "N"],  # tokens
-    Float[np.ndarray, "N"],  # timestamps
+    Int[np.ndarray, "N"],   # tokens
+    Float[np.ndarray, "N"], # timestamps
 ]:
     """
-    return tokens, timestamps, and ranges for each event
+    return tokens and timestamps for the beatmap
     """
     tokens: list[int] = []
     timestamps: list[float] = []
     cur_t: float
     for i, event in enumerate(beatmap_events(bm)):
         match event:
-            case int(t):
+            case float(t):
                 cur_t = float(t)
+                token = -1
             case Event():
-                tokens.append(encode(event))
-                timestamps.append(cur_t)
+                token = encode(event)
+        tokens.append(token)
+        timestamps.append(cur_t)
     return (
-        np.array(tokens, dtype=np.uint), 
+        np.array(tokens, dtype=int), 
         np.array(timestamps, dtype=float), 
     )

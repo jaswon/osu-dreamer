@@ -19,7 +19,7 @@ from osu_dreamer.modules.muon import Muon
 from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
 from .data.module import Batch
-from .data.events import PAD, BOS, EOS, decode, VOCAB_SIZE, DIFF
+from .data.events import Event, EventType, encode, decode, PAD, BOS, EOS, VOCAB_SIZE, DIFF, T0
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -74,6 +74,11 @@ class Model(pl.LightningModule):
         self.opt_args = opt_args
         self.focal_gamma = focal_gamma
         self.max_tokens = max_tokens
+        
+        try:
+            encode(Event(EventType.TIMESTAMP, self.seq_len-1))
+        except KeyError:
+            raise ValueError('not enough timestamp tokens for sequence length- update `data/events.py`')
 
         # model
         audio_encoder = AudioEncoder.load_from_checkpoint(audio_encoder_ckpt)
@@ -88,11 +93,6 @@ class Model(pl.LightningModule):
             MP.Gain(),
         )
 
-        self.timing_head = nn.Sequential(
-            MP.Linear(embed_dim, seq_len),
-            MP.Gain(),
-        )
-
         self.label_emb = LabelEmbedding(label_dim, label_emb_args)
         self.label_head = nn.Linear(embed_dim, NUM_LABELS)
 
@@ -104,55 +104,56 @@ class Model(pl.LightningModule):
             self.seq_len,
         )
 
+    @th.no_grad
     def make_batch(
         self,
-        audio: Float[Tensor, str(f"1 {A_DIM} L")],
-        tokens: Int[Tensor, "1 N"],
-        timestamps: Float[Tensor, "1 N"],
+        L: int,
+        tokens: Int[Tensor, "N"],
+        timestamps: Float[Tensor, "N"],
     ) -> tuple[
-        Float[Tensor, "B bL"],      # audio timestamps 
-        Float[Tensor, "B bL H"],    # audio features
-        Float[Tensor, "B bN"],      # token timestamps
-        Int[Tensor, "B bN"],        # tokens
+        Int[Tensor, "B S"],         # audio positioning 
+        Int[Tensor, "B T"],         # token positioning
+        Int[Tensor, "B T"],         # tokens
     ]:
-        D = audio.device
-        L = audio.size(-1)
-        audio_features = self.audio_encoder(audio).transpose(1,2)
-        frame_times = th.tensor(get_frame_times(L), device=D).float()
+        D = tokens.device
+        frame_times = th.tensor(get_frame_times(L), device=D).float() # L
 
-        b_features = th.empty(self.batch_size, self.seq_len, audio_features.size(-1), device=D) # B H bL
-        b_frame_times = th.empty(self.batch_size, self.seq_len, device=D) # B bL
-        b_ranges: list[tuple[int,int]] = []
-        max_tokens: int = 0
+        b_feature_idxs = th.empty(self.batch_size, self.seq_len, device=D, dtype=th.int) # B S
+        b_tokens = th.full((self.batch_size, self.max_tokens+1), PAD, device=D)
+        b_token_idxs = th.full((self.batch_size, self.max_tokens+1), -1, device=D, dtype=th.int)
+
+        timestamp_frame_idxs = th.argmin(abs(timestamps[:,None] - frame_times[None,:]), dim=1) # N
 
         idx = 0
-        for start_idx in th.randperm(L - self.seq_len):
+        for start_idx in th.randperm(L - self.seq_len).tolist():
             if idx == self.batch_size:
                 break
             end_idx = start_idx+self.seq_len
-            left_idx = int(th.searchsorted(timestamps[0], frame_times[start_idx], right=False))
-            right_idx = int(th.searchsorted(timestamps[0], frame_times[end_idx], right=True))
+            left_idx, right_idx = th.searchsorted(
+                timestamp_frame_idxs, 
+                th.tensor([start_idx, end_idx], device=D),
+            ).tolist()
             num_tokens = right_idx - left_idx
             if num_tokens > self.max_tokens:
                 continue
 
-            b_features[idx] = audio_features[0,start_idx:end_idx]
-            b_frame_times[idx] = frame_times[start_idx:end_idx]
-            b_ranges.append((left_idx, right_idx))
-            max_tokens = max(max_tokens, num_tokens)
+            b_feature_idxs[idx] = th.arange(start_idx,end_idx)
+
+            b_token_idxs[idx, :num_tokens] = timestamp_frame_idxs[left_idx:right_idx]
+            assert ( True
+                and (timestamp_frame_idxs[left_idx:right_idx] >= start_idx).all()
+                and (timestamp_frame_idxs[left_idx:right_idx] <  end_idx).all()
+            )
+            b_tokens[idx, :num_tokens] = th.where(
+                tokens[left_idx:right_idx] == -1,
+                T0 + b_token_idxs[idx, :num_tokens] - start_idx,
+                tokens[left_idx:right_idx],
+            )
+            b_tokens[idx, num_tokens] = EOS
+
             idx += 1
 
-        b_tokens = th.full((self.batch_size, max_tokens+1), PAD, device=D)
-        b_timestamps = th.full((self.batch_size, max_tokens+1), th.inf, device=D).float()
-
-        for idx, (left_idx, right_idx) in enumerate(b_ranges):
-            num_tokens = right_idx-left_idx
-            b_tokens[idx, :num_tokens] = tokens[0,left_idx:right_idx]
-            b_tokens[idx, num_tokens] = EOS
-            b_timestamps[idx, :num_tokens] = timestamps[0,left_idx:right_idx]
-            b_timestamps[idx, num_tokens] = th.inf
-
-        return b_frame_times, b_features, b_timestamps, b_tokens
+        return b_feature_idxs, b_token_idxs, b_tokens
 
 
     def forward(
@@ -164,20 +165,23 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
         D = audio.device
-        b_frame_times, b_features, b_timestamps, b_tokens = self.make_batch(audio, tokens, timestamps)
+        b_features = th.empty(self.batch_size, self.seq_len, self.a_dim)
+        b_feature_idxs, b_token_idxs, b_tokens = self.make_batch(audio.size(-1), tokens[0], timestamps[0])
+        b_features = self.audio_encoder(audio)[0].transpose(0,1)[b_feature_idxs,:]
 
         # randomly mask labels for training
         b_labels = labels.repeat(self.batch_size, 1)
         label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
 
         b_prelude_tokens = th.tensor([DIFF, BOS], device=D).repeat(self.batch_size, 1)
-        b_prelude_timestamps = th.zeros(self.batch_size, 2, device=D)
+        b_prelude_idxs = th.full((self.batch_size,2), th.inf, device=D)
 
+        b_prelude_idxs = b_feature_idxs[:,:1].repeat(1, 2)
         h = self.decoder(
             x = self.embed(th.cat([b_prelude_tokens, b_tokens], dim=1)),
-            x_t = th.cat([b_prelude_timestamps, b_timestamps], dim=1),
+            x_t = th.cat([b_prelude_idxs, b_token_idxs], dim=1),
             ctx = b_features,
-            ctx_t = b_frame_times,
+            ctx_t = b_feature_idxs,
             c = label_embs,
         ) # B N+2 E
 
@@ -192,19 +196,11 @@ class Model(pl.LightningModule):
             gamma = self.focal_gamma,
         ).mean()
 
-        # continuous ranked probability score
-        pred_timings = self.timing_head(h) # B N L
-        pred_timing_cdf = F.softmax(pred_timings, dim=-1).cumsum(dim=-1)
-        true_timing_cdf = (b_frame_times[:,None,:] >= b_timestamps[:,:,None]).long() # B N L
-        timing_loss = (pred_timing_cdf - true_timing_cdf).pow(2).mean()
-
-        loss = token_loss + timing_loss + label_loss
+        loss = token_loss + label_loss
         return loss, {
             "loss": loss.detach(),
             "token": token_loss.detach(),
-            "timing": timing_loss.detach(),
             "label": label_loss.detach(),
-            "src_len": th.tensor(b_tokens.size(1)+2).float(),
         }
     
     @th.no_grad
@@ -214,7 +210,7 @@ class Model(pl.LightningModule):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         time_budget: int | float = float('inf'), # max allowed time (sec)
     ) -> tuple[
-        list[list[tuple[int, float]]],          # list of B lists of (token, timestamp) tuples
+        list[list[Event|float]],                # list of B lists of events and timestamps
         Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
     ]:
         D = audio.device
@@ -225,111 +221,130 @@ class Model(pl.LightningModule):
         pred_labels = [ [] for _ in range(B) ]
         
         L = audio.size(-1)
+        half_window = int(self.seq_len * .5)
         ctx = self.audio_encoder(F.pad(audio, (0, self.seq_len-1))[None])[0].transpose(0,1) # L+s-1 H
-        ctx_t = th.tensor(get_frame_times(L+self.seq_len-1), device=D).float() # L+s-1
+        frame_times = th.tensor(get_frame_times(L+self.seq_len-1))
 
         prelude_tokens = th.tensor([DIFF, BOS], device=D).long().repeat(B,1)
-        prelude_timestamps = th.full((B,2), 0, device=D)
 
-        active_batches = th.arange(B, device=D)
-        cur_i = th.zeros(B, device=D).long()
-        cur_tail_idx = th.zeros(B, device=D).long()
-        cur_tokens = th.empty(B,0, device=D).long()
-        cur_timestamps = th.empty(B,0, device=D)
+        active_batches = th.arange(B, device=D)             # samples that are still generating
+        cur_start_idxs = th.zeros(B, device=D).long()       # current context window start index
+        cur_tail_idx = th.zeros(B, device=D).long()         # token index @ end of generation
+        cur_tokens = th.empty(B,0, device=D).long()         # tokens currently in generation
+        cur_token_idxs = th.empty(B,0, device=D).long()     # token positioning
 
-        output_tokens: list[list[tuple[int, float]]] = [ [] for _ in range(B) ]
+        output_tokens: list[list[Event | float]] = [ [] for _ in range(B) ]
 
         while True:
             if time.time() > end_time:
                 # time limit reached
                 break
 
-            cur_ctx_idx = th.arange(self.seq_len, device=D)[None] + cur_i[:,None]
-            cur_ctx = ctx[cur_ctx_idx] # B bL H
-            cur_ctx_t = ctx_t[cur_ctx_idx] # B bL
+            cur_ctx_idxs = th.arange(self.seq_len, device=D)[None] + cur_start_idxs[:,None]
+            cur_ctx = ctx[cur_ctx_idxs] # B bL H
 
-            cur_x = self.embed(th.cat([prelude_tokens, cur_tokens], dim=1)) # B n+2 E
-            cur_x_t = th.cat([prelude_timestamps, cur_timestamps], dim=1) # B n+2
+            prelude_token_idxs = cur_ctx_idxs[:,:1].repeat(1, 2)
+            h = self.decoder(
+                x = self.embed(th.cat([prelude_tokens, cur_tokens], dim=1)),
+                x_t = th.cat([prelude_token_idxs, cur_token_idxs], dim=1),
+                ctx = cur_ctx, 
+                ctx_t = cur_ctx_idxs, 
+                c = c,
+            ) # B n+2 E
 
-            h = self.decoder( cur_x, cur_x_t, cur_ctx, cur_ctx_t, c ) # B n+2 E
-            diff_emb, h = h[:,0], h[:,1:] # B E, B n+1 E
-            cur_tail_emb = h[th.arange(active_batches.size(0)),cur_tail_idx] # B E
-
-            for i, pred_label in zip(active_batches, self.label_head(diff_emb)):
+            # predict labels
+            label_emb = h[:,0] # B E
+            for i, pred_label in zip(active_batches, self.label_head(label_emb)):
                 pred_labels[i].append(pred_label)
 
+            # predict tokens
+            pred_embs = h[:,1:] # B n+1 E
+            cur_tail_emb = pred_embs[th.arange(active_batches.size(0)),cur_tail_idx] # B E
             pred_token_logits = self.token_head(cur_tail_emb) # B V
-            pred_timing_logits = self.timing_head(cur_tail_emb) # B s
+
+            # latest timing generated so far (no timing yet = ctx start)
+            cur_latest_token_idxs = th.cat([
+                cur_start_idxs[:,None], 
+                cur_token_idxs,
+            ], dim=1)[
+                th.arange(active_batches.size(0)),
+                cur_tail_idx,
+            ] # B
 
             # disallow timing into the past
-            cur_latest_timestamps = cur_x_t[th.arange(active_batches.size(0)),1+cur_tail_idx] # B
-            disallow_timing_mask = cur_ctx_t < cur_latest_timestamps[:,None]
-            pred_timing_logits[disallow_timing_mask] = -th.inf
+            for b_idx, num_mask in enumerate(cur_latest_token_idxs - cur_start_idxs):
+                pred_token_logits[b_idx, T0:T0+num_mask] = -th.inf
 
             pred_tokens = th.multinomial(pred_token_logits.softmax(dim=-1), num_samples=1)[:,0] # B
-            pred_offsets = th.multinomial(pred_timing_logits.softmax(dim=-1), num_samples=1)[:,0] # B
-            pred_timestamps = ctx_t[cur_i + pred_offsets] # B
+            pred_token_idxs = th.where(
+                pred_tokens >= T0,                      # timing predicted
+                cur_start_idxs + pred_tokens - T0,      # ? use index from predicted timing
+                cur_latest_token_idxs,                  # : use index from previously latest timing
+            )
 
             # update windows
-            cur_i += th.where(
-                pred_tokens == EOS,                                     # no tokens remaining for current window
-                self.seq_len,                                           # - go to next window
-                th.clamp(pred_offsets - int(self.seq_len * .5), min=0)  # - slide window forward until half of window is future context
+            cur_start_idxs += th.where(
+                pred_tokens == EOS,                                         # no tokens remaining for current window
+                self.seq_len,                                               # ? go to next window
+                th.where(
+                    pred_tokens >= T0,                                      # new timestamp predicted
+                    th.clamp((pred_tokens - T0) - half_window, min=0),      # ? slide forward until half of window is future context
+                    0,                                                      # : no window updates
+                ),
             )
 
             # grow sequence
             if (cur_tail_idx >= cur_tokens.size(1)).any():
                 cur_tokens = th.cat([cur_tokens, th.full((active_batches.size(0), 1), PAD, device=D)], dim=1)
-                cur_timestamps = th.cat([cur_timestamps, th.full((active_batches.size(0), 1), th.inf, device=D)], dim=1)
+                cur_token_idxs = th.cat([cur_token_idxs, th.full((active_batches.size(0), 1), -1, device=D)], dim=1)
 
             # update sequence
             pred_tokens[pred_tokens == EOS] = PAD
             cur_tokens[th.arange(active_batches.size(0)), cur_tail_idx] = pred_tokens
-            cur_timestamps[th.arange(active_batches.size(0)), cur_tail_idx] = pred_timestamps
+            cur_token_idxs[th.arange(active_batches.size(0)), cur_tail_idx] = pred_token_idxs
             cur_tail_idx += (pred_tokens != PAD).long()
 
             # dequeue tokens that are before start of new window
-            shifts = th.searchsorted(cur_timestamps.contiguous(), ctx_t[cur_i,None])[:,0] # B
+            shifts = (cur_token_idxs >= cur_start_idxs[:,None]).long().argmax(dim=1) # B
             cur_tokens = roll_by_shifts(cur_tokens, shifts)
-            cur_timestamps = roll_by_shifts(cur_timestamps, shifts)
+            cur_token_idxs = roll_by_shifts(cur_token_idxs, shifts)
             cur_tail_idx -= shifts
 
             for b, (shift,batch_idx) in enumerate(zip(shifts, active_batches)):
                 sl = (b, slice(cur_tokens.size(1)-shift,None)) # ...[b,-shift:]
 
                 output_tokens[batch_idx].extend((
-                    (int(token), float(timestamp)) 
-                    for token, timestamp in zip(cur_tokens[sl], cur_timestamps[sl])
+                    decode(int(token)) if token < T0 else float(frame_times[token_idx])
+                    for token, token_idx in zip(cur_tokens[sl], cur_token_idxs[sl])
                 ))
                 cur_tokens[sl] = PAD
-                cur_timestamps[sl] = th.inf
+                cur_token_idxs[sl] = -1
 
             # remove completed samples from batch 
-            next_active = cur_i < L
+            next_active = cur_start_idxs < L
             if not next_active.any():
                 # all completed
                 break
 
             if not next_active.all():
                 prelude_tokens = prelude_tokens[next_active]
-                prelude_timestamps = prelude_timestamps[next_active]
                 active_batches = active_batches[next_active]
-                cur_i = cur_i[next_active]
+                cur_start_idxs = cur_start_idxs[next_active]
                 cur_tail_idx = cur_tail_idx[next_active]
                 cur_tokens = cur_tokens[next_active]
-                cur_timestamps = cur_timestamps[next_active]
+                cur_token_idxs = cur_token_idxs[next_active]
                 c = c[next_active]
 
             # shrink sequence
-            while (cur_tokens[:,-1] == PAD).all():
+            while cur_tokens.size(1) > 0 and (cur_tokens[:,-1] == PAD).all():
                 cur_tokens = cur_tokens[:,:-1]
-                cur_timestamps = cur_timestamps[:,:-1]
+                cur_token_idxs = cur_token_idxs[:,:-1]
 
         for b, (tail_idx,batch_idx) in enumerate(zip(cur_tail_idx, active_batches)):
             sl = (b, slice(tail_idx)) # ...[b,:tail_idx]
             output_tokens[batch_idx].extend((
-                (int(token), float(timestamp)) 
-                for token, timestamp in zip(cur_tokens[sl], cur_timestamps[sl])
+                decode(int(token)) if token < T0 else float(frame_times[token_idx])
+                for token, token_idx in zip(cur_tokens[sl], cur_token_idxs[sl])
             ))
 
         return output_tokens, th.stack([ th.stack(l).mean(dim=0) for l in pred_labels ])
@@ -378,10 +393,5 @@ class Model(pl.LightningModule):
                 f'true: {f_label(true_label)}',
                 f'pred: {f_label(pred_label)}',
                 '',
-                '|timestamp|token|',
-                '|-|-|',
-            ] + [
-                f"|{round(timestamp/1000, ndigits=2)}|{str(decode(token))}|"
-                for token, timestamp in sample
-            ])
+            ] + [ str(event) for event in sample ])
             exp.add_text(f'sample/{i}', sample_text, global_step=self.global_step)
