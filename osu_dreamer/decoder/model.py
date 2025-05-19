@@ -54,6 +54,7 @@ class Model(pl.LightningModule):
         seq_len: int,
         opt_args: dict[str, Any],
         focal_gamma: float,
+        max_tokens: int,
 
         # model hparams
         audio_encoder_ckpt: str,
@@ -72,6 +73,7 @@ class Model(pl.LightningModule):
         self.seq_len = seq_len
         self.opt_args = opt_args
         self.focal_gamma = focal_gamma
+        self.max_tokens = max_tokens
 
         # model
         audio_encoder = AudioEncoder.load_from_checkpoint(audio_encoder_ckpt)
@@ -123,15 +125,22 @@ class Model(pl.LightningModule):
         b_ranges: list[tuple[int,int]] = []
         max_tokens: int = 0
 
-        for idx, start_idx in enumerate(th.randperm(L - self.seq_len)[:self.batch_size]):
+        idx = 0
+        for start_idx in th.randperm(L - self.seq_len):
+            if idx == self.batch_size:
+                break
             end_idx = start_idx+self.seq_len
-            b_features[idx] = audio_features[0,start_idx:end_idx]
-            b_frame_times[idx] = frame_times[start_idx:end_idx]
-
             left_idx = int(th.searchsorted(timestamps[0], frame_times[start_idx], right=False))
             right_idx = int(th.searchsorted(timestamps[0], frame_times[end_idx], right=True))
+            num_tokens = right_idx - left_idx
+            if num_tokens > self.max_tokens:
+                continue
+
+            b_features[idx] = audio_features[0,start_idx:end_idx]
+            b_frame_times[idx] = frame_times[start_idx:end_idx]
             b_ranges.append((left_idx, right_idx))
-            max_tokens = max(max_tokens, right_idx - left_idx)
+            max_tokens = max(max_tokens, num_tokens)
+            idx += 1
 
         b_tokens = th.full((self.batch_size, max_tokens+1), PAD, device=D)
         b_timestamps = th.full((self.batch_size, max_tokens+1), th.inf, device=D).float()
