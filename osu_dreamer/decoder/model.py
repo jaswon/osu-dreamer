@@ -19,7 +19,7 @@ from osu_dreamer.modules.muon import Muon
 from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
 from .data.module import Batch
-from .data.events import Event, EventType, encode, decode, PAD, BOS, EOS, VOCAB_SIZE, DIFF, T0
+from .data.tokens import Token, TokenType, encode, decode, PAD, BOS, EOS, VOCAB_SIZE, DIFF, T0
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -76,7 +76,7 @@ class Model(pl.LightningModule):
         self.max_token_numel = max_token_numel
         
         try:
-            encode(Event(EventType.TIMESTAMP, self.seq_len-1))
+            encode(Token(TokenType.TIMESTAMP, self.seq_len-1))
         except KeyError:
             raise ValueError('not enough timestamp tokens for sequence length- update `data/events.py`')
 
@@ -220,7 +220,7 @@ class Model(pl.LightningModule):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         time_budget: int | float = float('inf'), # max allowed time (sec)
     ) -> tuple[
-        list[list[Event|float]],                # list of B lists of events and timestamps
+        list[list[Token|float]],                # list of B lists of tokens and timestamps
         Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
     ]:
         D = audio.device
@@ -244,7 +244,7 @@ class Model(pl.LightningModule):
         cur_tokens = th.empty(B,0, device=D).long()         # tokens currently in generation
         cur_token_idxs = th.empty(B,0, device=D).long()     # token positioning
 
-        output_tokens: list[list[Event | float]] = [ [] for _ in range(B) ]
+        output_tokens: list[list[Token | float]] = [ [] for _ in range(B) ]
 
         while True:
             if time.time() > end_time:
