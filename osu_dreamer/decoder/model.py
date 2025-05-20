@@ -126,6 +126,7 @@ class Model(pl.LightningModule):
         timestamp_frame_idxs = th.searchsorted(frame_times, timestamps)
 
         idx = 0
+        max_tokens = 0
         for start_idx in th.randperm(L - self.seq_len).tolist():
             if idx == self.batch_size:
                 break
@@ -137,14 +138,11 @@ class Model(pl.LightningModule):
             num_tokens = right_idx - left_idx
             if num_tokens > self.max_tokens:
                 continue
+            max_tokens = max(max_tokens, num_tokens)
 
             b_feature_idxs[idx] = th.arange(start_idx,end_idx)
 
             b_token_idxs[idx, :num_tokens] = timestamp_frame_idxs[left_idx:right_idx]
-            assert ( True
-                and (timestamp_frame_idxs[left_idx:right_idx] >= start_idx).all()
-                and (timestamp_frame_idxs[left_idx:right_idx] <  end_idx).all()
-            )
             b_tokens[idx, :num_tokens] = th.where(
                 tokens[left_idx:right_idx] == -1,
                 T0 + b_token_idxs[idx, :num_tokens] - start_idx,
@@ -158,6 +156,10 @@ class Model(pl.LightningModule):
             b_feature_idxs = b_feature_idxs[:idx]
             b_token_idxs = b_token_idxs[:idx]
             b_tokens = b_tokens[:idx]
+
+        if max_tokens < self.max_tokens:
+            b_token_idxs = b_token_idxs[:,:max_tokens+1]
+            b_tokens = b_tokens[:,:max_tokens+1]
 
         return idx, b_feature_idxs, b_token_idxs, b_tokens
 
@@ -180,8 +182,6 @@ class Model(pl.LightningModule):
         label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
 
         b_prelude_tokens = th.tensor([DIFF, BOS], device=D).repeat(batch_size, 1)
-        b_prelude_idxs = th.full((batch_size,2), th.inf, device=D)
-
         b_prelude_idxs = b_feature_idxs[:,:1].repeat(1, 2)
         h = self.decoder(
             x = self.embed(th.cat([b_prelude_tokens, b_tokens], dim=1)),

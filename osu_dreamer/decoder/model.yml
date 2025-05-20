@@ -48,12 +48,12 @@ data:
     
 model:
     # training parameters
-    batch_size: 8
+    batch_size: 4
     seq_len: 2048 # * 6ms/frame ~= 12.3s
     opt_args:
-        lr: .002
+        lr: .001
     focal_gamma: 2
-    max_tokens: 512
+    max_tokens: 1024
 
     # model hyperparameters
     audio_encoder_ckpt: audio_encoder.ckpt
