@@ -373,6 +373,13 @@ class Model(pl.LightningModule):
         loss, log_dict = self(*batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
+    
+    def on_after_backward(self):
+        self.log("train/grad_l2", sum(
+            p.grad.detach().norm(2).item() ** 2
+            for p in self.parameters()
+            if p.grad is not None
+        ) ** .5)
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         _, log_dict = self(*batch)
