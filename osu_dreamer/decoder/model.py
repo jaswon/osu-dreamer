@@ -247,6 +247,9 @@ class Model(pl.LightningModule):
                 # time limit reached
                 break
 
+            # index into (B,T)-shaped tensors to get values corresponding to most recent generation
+            TAIL = (th.arange(active_batches.size(0)), cur_tail_idx)
+
             cur_ctx_idxs = th.arange(self.seq_len, device=D)[None] + cur_start_idxs[:,None]
             cur_ctx = ctx[cur_ctx_idxs] # B bL H
 
@@ -266,17 +269,10 @@ class Model(pl.LightningModule):
 
             # predict tokens
             pred_embs = h[:,1:] # B n+1 E
-            cur_tail_emb = pred_embs[th.arange(active_batches.size(0)),cur_tail_idx] # B E
-            pred_token_logits = self.token_head(cur_tail_emb) # B V
+            pred_token_logits = self.token_head(pred_embs[TAIL]) # B V
 
             # latest timing generated so far (no timing yet = ctx start)
-            cur_latest_token_idxs = th.cat([
-                cur_start_idxs[:,None], 
-                cur_token_idxs,
-            ], dim=1)[
-                th.arange(active_batches.size(0)),
-                cur_tail_idx,
-            ] # B
+            cur_latest_token_idxs = th.cat([ cur_start_idxs[:,None], cur_token_idxs ], dim=1)[TAIL] # B
 
             # disallow timing into the past
             for b_idx, num_mask in enumerate(cur_latest_token_idxs - cur_start_idxs):
@@ -307,9 +303,10 @@ class Model(pl.LightningModule):
 
             # update sequence
             pred_tokens[pred_tokens == EOS] = PAD
-            cur_tokens[th.arange(active_batches.size(0)), cur_tail_idx] = pred_tokens
-            cur_token_idxs[th.arange(active_batches.size(0)), cur_tail_idx] = pred_token_idxs
+            cur_tokens[TAIL] = pred_tokens
+            cur_token_idxs[TAIL] = pred_token_idxs
             cur_tail_idx += (pred_tokens != PAD).long()
+            del TAIL
 
             # dequeue tokens that are before start of new window
             shifts = (cur_token_idxs >= cur_start_idxs[:,None]).long().argmax(dim=1) # B
