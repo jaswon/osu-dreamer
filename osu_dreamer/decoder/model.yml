@@ -70,3 +70,6 @@ model:
             head_dim: 64
             n_heads: 8
             kv_heads: 1
+        deltanet_args:
+            head_dim: 64
+            n_heads: 8

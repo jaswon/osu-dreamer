@@ -7,12 +7,14 @@ requires-python = ">=3.11"
 dependencies = [
     "click>=8.1.8",
     "einops>=0.8.0",
+    "flash-linear-attention",
     "jsonargparse[signatures]>=4.36.0",
     "nnaudio>=0.3.3",
     "pytorch-lightning==2.2.2",
     "rosu-pp-py>=2.0.1",
     "scipy>=1.15.1",
     "tinytag>=2.0.0",
+    "triton<3.2.0",
 ]
 
 [dependency-groups]
@@ -24,3 +26,6 @@ dev = [
     "matplotlib>=3.10.0",
     "tensorboard>=2.18.0",
 ]
+
+[tool.uv.sources]
+flash-linear-attention = { git = "https://github.com/fla-org/flash-linear-attention" }
