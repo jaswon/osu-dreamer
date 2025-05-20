@@ -156,12 +156,13 @@ class Model(pl.LightningModule):
         audio: Float[Tensor, str(f"{A_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         time_budget: int | float = float('inf'), # max allowed time (sec)
+        show_progress: bool = False,
     ) -> tuple[
         list[list[Token|float]],                # list of B lists of tokens and timestamps
         Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
     ]:
         from .sample import sample
-        return sample(self, audio, labels, time_budget)
+        return sample(self, audio, labels, time_budget, show_progress)
 
 
 #

@@ -1,6 +1,8 @@
 
-import time
 from jaxtyping import Float, Shaped, Int
+
+import time
+import tqdm
 
 import torch as th
 from torch import Tensor
@@ -28,6 +30,7 @@ def sample(
     audio: Float[Tensor, str(f"{A_DIM} L")],
     labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     time_budget: int | float = float('inf'), # max allowed time (sec)
+    show_progress: bool = False,
 ) -> tuple[
     list[list[Token|float]],                # list of B lists of tokens and timestamps
     Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
@@ -55,6 +58,7 @@ def sample(
 
     output_tokens: list[list[Token | float]] = [ [] for _ in range(B) ]
 
+    pbar = tqdm.tqdm(total=L*B, disable=not show_progress)
     while True:
         if time.time() > end_time:
             # time limit reached
@@ -99,7 +103,7 @@ def sample(
         )
 
         # update windows
-        cur_start_idxs += th.where(
+        update = th.where(
             pred_tokens == EOS,                                         # no tokens remaining for current window
             model.seq_len,                                               # ? go to next window
             th.where(
@@ -108,6 +112,8 @@ def sample(
                 0,                                                      # : no window updates
             ),
         )
+        pbar.update(update.sum().item())
+        cur_start_idxs += update
 
         # grow sequence
         if (cur_tail_idx >= cur_tokens.size(1)).any():
@@ -156,6 +162,8 @@ def sample(
         while cur_tokens.size(1) > 0 and (cur_tokens[:,-1] == PAD).all():
             cur_tokens = cur_tokens[:,:-1]
             cur_token_idxs = cur_token_idxs[:,:-1]
+            
+    pbar.close()
 
     for b, (tail_idx,batch_idx) in enumerate(zip(cur_tail_idx, active_batches)):
         sl = (b, slice(tail_idx)) # ...[b,:tail_idx]

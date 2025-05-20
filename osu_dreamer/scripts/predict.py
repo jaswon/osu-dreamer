@@ -72,7 +72,7 @@ def predict(
     # generate maps
     # ======
     with th.autocast(device_type=dev.type), th.no_grad():
-        pred_batch_tokens, pred_batch_labels = model.sample(audio, labels)
+        pred_batch_tokens, pred_batch_labels = model.sample(audio, labels, show_progress=True)
 
     # package mapset
     # ======
