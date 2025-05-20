@@ -7,13 +7,15 @@ import random
 from zipfile import ZipFile
 
 import torch as th
+import numpy as np
 
 import click
 
 from osu_dreamer.data.load_audio import load_audio
-from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
 
-from osu_dreamer.diffusion_model.model import Model
+from osu_dreamer.decoder.data.parse import parse_tokens
+from osu_dreamer.decoder.data.decode import decode, Metadata
+from osu_dreamer.decoder.model import Model
     
 
 file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
@@ -69,14 +71,8 @@ def predict(
     
     # generate maps
     # ======
-    with th.no_grad():
-        pred_signals = model.sample(
-            audio, labels,
-            num_steps=sample_steps, 
-            show_progress=True,
-        )
-        pred_signals = pred_signals.cpu().numpy()
-        labels = labels.cpu().numpy()
+    with th.autocast(device_type=dev.type), th.no_grad():
+        pred_batch_tokens, pred_batch_labels = model.sample(audio, labels)
 
     # package mapset
     # ======
@@ -90,12 +86,12 @@ def predict(
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
         
-        for i, (label, pred_signal) in enumerate(zip(labels, pred_signals)):
+        for i, (pred_labels, pred_tokens) in enumerate(zip(pred_batch_labels, pred_batch_tokens)):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
-                decode_beatmap(
+                decode(
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    label, pred_signal,
+                    np.array(pred_labels), parse_tokens(pred_tokens),
                 ),
             )
     
