@@ -23,7 +23,7 @@ def onset_events(ho: HitObject) -> Iterator[Event]:
     yield Event(EventType.FLAGS, (ho.new_combo, ho.whistle, ho.finish, ho.clap))
 
 def slider_events(ho: Slider) -> Iterator[Event]:
-    yield Event(EventType.SLIDES, ho.slides)
+    yield Event(EventType.SLIDES, min(99,ho.slides))
 
     match ho:
         case Line(ctrl_pts=[a,b]):
