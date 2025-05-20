@@ -48,7 +48,6 @@ data:
     
 model:
     # training parameters
-    batch_size: 16
     seq_len: 2048 # * 6ms/frame ~= 12.3s
     opt_args:
         lr: .001

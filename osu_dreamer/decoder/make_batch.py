@@ -14,7 +14,6 @@ def make_batch(
     timestamps: Float[Tensor, "N"],
     seq_len: int,
     num_frames: int,
-    max_batch_size: int,
     max_token_numel: int,
 ) -> tuple[
     Int[Tensor, "B S"],         # audio positioning 
@@ -50,8 +49,6 @@ def make_batch(
             break
         max_tokens = max(max_tokens, num_tokens)
         batches.append((ctx_start_idx, token_start_idx, token_end_idx))
-        if len(batches) >= max_batch_size:
-            break
 
     b_ctx_idxs = th.empty(len(batches), seq_len, device=D, dtype=th.int) # B S
     b_tokens = th.full((len(batches), max_tokens+1), PAD, device=D)

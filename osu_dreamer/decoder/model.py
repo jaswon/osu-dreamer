@@ -18,7 +18,7 @@ from osu_dreamer.modules.muon import Muon
 from osu_dreamer.audio_encoder.model import Model as AudioEncoder
 
 from .data.module import Batch
-from .data.tokens import Token, TokenType, encode, BOS, VOCAB_SIZE, DIFF, T0
+from .data.tokens import Token, TokenType, encode, BOS, VOCAB_SIZE, DIFF
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -42,7 +42,6 @@ class Model(pl.LightningModule):
         self,
 
         # training parameters
-        batch_size: int,
         seq_len: int,
         opt_args: dict[str, Any],
         focal_gamma: float,
@@ -61,7 +60,6 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # training params
-        self.batch_size = batch_size
         self.seq_len = seq_len
         self.opt_args = opt_args
         self.focal_gamma = focal_gamma
@@ -110,7 +108,6 @@ class Model(pl.LightningModule):
             tokens[0], timestamps[0],
             seq_len = self.seq_len,
             num_frames = features.size(0),
-            max_batch_size = self.batch_size,
             max_token_numel = self.max_token_numel,
         )
         batch_size = b_feature_idxs.size(0)
