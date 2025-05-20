@@ -55,7 +55,7 @@ def linear_attn(
 class AttnArgs:
     head_dim: int
     n_heads: int
-    one_kv_head: bool = True
+    kv_heads: int = -1
 
 # from taylor_series_linear_attention import TaylorSeriesLinearAttn
 class CrossAttn(nn.Module):
@@ -78,7 +78,7 @@ class CrossAttn(nn.Module):
             Rearrange('b m (h d) -> b h m d', h = args.n_heads),
         )
 
-        kv_heads = 1 if args.one_kv_head else args.n_heads
+        kv_heads = args.kv_heads if args.kv_heads > 0 else args.n_heads
         self.kv = nn.Sequential(
             nn.Linear(ctx_dim, 2 * kv_heads * args.head_dim, bias=False),
             Rearrange('b n (kv h d) -> kv b h n d', h = kv_heads, kv = 2),

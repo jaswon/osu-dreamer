@@ -69,3 +69,4 @@ model:
         attn_args:
             head_dim: 64
             n_heads: 8
+            kv_heads: 1
