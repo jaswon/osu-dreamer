@@ -18,7 +18,7 @@ from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.dit import DiT, DiTArgs
 
 from .data.module import Batch
-from .data.tokens import Token, TokenType, encode, BOS, VOCAB_SIZE, DIFF
+from .data.tokens import Token, TokenType, encode, BOS, VOCAB_SIZE, DIFF, PAD
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -31,10 +31,11 @@ def focal_loss(
     target: Int[Tensor, "B ..."],
     gamma: float,
     weight: None | Float[Tensor, "D"] = None,
+    *args, **kwargs,
 ) -> Float[Tensor, "B ..."]:
     logpt = F.log_softmax(inputs, dim=1)
     inputs = (1 - logpt.exp()).pow(gamma) * logpt
-    return F.nll_loss(inputs, target, weight, reduction='none')
+    return F.nll_loss(inputs, target, weight, reduction='none', *args, **kwargs)
 
     
 class Model(pl.LightningModule):
@@ -140,6 +141,7 @@ class Model(pl.LightningModule):
             pred_logits.transpose(1,2),
             b_tokens,
             gamma = self.focal_gamma,
+            ignore_index = PAD,
         ).mean()
 
         loss = token_loss + label_loss
