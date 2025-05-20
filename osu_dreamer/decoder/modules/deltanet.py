@@ -1,9 +1,9 @@
 
 from jaxtyping import Float
 
+import warnings
 from dataclasses import dataclass
 
-import torch as th
 from torch import nn, Tensor
 
 from einops.layers.torch import Rearrange
@@ -68,10 +68,12 @@ class DeltaNet(nn.Module):
         k = self.proj_k(x)
         v = self.proj_v(x)
 
-        o, _ = chunk_delta_rule(
-            q,k,v,beta,
-            head_first=False,
-            use_qk_l2norm_in_kernel=True,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            o, _ = chunk_delta_rule(
+                q,k,v,beta,
+                head_first=False,
+                use_qk_l2norm_in_kernel=True,
+            )
         
         return self.proj_o(o)
