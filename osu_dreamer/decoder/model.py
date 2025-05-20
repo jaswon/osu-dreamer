@@ -119,41 +119,50 @@ class Model(pl.LightningModule):
         D = tokens.device
         frame_times = th.tensor(get_frame_times(L), device=D).float() # L
 
-        b_feature_idxs = th.empty(self.batch_size, self.seq_len, device=D, dtype=th.int) # B S
+        b_ctx_idxs = th.empty(self.batch_size, self.seq_len, device=D, dtype=th.int) # B S
         b_tokens = th.full((self.batch_size, self.max_tokens+1), PAD, device=D)
         b_token_idxs = th.full((self.batch_size, self.max_tokens+1), -1, device=D, dtype=th.int)
 
-        timestamp_frame_idxs = th.searchsorted(frame_times, timestamps)
+        token_frame_idxs = th.searchsorted(frame_times, timestamps)
 
         idx = 0
         max_tokens = 0
-        for start_idx in th.randperm(L - self.seq_len).tolist():
+        for ctx_start_idx in th.randperm(L - self.seq_len).tolist():
             if idx == self.batch_size:
                 break
-            end_idx = start_idx+self.seq_len
-            left_idx, right_idx = th.searchsorted(
-                timestamp_frame_idxs, 
-                th.tensor([start_idx, end_idx], device=D),
+            ctx_end_idx = ctx_start_idx+self.seq_len
+            token_start_idx, token_mid_idx, token_end_idx = th.searchsorted(
+                timestamps,
+                frame_times[[ctx_start_idx, ctx_start_idx+int(self.seq_len/2), ctx_end_idx]],
             ).tolist()
-            num_tokens = right_idx - left_idx
+
+            # only include tokens one timestamp past half context
+            if token_mid_idx < len(timestamps):
+                token_end_idx = int(th.clamp(
+                    th.argmax((timestamps > timestamps[token_mid_idx]).long()),
+                    min = token_mid_idx,
+                    max = token_end_idx,
+                ).item())
+
+            num_tokens = token_end_idx - token_start_idx
             if num_tokens > self.max_tokens:
                 continue
             max_tokens = max(max_tokens, num_tokens)
 
-            b_feature_idxs[idx] = th.arange(start_idx,end_idx)
+            b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_end_idx)
 
-            b_token_idxs[idx, :num_tokens] = timestamp_frame_idxs[left_idx:right_idx]
+            b_token_idxs[idx, :num_tokens] = token_frame_idxs[token_start_idx:token_end_idx]
             b_tokens[idx, :num_tokens] = th.where(
-                tokens[left_idx:right_idx] == -1,
-                T0 + b_token_idxs[idx, :num_tokens] - start_idx,
-                tokens[left_idx:right_idx],
+                tokens[token_start_idx:token_end_idx] == -1,
+                T0 + b_token_idxs[idx, :num_tokens] - ctx_start_idx,
+                tokens[token_start_idx:token_end_idx],
             )
             b_tokens[idx, num_tokens] = EOS
 
             idx += 1
 
         if idx < self.batch_size:
-            b_feature_idxs = b_feature_idxs[:idx]
+            b_ctx_idxs = b_ctx_idxs[:idx]
             b_token_idxs = b_token_idxs[:idx]
             b_tokens = b_tokens[:idx]
 
@@ -161,7 +170,7 @@ class Model(pl.LightningModule):
             b_token_idxs = b_token_idxs[:,:max_tokens+1]
             b_tokens = b_tokens[:,:max_tokens+1]
 
-        return idx, b_feature_idxs, b_token_idxs, b_tokens
+        return idx, b_ctx_idxs, b_token_idxs, b_tokens
 
 
     def forward(

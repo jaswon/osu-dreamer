@@ -24,7 +24,7 @@ trainer:
             init_args:
                 monitor: val/loss
                 mode: min
-                patience: 60
+                patience: 5
         - # learning rate monitor
             class_path: pytorch_lightning.callbacks.LearningRateMonitor
 
@@ -43,15 +43,15 @@ trainer:
     check_val_every_n_epoch: null
     
 data:
-    num_workers: 6
+    num_workers: 0
     val_size: 128
     
 model:
     # training parameters
-    batch_size: 4
+    batch_size: 16
     seq_len: 2048 # * 6ms/frame ~= 12.3s
     opt_args:
-        lr: .0004
+        lr: .001
     focal_gamma: 2
     max_tokens: 1024
 
