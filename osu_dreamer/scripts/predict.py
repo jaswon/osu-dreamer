@@ -91,7 +91,7 @@ def predict(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 decode(
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    np.array(pred_labels), parse_tokens(pred_tokens),
+                    pred_labels, parse_tokens(pred_tokens, strict=False),
                 ),
             )
     

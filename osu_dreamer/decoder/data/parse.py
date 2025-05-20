@@ -97,17 +97,24 @@ def coroutine(func):
     return initialize
  
 @coroutine
-def decode_beatmap(proc: Callable[[events.Event], Any]) -> Generator[None, Token|float, None]:
+def decode_beatmap(proc: Callable[[events.Event], Any], strict: bool) -> Generator[None, Token|float, None]:
     while True:
-        proc((yield from decode_event()))
+        try:
+            event = (yield from decode_event())
+        except UnexpectedToken as e:
+            if strict:
+                raise e
+            print('unexpected token:', e.token)
+            continue
+        proc(event)
 
 
-def parse_tokens(tokens: list[Token|float]) -> list[events.Event]:
+def parse_tokens(tokens: list[Token|float], strict: bool = True) -> list[events.Event]:
     events = []
     def proc_event(ev):
         events.append(ev)
 
-    decoder = decode_beatmap(proc_event)
+    decoder = decode_beatmap(proc_event, strict)
     for tok in tokens:
         decoder.send(tok)
 
