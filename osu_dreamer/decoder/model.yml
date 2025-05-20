@@ -55,13 +55,17 @@ model:
     max_token_numel: 4000
 
     # model hyperparameters
-    audio_encoder_ckpt: audio_encoder.ckpt
-    embed_dim: 768
+    ctx_dim: 64
+    encoder_dim: 256
+    encoder_args:
+        depth: 8
+        expand: 1
 
     label_dim: 16
     label_emb_args:
         features: 8
 
+    embed_dim: 768
     decoder_args:
         depth: 8
         expand: 1

@@ -15,7 +15,7 @@ from osu_dreamer.data.load_audio import A_DIM
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.muon import Muon
 
-from osu_dreamer.audio_encoder.model import Model as AudioEncoder
+from osu_dreamer.modules.dit import DiT, DiTArgs
 
 from .data.module import Batch
 from .data.tokens import Token, TokenType, encode, BOS, VOCAB_SIZE, DIFF
@@ -48,12 +48,14 @@ class Model(pl.LightningModule):
         max_token_numel: int,
 
         # model hparams
-        audio_encoder_ckpt: str,
-        embed_dim: int,
+        ctx_dim: int,
+        encoder_dim: int,
+        encoder_args: DiTArgs,
 
         label_dim: int,
         label_emb_args: LabelEmbeddingArgs,
 
+        embed_dim: int,
         decoder_args: DecoderArgs,
     ):
         super().__init__()
@@ -71,9 +73,11 @@ class Model(pl.LightningModule):
             raise ValueError('not enough timestamp tokens for sequence length- update `data/events.py`')
 
         # model
-        audio_encoder = AudioEncoder.load_from_checkpoint(audio_encoder_ckpt)
-        self.audio_encoder = audio_encoder.proj_audio
-        self.a_dim = audio_encoder.a_dim
+        self.audio_encoder = nn.Sequential(
+            MP.Conv1d(A_DIM, encoder_dim, 1),
+            DiT(encoder_dim, None, encoder_args),
+            MP.Conv1d(encoder_dim, ctx_dim, 1),
+        )
 
         self.embed = MP.Embedding(VOCAB_SIZE, embed_dim)
         token_head = MP.Linear(embed_dim, VOCAB_SIZE)
@@ -88,7 +92,7 @@ class Model(pl.LightningModule):
 
         self.decoder = Decoder(
             embed_dim,
-            self.a_dim,
+            ctx_dim,
             label_dim,
             decoder_args,
             self.seq_len,
