@@ -59,7 +59,7 @@ def decode(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], 
                         hos.append(f"{x1:.0f},{y1:.0f},{t},{(1 << 1) + combo_bit},{hitsound},{slider_type}|{curve_pts},{slides},{length:.2f}")
 
                         slider_ts.append(t)
-                        slider_vels.append(length / (u-t))
+                        slider_vels.append(length * slides / (u-t))
             case _:
                 print('encountered unexpected event:', event)
     
