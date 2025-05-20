@@ -1,0 +1,72 @@
+
+from jaxtyping import Float, Int
+
+import torch as th
+from torch import Tensor
+
+from osu_dreamer.data.load_audio import get_frame_times
+
+from .data.tokens import PAD, EOS, T0
+
+@th.no_grad
+def make_batch(
+    tokens: Int[Tensor, "N"],
+    timestamps: Float[Tensor, "N"],
+    seq_len: int,
+    num_frames: int,
+    max_batch_size: int,
+    max_token_numel: int,
+) -> tuple[
+    Int[Tensor, "B S"],         # audio positioning 
+    Int[Tensor, "B T"],         # token positioning
+    Int[Tensor, "B T"],         # tokens
+]:
+    D = tokens.device
+    frame_times = th.tensor(get_frame_times(num_frames), device=D).float() # L
+    token_frame_idxs = th.searchsorted(frame_times, timestamps)
+
+    max_tokens = 0
+    batches: list[tuple[int, int, int]] = []
+    for ctx_start_idx in th.randperm(num_frames - seq_len).tolist():
+        token_start_idx, token_mid_idx, token_end_idx = th.searchsorted(
+            token_frame_idxs,
+            th.tensor([
+                ctx_start_idx, 
+                ctx_start_idx+int(seq_len/2), 
+                ctx_start_idx+seq_len,
+            ], device=D),
+        ).tolist()
+
+        # only include tokens one timestamp past half context
+        if token_mid_idx < len(timestamps):
+            token_end_idx = int(th.clamp(
+                th.argmax((timestamps > timestamps[token_mid_idx]).long()),
+                min = token_mid_idx,
+                max = token_end_idx,
+            ).item())
+
+        num_tokens = token_end_idx - token_start_idx
+        if (1+max(max_tokens, num_tokens)) * (len(batches)+1) > max_token_numel:
+            break
+        max_tokens = max(max_tokens, num_tokens)
+        batches.append((ctx_start_idx, token_start_idx, token_end_idx))
+        if len(batches) >= max_batch_size:
+            break
+
+    b_ctx_idxs = th.empty(len(batches), seq_len, device=D, dtype=th.int) # B S
+    b_tokens = th.full((len(batches), max_tokens+1), PAD, device=D)
+    b_token_idxs = th.full((len(batches), max_tokens+1), -1, device=D, dtype=th.int)
+
+    for idx, (ctx_start_idx, token_start_idx, token_end_idx) in enumerate(batches):
+        b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_start_idx+seq_len)
+
+        num_tokens = token_end_idx - token_start_idx
+        b_token_idxs[idx, :num_tokens] = token_frame_idxs[token_start_idx:token_end_idx]
+        b_tokens[idx, :num_tokens] = th.where(
+            tokens[token_start_idx:token_end_idx] == -1,
+            T0 + b_token_idxs[idx, :num_tokens] - ctx_start_idx,
+            tokens[token_start_idx:token_end_idx],
+        )
+        b_tokens[idx, num_tokens] = EOS
+
+    return b_ctx_idxs, b_token_idxs, b_tokens
