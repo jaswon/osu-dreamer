@@ -45,8 +45,8 @@ def decode(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], 
                     case events.Spinner(u=u):
                         hos.append(f"256,192,{t},{(1 << 3) + combo_bit},{hitsound},{u}")
                     case events.Slider(u=u, slides=slides, control_points=control_points):
-                        control_points = [ np.array(p) for p in control_points ]
-                        length = from_control_points(t, -1, -1, new_combo, hitsound, slides, -1, control_points).length
+                        control_points = [ np.array(p).astype(float) for p in control_points ]
+                        length = from_control_points(t, -1., -1., new_combo, hitsound, slides, -1., control_points).length
 
                         slider_type = {
                             events.Line: "L",

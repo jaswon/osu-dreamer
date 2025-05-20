@@ -86,7 +86,7 @@ def predict(
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
         
-        for i, (pred_labels, pred_tokens) in enumerate(zip(pred_batch_labels, pred_batch_tokens)):
+        for i, (pred_labels, pred_tokens) in enumerate(zip(pred_batch_labels.cpu().numpy(), pred_batch_tokens)):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 decode(
