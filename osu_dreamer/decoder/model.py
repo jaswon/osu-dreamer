@@ -54,7 +54,7 @@ class Model(pl.LightningModule):
         seq_len: int,
         opt_args: dict[str, Any],
         focal_gamma: float,
-        max_tokens: int,
+        max_token_numel: int,
 
         # model hparams
         audio_encoder_ckpt: str,
@@ -73,7 +73,7 @@ class Model(pl.LightningModule):
         self.seq_len = seq_len
         self.opt_args = opt_args
         self.focal_gamma = focal_gamma
-        self.max_tokens = max_tokens
+        self.max_token_numel = max_token_numel
         
         try:
             encode(Event(EventType.TIMESTAMP, self.seq_len-1))
@@ -111,29 +111,24 @@ class Model(pl.LightningModule):
         tokens: Int[Tensor, "N"],
         timestamps: Float[Tensor, "N"],
     ) -> tuple[
-        int,                        # batch size
         Int[Tensor, "B S"],         # audio positioning 
         Int[Tensor, "B T"],         # token positioning
         Int[Tensor, "B T"],         # tokens
     ]:
         D = tokens.device
         frame_times = th.tensor(get_frame_times(L), device=D).float() # L
-
-        b_ctx_idxs = th.empty(self.batch_size, self.seq_len, device=D, dtype=th.int) # B S
-        b_tokens = th.full((self.batch_size, self.max_tokens+1), PAD, device=D)
-        b_token_idxs = th.full((self.batch_size, self.max_tokens+1), -1, device=D, dtype=th.int)
-
         token_frame_idxs = th.searchsorted(frame_times, timestamps)
 
-        idx = 0
         max_tokens = 0
+        batches: list[tuple[int, int, int]] = []
         for ctx_start_idx in th.randperm(L - self.seq_len).tolist():
-            if idx == self.batch_size:
-                break
-            ctx_end_idx = ctx_start_idx+self.seq_len
             token_start_idx, token_mid_idx, token_end_idx = th.searchsorted(
-                timestamps,
-                frame_times[[ctx_start_idx, ctx_start_idx+int(self.seq_len/2), ctx_end_idx]],
+                token_frame_idxs,
+                th.tensor([
+                    ctx_start_idx, 
+                    ctx_start_idx+int(self.seq_len/2), 
+                    ctx_start_idx+self.seq_len,
+                ], device=D),
             ).tolist()
 
             # only include tokens one timestamp past half context
@@ -145,12 +140,21 @@ class Model(pl.LightningModule):
                 ).item())
 
             num_tokens = token_end_idx - token_start_idx
-            if num_tokens > self.max_tokens:
-                continue
+            if (1+max(max_tokens, num_tokens)) * (len(batches)+1) > self.max_token_numel:
+                break
             max_tokens = max(max_tokens, num_tokens)
+            batches.append((ctx_start_idx, token_start_idx, token_end_idx))
+            if len(batches) >= self.batch_size:
+                break
 
-            b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_end_idx)
+        b_ctx_idxs = th.empty(len(batches), self.seq_len, device=D, dtype=th.int) # B S
+        b_tokens = th.full((len(batches), max_tokens+1), PAD, device=D)
+        b_token_idxs = th.full((len(batches), max_tokens+1), -1, device=D, dtype=th.int)
 
+        for idx, (ctx_start_idx, token_start_idx, token_end_idx) in enumerate(batches):
+            b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_start_idx+self.seq_len)
+
+            num_tokens = token_end_idx - token_start_idx
             b_token_idxs[idx, :num_tokens] = token_frame_idxs[token_start_idx:token_end_idx]
             b_tokens[idx, :num_tokens] = th.where(
                 tokens[token_start_idx:token_end_idx] == -1,
@@ -159,18 +163,7 @@ class Model(pl.LightningModule):
             )
             b_tokens[idx, num_tokens] = EOS
 
-            idx += 1
-
-        if idx < self.batch_size:
-            b_ctx_idxs = b_ctx_idxs[:idx]
-            b_token_idxs = b_token_idxs[:idx]
-            b_tokens = b_tokens[:idx]
-
-        if max_tokens < self.max_tokens:
-            b_token_idxs = b_token_idxs[:,:max_tokens+1]
-            b_tokens = b_tokens[:,:max_tokens+1]
-
-        return idx, b_ctx_idxs, b_token_idxs, b_tokens
+        return b_ctx_idxs, b_token_idxs, b_tokens
 
 
     def forward(
@@ -183,7 +176,8 @@ class Model(pl.LightningModule):
         
         D = audio.device
         features = self.audio_encoder(audio)[0].transpose(0,1) # L H
-        batch_size, b_feature_idxs, b_token_idxs, b_tokens = self.make_batch(features.size(0), tokens[0], timestamps[0])
+        b_feature_idxs, b_token_idxs, b_tokens = self.make_batch(features.size(0), tokens[0], timestamps[0])
+        batch_size = b_feature_idxs.size(0)
         b_features = features[b_feature_idxs]
 
         # randomly mask labels for training
@@ -216,6 +210,7 @@ class Model(pl.LightningModule):
             "loss": loss.detach(),
             "token": token_loss.detach(),
             "label": label_loss.detach(),
+            "b_tokens.numel": th.tensor(b_tokens.numel(), dtype=th.float),
         }
     
     @th.no_grad
