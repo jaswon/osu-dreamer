@@ -16,7 +16,7 @@ def normalize(x: Float[Tensor, "B ..."], dim=None, eps=1e-4) -> Float[Tensor, "B
         dim = list(range(1, x.ndim))
     norm = th.linalg.vector_norm(x, dim=dim, keepdim=True, dtype=th.float32)
     norm = th.add(eps, norm, alpha=np.sqrt(norm.numel() / x.numel()))
-    return x / norm.to(x.dtype)
+    return (x.to(th.float32) / norm).to(x.dtype)
 
 def pixel_norm(x: Float[Tensor, "B D ..."]) -> Float[Tensor, "B D ..."]:
     return normalize(x, dim=1)
