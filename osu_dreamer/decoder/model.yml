@@ -51,20 +51,20 @@ model:
     batch_size: 4
     seq_len: 2048 # * 6ms/frame ~= 12.3s
     opt_args:
-        lr: .001
+        lr: .0004
     focal_gamma: 2
     max_tokens: 1024
 
     # model hyperparameters
     audio_encoder_ckpt: audio_encoder.ckpt
-    embed_dim: 512
+    embed_dim: 768
 
     label_dim: 16
     label_emb_args:
         features: 8
 
     decoder_args:
-        depth: 6
+        depth: 8
         expand: 1
         attn_args:
             head_dim: 64
