@@ -46,6 +46,8 @@ def make_batch(
 
         num_tokens = token_end_idx - token_start_idx
         if (1+max(max_tokens, num_tokens)) * (len(batches)+1) > max_token_numel:
+            if len(batches) == 0:
+                continue
             break
         max_tokens = max(max_tokens, num_tokens)
         batches.append((ctx_start_idx, token_start_idx, token_end_idx))
