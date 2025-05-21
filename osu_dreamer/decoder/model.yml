@@ -74,5 +74,6 @@ model:
             n_heads: 8
             kv_heads: 1
         deltanet_args:
-            head_dim: 64
-            n_heads: 8
+            head_dim: 128
+            n_heads: 4
+            n_householder: 3
