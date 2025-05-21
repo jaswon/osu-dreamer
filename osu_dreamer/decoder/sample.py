@@ -15,14 +15,21 @@ from .data.tokens import Token, decode, PAD, BOS, EOS, DIFF, T0
 
 from .model import Model
 
+def right_pad_dims_to(x: Tensor, t: Tensor):
+    padding_dims = x.ndim - t.ndim
+    if padding_dims <= 0:
+        return t
+    return t.view(*t.shape, *((1,) * padding_dims))
+
 def roll_by_shifts(
-    input: Shaped[Tensor, "B N"], 
+    inputs: Shaped[Tensor, "B N ..."], 
     shifts: Int[Tensor, "B"],
-) -> Shaped[Tensor, "B N"]:
-    b,n = input.size()
+) -> Shaped[Tensor, "B N ..."]:
+    b,n,*_ = inputs.size()
     col_idxs = th.arange(n, device=shifts.device).repeat(b,1)
     shifted_idxs = (col_idxs + shifts[:,None]) % n
-    return th.gather(input, 1, shifted_idxs.long())
+    shifted_idxs = right_pad_dims_to(inputs, shifted_idxs).expand(-1,-1,*inputs.shape[2:])
+    return th.gather(inputs, 1, shifted_idxs.long())
 
 @th.no_grad
 def sample(
