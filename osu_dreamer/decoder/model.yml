@@ -43,6 +43,7 @@ trainer:
     check_val_every_n_epoch: null
     
 data:
+    max_audio_len: 50_000
     num_workers: 0
     val_size: 128
     

@@ -26,8 +26,14 @@ class Batch(NamedTuple):
     timestamps: Int[Tensor, "B N"]
 
 class TokenDataset(BeatmapDataset):
+    def __init__(self, max_audio_len: int, dataset):
+        super().__init__(dataset)
+        self.max_audio_len = max_audio_len
+
     def make_samples(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
         audio = np.load(map_file.parent / "spec.pt")
+        if audio.shape[1] > self.max_audio_len:
+            return
         with open(map_file, 'rb') as f:
             bm = pickle.load(f)
         tokens, timestamps = to_tokens_and_timestamps(bm)
@@ -42,11 +48,21 @@ class TokenDataset(BeatmapDataset):
 
     
 class Data(BeatmapDataModule):
+    def __init__(
+        self, 
+        max_audio_len: int,
+        num_workers: int, 
+        val_size: float | int, 
+        data_path: str = "./data",
+    ):
+        super().__init__(num_workers, val_size, data_path)
+        self.max_audio_len = max_audio_len
+        
     def make_train_set(self, split) -> Dataset:
-        return TokenDataset(split)
+        return TokenDataset(self.max_audio_len, split)
     
     def make_val_set(self, split) -> Dataset:
-        return TokenDataset(split)
+        return TokenDataset(self.max_audio_len, split)
             
     def train_dataloader(self):
         return DataLoader(self.train_set, num_workers=self.num_workers)

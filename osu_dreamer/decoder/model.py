@@ -150,6 +150,7 @@ class Model(pl.LightningModule):
             "token": token_loss.detach(),
             "label": label_loss.detach(),
             "b_tokens.numel": th.tensor(b_tokens.numel(), dtype=th.float),
+            "audio_len": th.tensor(audio.size(-1), dtype=th.float),
         }
     
     @th.no_grad
