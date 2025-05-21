@@ -108,27 +108,27 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
         D = audio.device
-        features = self.audio_encoder(audio)[0].transpose(0,1) # L H
-        b_feature_idxs, b_token_idxs, b_tokens = make_batch(
+        ctx = self.audio_encoder(audio)[0].transpose(0,1) # L H
+        b_ctx_idxs, b_token_idxs, b_tokens = make_batch(
             tokens[0], timestamps[0],
             seq_len = self.seq_len,
-            num_frames = features.size(0),
+            num_frames = ctx.size(0),
             max_token_numel = self.max_token_numel,
         )
-        batch_size = b_feature_idxs.size(0)
-        b_features = features[b_feature_idxs]
+        batch_size = b_ctx_idxs.size(0)
+        b_ctx = ctx[b_ctx_idxs]
 
         # randomly mask labels for training
         b_labels = labels.repeat(batch_size, 1)
         label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
 
         b_prelude_tokens = th.tensor([DIFF, BOS], device=D).repeat(batch_size, 1)
-        b_prelude_idxs = b_feature_idxs[:,:1].repeat(1, 2)
+        b_prelude_idxs = b_ctx_idxs[:,:1].repeat(1, 2)
         h = self.decoder(
             x = self.embed(th.cat([b_prelude_tokens, b_tokens], dim=1)),
             x_t = th.cat([b_prelude_idxs, b_token_idxs], dim=1),
-            ctx = b_features,
-            ctx_t = b_feature_idxs,
+            ctx = b_ctx,
+            ctx_t = b_ctx_idxs,
             c = label_embs,
         ) # B N+2 E
 
