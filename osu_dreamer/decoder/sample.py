@@ -72,7 +72,7 @@ def sample(
             break
 
         # index into (B,T)-shaped tensors to get values corresponding to most recent generation
-        TAIL = (th.arange(active_batches.size(0)), cur_tail_idx)
+        TAIL = (th.arange(B), cur_tail_idx)
 
         cur_ctx_idxs = th.arange(model.seq_len, device=D)[None] + cur_start_idxs[:,None]
         cur_ctx = ctx[cur_ctx_idxs] # B bL H
@@ -124,8 +124,8 @@ def sample(
 
         # grow sequence
         if (cur_tail_idx >= cur_tokens.size(1)).any():
-            cur_tokens = th.cat([cur_tokens, th.full((active_batches.size(0), 1), PAD, device=D)], dim=1)
-            cur_token_idxs = th.cat([cur_token_idxs, th.full((active_batches.size(0), 1), -1, device=D)], dim=1)
+            cur_tokens = th.cat([cur_tokens, th.full((B, 1), PAD, device=D)], dim=1)
+            cur_token_idxs = th.cat([cur_token_idxs, th.full((B, 1), -1, device=D)], dim=1)
 
         # update sequence
         pred_tokens[pred_tokens == EOS] = PAD
@@ -164,6 +164,7 @@ def sample(
             cur_tokens = cur_tokens[next_active]
             cur_token_idxs = cur_token_idxs[next_active]
             c = c[next_active]
+            B = active_batches.size(0)
 
         # shrink sequence
         while cur_tokens.size(1) > 0 and (cur_tokens[:,-1] == PAD).all():
