@@ -57,6 +57,8 @@ class Model(pl.LightningModule):
         label_dim: int,
         label_emb_args: LabelEmbeddingArgs,
 
+        pos_emb_dim: int,
+        seq_idx_emb_dim: int,
         embed_dim: int,
         decoder_args: DecoderArgs,
     ):
@@ -82,12 +84,17 @@ class Model(pl.LightningModule):
             MP.Gain(),
         )
 
-        self.timestamp_emb = MP.Embedding(seq_len, embed_dim)
+        self.timestamp_emb = nn.Sequential(
+            nn.Unflatten(-1, (-1, 1)),
+            MP.RandomFourierFeatures(1, seq_idx_emb_dim, domain=float(seq_len)),
+            MP.Linear(seq_idx_emb_dim, embed_dim),
+        )
         self.timestamp_head = nn.Sequential(
-            MP.Linear(embed_dim, seq_len),
+            MP.Linear(embed_dim, seq_idx_emb_dim),
+            MP.SiLU(),
+            MP.Linear(seq_idx_emb_dim, seq_len),
             MP.Gain(),
         )
-        self.timestamp_head[0].weight = self.timestamp_emb.weight
 
         self.token_emb = MP.Embedding(VOCAB_SIZE, embed_dim)
         self.token_head = nn.Sequential(
@@ -96,9 +103,15 @@ class Model(pl.LightningModule):
         )
         self.token_head[0].weight = self.token_emb.weight
 
-        self.pos_emb = MP.Linear(2, embed_dim)
+        self.pos_emb = nn.Sequential(
+            MP.Linear(2, pos_emb_dim),
+            MP.SiLU(),
+            MP.Linear(pos_emb_dim, embed_dim),
+        )
         self.pos_head = nn.Sequential(
-            MP.Linear(embed_dim, 2),
+            MP.Linear(embed_dim, pos_emb_dim),
+            MP.SiLU(),
+            MP.Linear(pos_emb_dim, 2),
             MP.Gain(),
         )
 

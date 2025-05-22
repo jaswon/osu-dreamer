@@ -3,7 +3,7 @@
 
 from typing import Union
 from collections.abc import Sequence
-from jaxtyping import Float, Int, Shaped
+from jaxtyping import Float, Int, Shaped, Real
 
 import numpy as np
 
@@ -115,10 +115,10 @@ class Conv2d(nn.Conv2d):
 ### Magnitude-preserving misc. layers
     
 class RandomFourierFeatures(nn.Module):
-    def __init__(self, dim: int, n_feats: int):
+    def __init__(self, dim: int, n_feats: int, domain: float = 1):
         super().__init__()
-        self.register_buffer('f', 2 * th.pi * th.randn(dim, n_feats))
-        self.register_buffer('p', 2 * th.pi * th.rand(n_feats))
+        self.register_buffer('f', th.pi / domain * th.randn(dim, n_feats))
+        self.register_buffer('p', th.pi / domain * th.rand(n_feats))
 
-    def forward(self, x: Float[Tensor, "B C"]) -> Float[Tensor, "B N"]:
-        return 2**.5 * th.cos(x @ self.f + self.p)
+    def forward(self, x: Real[Tensor, "... C"]) -> Float[Tensor, "... N"]:
+        return 2**.5 * th.cos(x.to(self.f.dtype) @ self.f + self.p)
