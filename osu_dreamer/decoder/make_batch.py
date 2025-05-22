@@ -6,10 +6,11 @@ from torch import Tensor
 
 from osu_dreamer.data.load_audio import get_frame_times
 
-from .data.tokens import PAD, EOS, T0
+from .data.tokens import PAD, EOS
 
 @th.no_grad
 def make_batch(
+    types: Int[Tensor, "N"],
     tokens: Int[Tensor, "N"],
     timestamps: Float[Tensor, "N"],
     seq_len: int,
@@ -17,6 +18,7 @@ def make_batch(
     max_token_numel: int,
 ) -> tuple[
     Int[Tensor, "B S"],         # audio positioning 
+    Int[Tensor, "B T"],         # output types
     Int[Tensor, "B T"],         # token positioning
     Int[Tensor, "B T"],         # tokens
 ]:
@@ -52,20 +54,22 @@ def make_batch(
         max_tokens = max(max_tokens, num_tokens)
         batches.append((ctx_start_idx, token_start_idx, token_end_idx))
 
-    b_ctx_idxs = th.empty(len(batches), seq_len, device=D, dtype=th.int) # B S
-    b_tokens = th.full((len(batches), max_tokens+1), PAD, device=D)
-    b_token_idxs = th.full((len(batches), max_tokens+1), -1, device=D, dtype=th.int)
+    b_ctx_idxs = th.empty(len(batches), seq_len).long().to(D) # B S
+    b_types = th.full((len(batches), max_tokens+1), 0).long().to(D)
+    b_tokens = th.full((len(batches), max_tokens+1), PAD).to(D)
+    b_token_idxs = th.full((len(batches), max_tokens+1), -1).long().to(D)
 
     for idx, (ctx_start_idx, token_start_idx, token_end_idx) in enumerate(batches):
         b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_start_idx+seq_len)
 
         num_tokens = token_end_idx - token_start_idx
+        b_types[idx, :num_tokens] = types[token_start_idx:token_end_idx]
         b_token_idxs[idx, :num_tokens] = token_frame_idxs[token_start_idx:token_end_idx]
         b_tokens[idx, :num_tokens] = th.where(
-            tokens[token_start_idx:token_end_idx] == -1,
-            T0 + b_token_idxs[idx, :num_tokens] - ctx_start_idx,
+            b_types[idx, :num_tokens] == 0,
             tokens[token_start_idx:token_end_idx],
+            PAD,
         )
         b_tokens[idx, num_tokens] = EOS
 
-    return b_ctx_idxs, b_token_idxs, b_tokens
+    return b_ctx_idxs, b_types, b_token_idxs, b_tokens

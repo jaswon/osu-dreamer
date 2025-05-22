@@ -32,7 +32,6 @@ TokenType = CustomReprEnum('TokenType', [
 
     "FLAGS",
     "LOCATION",
-    "TIMESTAMP",
 ])
 
 class Token(NamedTuple):
@@ -85,10 +84,6 @@ _id2token: tuple[Token, ...] = (
         for y in range(-256, 384+256+16, 16)
         if not ((0<=x<=512) and (0<=y<=384))
     ),
-    *( # one timestamp token per context frame
-        Token(TokenType.TIMESTAMP, i)
-        for i in range(2048) # TODO: sync with seq_len
-    )
 )
 
 _token2id = { t: i for i, t in enumerate(_id2token) }
@@ -99,4 +94,3 @@ BOS = encode(Token(TokenType.BOS))
 EOS = encode(Token(TokenType.EOS))
 PAD = encode(Token(TokenType.PAD))
 DIFF = encode(Token(TokenType.DIFF))
-T0 = encode(Token(TokenType.TIMESTAMP, 0))

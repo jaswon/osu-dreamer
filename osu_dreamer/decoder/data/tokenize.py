@@ -79,26 +79,32 @@ def beatmap_tokens(bm: Beatmap) -> Iterator[Token | float]:
                 except Exception as e:
                     raise ValueError(f'bad slider @ {ho.t} in {bm.filename}') from e
 
-def to_tokens_and_timestamps(bm: Beatmap) -> tuple[
+def tokenize(bm: Beatmap) -> tuple[
+    Int[np.ndarray, "N"],   # type
     Int[np.ndarray, "N"],   # tokens
     Float[np.ndarray, "N"], # timestamps
 ]:
     """
-    return tokens and timestamps for the beatmap
+    return (types, tokens, timestamps) for the beatmap
     """
+    types: list[int] = []
     tokens: list[int] = []
     timestamps: list[float] = []
     cur_t: float
     for i, token in enumerate(beatmap_tokens(bm)):
         match token:
+            case Token():
+                typ = 0
+                token_id = encode(token)
             case float(t):
+                typ = 1
                 cur_t = float(t)
                 token_id = -1
-            case Token():
-                token_id = encode(token)
+        types.append(typ)
         tokens.append(token_id)
         timestamps.append(cur_t)
     return (
+        np.array(types, dtype=int),
         np.array(tokens, dtype=int), 
         np.array(timestamps, dtype=float), 
     )

@@ -16,12 +16,13 @@ from osu_dreamer.data.module import BeatmapDataModule, BeatmapDataset
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.labels import NUM_LABELS, get_labels
 
-from .tokenize import to_tokens_and_timestamps
+from .tokenize import tokenize
 
 
 class Batch(NamedTuple):
     labels: Float[Tensor, str(f"B {NUM_LABELS}")]
     audio: Float[Tensor, str(f"B {A_DIM} L")]
+    types: Int[Tensor, "B N"]
     tokens: Int[Tensor, "B N"]
     timestamps: Int[Tensor, "B N"]
 
@@ -36,12 +37,13 @@ class TokenDataset(BeatmapDataset):
             return
         with open(map_file, 'rb') as f:
             bm = pickle.load(f)
-        tokens, timestamps = to_tokens_and_timestamps(bm)
+        types, tokens, timestamps = tokenize(bm)
         labels = get_labels(bm)
         
         yield Batch(
             th.tensor(labels).float(),
             th.tensor(audio).float(),
+            th.tensor(types).long(),
             th.tensor(tokens).long(),
             th.tensor(timestamps).float(),
         )

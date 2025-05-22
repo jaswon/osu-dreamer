@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.load_audio import A_DIM, get_frame_times
 
-from .data.tokens import Token, decode, PAD, BOS, EOS, DIFF, T0
+from .data.tokens import Token, decode, PAD, BOS, EOS, DIFF
 
 from .model import Model
 
@@ -55,13 +55,14 @@ def sample(
     ctx = model.audio_encoder(F.pad(audio, (0, model.seq_len-1))[None].transpose(1,2))[0] # L+s-1 H
     frame_times = th.tensor(get_frame_times(L+model.seq_len-1))
 
-    prelude_tokens = th.tensor([DIFF, BOS], device=D).long().repeat(B,1)
+    prelude_token_embs = model.token_emb(th.tensor([DIFF, BOS], device=D).long()) # 2 E
 
-    active_batches = th.arange(B, device=D)             # samples that are still generating
-    cur_start_idxs = th.zeros(B, device=D).long()       # current context window start index
-    cur_tail_idx = th.zeros(B, device=D).long()         # token index @ end of generation
-    cur_tokens = th.empty(B,0, device=D).long()         # tokens currently in generation
-    cur_token_idxs = th.empty(B,0, device=D).long()     # token positioning
+    active_batches = th.arange(B).to(D)             # samples that are still generating
+    cur_start_idxs = th.zeros(B).long().to(D)       # current context window start index
+    cur_tail_idx = th.zeros(B).long().to(D)         # token index @ end of generation
+    cur_types = th.empty(B,0).long().to(D)          # types of tokens
+    cur_tokens = th.empty(B,0).long().to(D)         # discrete tokens
+    cur_token_idxs = th.empty(B,0).long().to(D)     # token positioning (/ timing tokens)
 
     output_tokens: list[list[Token | float]] = [ [] for _ in range(B) ]
 
@@ -71,15 +72,23 @@ def sample(
             # time limit reached
             break
 
-        # index into (B,T)-shaped tensors to get values corresponding to most recent generation
-        TAIL = (th.arange(B), cur_tail_idx)
 
-        cur_ctx_idxs = th.arange(model.seq_len, device=D)[None] + cur_start_idxs[:,None]
+        cur_ctx_idxs = th.arange(model.seq_len, device=D)[None] + cur_start_idxs[:,None] # B S
         cur_ctx = ctx[cur_ctx_idxs] # B bL H
 
-        prelude_token_idxs = cur_ctx_idxs[:,:1].repeat(1, 2)
+        prelude_token_idxs = cur_start_idxs[:,None].repeat(1, 2)
+
+        cur_token_embs = th.gather(
+            th.stack([
+                model.token_emb(cur_tokens),
+                model.timestamp_emb(th.clamp(cur_token_idxs - cur_start_idxs[:,None], min=0)),
+            ], dim=0), # K B N E
+            dim = 0,
+            index = cur_types[None,:,:,None].expand(-1,-1,-1,model.embed_dim),
+        )[0]
+
         h = model.decoder(
-            x = model.embed(th.cat([prelude_tokens, cur_tokens], dim=1)),
+            x = th.cat([prelude_token_embs.repeat(B,1,1), cur_token_embs], dim=1),
             x_t = th.cat([prelude_token_idxs, cur_token_idxs], dim=1),
             ctx = cur_ctx, 
             ctx_t = cur_ctx_idxs, 
@@ -91,51 +100,60 @@ def sample(
         for i, pred_label in zip(active_batches, model.label_head(label_emb)):
             pred_labels[i].append(pred_label)
 
-        # predict tokens
-        pred_embs = h[:,1:] # B n+1 E
-        pred_token_logits = model.token_head(pred_embs[TAIL]) # B V
+        # index into (B,T)-shaped tensors to get values corresponding to most recent generation
+        TAIL = (th.arange(B), cur_tail_idx)
+
+        # predict token types
+        pred_embs = h[:,1:][TAIL] # B E
+        pred_type_logits = model.type_head(pred_embs) # B 2
+        pred_types = th.multinomial(pred_type_logits.softmax(dim=-1), num_samples=1)[:,0] # B
 
         # latest timing generated so far (no timing yet = ctx start)
         cur_latest_token_idxs = th.cat([ cur_start_idxs[:,None], cur_token_idxs ], dim=1)[TAIL] # B
 
-        # disallow timing into the past
+        # predict timestamps, disallow timing into the past
+        pred_timestamp_logits = model.timestamp_head(pred_embs) # B S
         for b_idx, num_mask in enumerate(cur_latest_token_idxs - cur_start_idxs):
-            pred_token_logits[b_idx, T0:T0+num_mask] = -th.inf
+            pred_timestamp_logits[b_idx, :num_mask] = -th.inf
 
+        pred_timestamp = th.multinomial(pred_timestamp_logits.softmax(dim=-1), num_samples=1)[:,0] # B
+
+        # predict tokens
+        pred_token_logits = model.token_head(pred_embs) # B V
         pred_tokens = th.multinomial(pred_token_logits.softmax(dim=-1), num_samples=1)[:,0] # B
+
         pred_token_idxs = th.where(
-            pred_tokens >= T0,                      # timing predicted
-            cur_start_idxs + pred_tokens - T0,      # ? use index from predicted timing
+            pred_types == 1,                        # timing predicted
+            cur_start_idxs + pred_timestamp,        # ? use index from predicted timing
             cur_latest_token_idxs,                  # : use index from previously latest timing
         )
 
         # update windows
         update = th.where(
-            pred_tokens == EOS,                                         # no tokens remaining for current window
-            model.seq_len,                                               # ? go to next window
-            th.where(
-                pred_tokens >= T0,                                      # new timestamp predicted
-                th.clamp((pred_tokens - T0) - half_window, min=0),      # ? slide forward until half of window is future context
-                0,                                                      # : no window updates
-            ),
+            pred_tokens == EOS,                                                 # no tokens remaining for current window
+            model.seq_len,                                                      # ? slide full window
+            th.clamp(pred_token_idxs - (cur_start_idxs + half_window), min=0),  # : slide until half of window is future context
         )
         pbar.update(update.sum().item())
         cur_start_idxs += update
 
         # grow sequence
         if (cur_tail_idx >= cur_tokens.size(1)).any():
-            cur_tokens = th.cat([cur_tokens, th.full((B, 1), PAD, device=D)], dim=1)
-            cur_token_idxs = th.cat([cur_token_idxs, th.full((B, 1), -1, device=D)], dim=1)
+            cur_types = th.cat([cur_types, th.full((B,1), 0).to(D)], dim=1)
+            cur_tokens = th.cat([cur_tokens, th.full((B,1), PAD).to(D)], dim=1)
+            cur_token_idxs = th.cat([cur_token_idxs, th.full((B,1), -1).to(D)], dim=1)
 
         # update sequence
         pred_tokens[pred_tokens == EOS] = PAD
+        cur_types[TAIL] = pred_types
         cur_tokens[TAIL] = pred_tokens
         cur_token_idxs[TAIL] = pred_token_idxs
-        cur_tail_idx += (pred_tokens != PAD).long()
+        cur_tail_idx += ((pred_types != 0) | (pred_tokens != PAD)).long()
         del TAIL
 
         # dequeue tokens that are before start of new window
         shifts = (cur_token_idxs >= cur_start_idxs[:,None]).long().argmax(dim=1) # B
+        cur_types = roll_by_shifts(cur_types, shifts)
         cur_tokens = roll_by_shifts(cur_tokens, shifts)
         cur_token_idxs = roll_by_shifts(cur_token_idxs, shifts)
         cur_tail_idx -= shifts
@@ -144,9 +162,13 @@ def sample(
             sl = (b, slice(cur_tokens.size(1)-shift,None)) # ...[b,-shift:]
 
             output_tokens[batch_idx].extend((
-                decode(int(token)) if token < T0 else float(frame_times[token_idx])
-                for token, token_idx in zip(cur_tokens[sl], cur_token_idxs[sl])
+                [
+                    decode(int(token)),
+                    float(frame_times[token_idx]),
+                ][typ]
+                for typ, token, token_idx in zip(cur_types[sl], cur_tokens[sl], cur_token_idxs[sl])
             ))
+            cur_types[sl] = 0
             cur_tokens[sl] = PAD
             cur_token_idxs[sl] = -1
 
@@ -157,17 +179,18 @@ def sample(
             break
 
         if not next_active.all():
-            prelude_tokens = prelude_tokens[next_active]
             active_batches = active_batches[next_active]
+            B = active_batches.size(0)
             cur_start_idxs = cur_start_idxs[next_active]
             cur_tail_idx = cur_tail_idx[next_active]
+            cur_types = cur_types[next_active]
             cur_tokens = cur_tokens[next_active]
             cur_token_idxs = cur_token_idxs[next_active]
             c = c[next_active]
-            B = active_batches.size(0)
 
         # shrink sequence
         while cur_tokens.size(1) > 0 and (cur_tokens[:,-1] == PAD).all():
+            cur_types = cur_types[:,:-1]
             cur_tokens = cur_tokens[:,:-1]
             cur_token_idxs = cur_token_idxs[:,:-1]
             
@@ -176,8 +199,11 @@ def sample(
     for b, (tail_idx,batch_idx) in enumerate(zip(cur_tail_idx, active_batches)):
         sl = (b, slice(tail_idx)) # ...[b,:tail_idx]
         output_tokens[batch_idx].extend((
-            decode(int(token)) if token < T0 else float(frame_times[token_idx])
-            for token, token_idx in zip(cur_tokens[sl], cur_token_idxs[sl])
+            [
+                decode(int(token)),
+                float(frame_times[token_idx]),
+            ][typ]
+            for typ, token, token_idx in zip(cur_types[sl], cur_tokens[sl], cur_token_idxs[sl])
         ))
 
     return output_tokens, th.stack([ th.stack(l).mean(dim=0) for l in pred_labels ])

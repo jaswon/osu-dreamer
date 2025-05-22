@@ -67,26 +67,33 @@ class Model(pl.LightningModule):
         self.opt_args = opt_args
         self.focal_gamma = focal_gamma
         self.max_token_numel = max_token_numel
-        
-        try:
-            encode(Token(TokenType.TIMESTAMP, self.seq_len-1))
-        except KeyError:
-            raise ValueError('not enough timestamp tokens for sequence length- update `data/events.py`')
 
         # model
+        self.embed_dim = embed_dim
         self.audio_encoder = nn.Sequential(
             MP.Linear(A_DIM, encoder_dim),
             Encoder(encoder_dim, encoder_args),
             MP.Linear(encoder_dim, ctx_dim),
         )
 
-        self.embed = MP.Embedding(VOCAB_SIZE, embed_dim)
-        token_head = MP.Linear(embed_dim, VOCAB_SIZE)
-        token_head.weight = self.embed.weight
-        self.token_head = nn.Sequential(
-            token_head,
+        self.type_head = nn.Sequential(
+            MP.Linear(embed_dim, 2), # { token, timestamp }
             MP.Gain(),
         )
+
+        self.timestamp_emb = MP.Embedding(seq_len, embed_dim)
+        self.timestamp_head = nn.Sequential(
+            MP.Linear(embed_dim, seq_len),
+            MP.Gain(),
+        )
+        self.timestamp_head[0].weight = self.timestamp_emb.weight
+
+        self.token_emb = MP.Embedding(VOCAB_SIZE, embed_dim)
+        self.token_head = nn.Sequential(
+            MP.Linear(embed_dim, VOCAB_SIZE),
+            MP.Gain(),
+        )
+        self.token_head[0].weight = self.token_emb.weight
 
         self.label_emb = LabelEmbedding(label_dim, label_emb_args)
         self.label_head = nn.Linear(embed_dim, NUM_LABELS)
@@ -103,14 +110,15 @@ class Model(pl.LightningModule):
         self,
         labels: Float[Tensor, str(f"1 {NUM_LABELS}")],
         audio: Float[Tensor, str(f"1 {A_DIM} L")],
+        types: Int[Tensor, "1 N"],
         tokens: Int[Tensor, "1 N"],
         timestamps: Float[Tensor, "1 N"],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
         D = audio.device
         ctx = self.audio_encoder(audio.transpose(1,2))[0] # L H
-        b_ctx_idxs, b_token_idxs, b_tokens = make_batch(
-            tokens[0], timestamps[0],
+        b_ctx_idxs, b_types, b_token_idxs, b_tokens = make_batch(
+            types[0], tokens[0], timestamps[0],
             seq_len = self.seq_len,
             num_frames = ctx.size(0),
             max_token_numel = self.max_token_numel,
@@ -122,33 +130,62 @@ class Model(pl.LightningModule):
         b_labels = labels.repeat(batch_size, 1)
         label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
 
-        b_prelude_tokens = th.tensor([DIFF, BOS], device=D).repeat(batch_size, 1)
+        # prepare decoder prelude
+        b_prelude_embs = self.token_emb(th.tensor([DIFF, BOS], device=D)).repeat(batch_size, 1, 1)
         b_prelude_idxs = b_ctx_idxs[:,:1].repeat(1, 2)
+
+        # prepare decoder inputs
+        b_token_embs = th.gather(
+            th.stack([
+                self.token_emb(b_tokens),
+                self.timestamp_emb(th.clamp(b_token_idxs - b_ctx_idxs[:,:1], min=0)),
+            ], dim=0),
+            dim = 0,
+            index = b_types[None,:,:,None].expand(-1,-1,-1,self.embed_dim),
+        )[0]
+
         h = self.decoder(
-            x = self.embed(th.cat([b_prelude_tokens, b_tokens], dim=1)),
+            x = th.cat([b_prelude_embs, b_token_embs], dim=1),
             x_t = th.cat([b_prelude_idxs, b_token_idxs], dim=1),
             ctx = b_ctx,
             ctx_t = b_ctx_idxs,
             c = label_embs,
         ) # B N+2 E
 
-        diff_emb, h = h[:,0], h[:,1:-1] # B E, B N E
-        pred_labels = self.label_head(diff_emb) # B NUM_LABELS
+        pred_labels = self.label_head(h[:,0]) # B NUM_LABELS
         label_loss = (b_labels - pred_labels).pow(2).mean()
 
-        pred_logits = self.token_head(h) # B N V
+        pred_embs = h[:,1:-1] # B N E
+        pred_typs = self.type_head(pred_embs) # B N 2
+        type_loss = focal_loss(
+            pred_typs.flatten(0,1),
+            b_types.flatten(),
+            gamma = self.focal_gamma,
+        ).mean()
+
+        pred_token_logits = self.token_head(pred_embs) # B N V
         token_loss = focal_loss(
-            pred_logits.transpose(1,2),
-            b_tokens,
+            pred_token_logits[b_types == 0],
+            b_tokens[b_types == 0],
             gamma = self.focal_gamma,
             ignore_index = PAD,
         ).mean()
 
-        loss = token_loss + label_loss
+        pred_timestamp_logits = self.timestamp_head(pred_embs) # B N S
+        pred_timestamp_cdf = pred_timestamp_logits.softmax(dim=-1).cumsum(dim=-1) # B N S
+        true_timestamp_cdf = (b_token_idxs[:,:,None] >= b_ctx_idxs[:,None,:]).long() # B N S
+        timestamp_loss = (
+            pred_timestamp_cdf[b_types == 1]
+            - true_timestamp_cdf[b_types == 1]
+        ).pow(2).mean()
+
+        loss = label_loss + type_loss + token_loss + timestamp_loss
         return loss, {
             "loss": loss.detach(),
-            "token": token_loss.detach(),
             "label": label_loss.detach(),
+            "type": type_loss.detach(),
+            "token": token_loss.detach(),
+            "timestamp": timestamp_loss.detach(),
             "b_tokens.numel": th.tensor(b_tokens.numel(), dtype=th.float),
             "audio_len": th.tensor(audio.size(-1), dtype=th.float),
         }
