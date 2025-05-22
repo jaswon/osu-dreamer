@@ -12,6 +12,7 @@ from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.load_audio import A_DIM, get_frame_times
 
 from .data.tokens import Token, decode, PAD, BOS, EOS, DIFF
+from .data.tokenize import PositionToken, TimingToken
 
 from .model import Model
 
@@ -39,7 +40,7 @@ def sample(
     time_budget: int | float = float('inf'), # max allowed time (sec)
     show_progress: bool = False,
 ) -> tuple[
-    list[list[Token|float]],                # list of B lists of tokens and timestamps
+    list[list[Token | TimingToken | PositionToken]],                # list of B lists of tokens and timestamps
     Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
 ]:
     D = audio.device
@@ -62,9 +63,10 @@ def sample(
     cur_tail_idx = th.zeros(B).long().to(D)         # token index @ end of generation
     cur_types = th.empty(B,0).long().to(D)          # types of tokens
     cur_tokens = th.empty(B,0).long().to(D)         # discrete tokens
-    cur_token_idxs = th.empty(B,0).long().to(D)     # token positioning (/ timing tokens)
+    cur_token_idxs = th.empty(B,0).long().to(D)     # timing tokens
+    cur_token_locs = th.empty(B,0,2).to(D)          # location tokens
 
-    output_tokens: list[list[Token | float]] = [ [] for _ in range(B) ]
+    output_tokens: list[list[Token | TimingToken | PositionToken]] = [ [] for _ in range(B) ]
 
     pbar = tqdm.tqdm(total=L*B, disable=not show_progress)
     while True:
@@ -82,6 +84,7 @@ def sample(
             th.stack([
                 model.token_emb(cur_tokens),
                 model.timestamp_emb(th.clamp(cur_token_idxs - cur_start_idxs[:,None], min=0)),
+                model.pos_emb(cur_token_locs),
             ], dim=0), # K B N E
             dim = 0,
             index = cur_types[None,:,:,None].expand(-1,-1,-1,model.embed_dim),
@@ -118,6 +121,9 @@ def sample(
 
         pred_timestamp = th.multinomial(pred_timestamp_logits.softmax(dim=-1), num_samples=1)[:,0] # B
 
+        # predict positions
+        pred_positions = model.pos_head(pred_embs).float() # B 2
+
         # predict tokens
         pred_token_logits = model.token_head(pred_embs) # B V
         pred_tokens = th.multinomial(pred_token_logits.softmax(dim=-1), num_samples=1)[:,0] # B
@@ -142,12 +148,14 @@ def sample(
             cur_types = th.cat([cur_types, th.full((B,1), 0).to(D)], dim=1)
             cur_tokens = th.cat([cur_tokens, th.full((B,1), PAD).to(D)], dim=1)
             cur_token_idxs = th.cat([cur_token_idxs, th.full((B,1), -1).to(D)], dim=1)
+            cur_token_locs = th.cat([cur_token_locs, th.full((B,1,2), 0).to(D)], dim=1)
 
         # update sequence
         pred_tokens[pred_tokens == EOS] = PAD
         cur_types[TAIL] = pred_types
         cur_tokens[TAIL] = pred_tokens
         cur_token_idxs[TAIL] = pred_token_idxs
+        cur_token_locs[TAIL] = pred_positions
         cur_tail_idx += ((pred_types != 0) | (pred_tokens != PAD)).long()
         del TAIL
 
@@ -156,6 +164,7 @@ def sample(
         cur_types = roll_by_shifts(cur_types, shifts)
         cur_tokens = roll_by_shifts(cur_tokens, shifts)
         cur_token_idxs = roll_by_shifts(cur_token_idxs, shifts)
+        cur_token_locs = roll_by_shifts(cur_token_locs, shifts)
         cur_tail_idx -= shifts
 
         for b, (shift,batch_idx) in enumerate(zip(shifts, active_batches)):
@@ -164,13 +173,20 @@ def sample(
             output_tokens[batch_idx].extend((
                 [
                     decode(int(token)),
-                    float(frame_times[token_idx]),
+                    TimingToken(float(frame_times[token_idx])),
+                    PositionToken((x.item()+4)*64,(y.item()+3)*64),
                 ][typ]
-                for typ, token, token_idx in zip(cur_types[sl], cur_tokens[sl], cur_token_idxs[sl])
+                for typ, token, token_idx, (x,y) in zip(
+                    cur_types[sl], 
+                    cur_tokens[sl], 
+                    cur_token_idxs[sl],
+                    cur_token_locs[sl],
+                )
             ))
             cur_types[sl] = 0
             cur_tokens[sl] = PAD
             cur_token_idxs[sl] = -1
+            cur_token_locs[sl] = 0
 
         # remove completed samples from batch 
         next_active = cur_start_idxs < L
@@ -186,13 +202,15 @@ def sample(
             cur_types = cur_types[next_active]
             cur_tokens = cur_tokens[next_active]
             cur_token_idxs = cur_token_idxs[next_active]
+            cur_token_locs = cur_token_locs[next_active]
             c = c[next_active]
 
         # shrink sequence
-        while cur_tokens.size(1) > 0 and (cur_tokens[:,-1] == PAD).all():
+        while cur_tokens.size(1) > 0 and ((cur_types[:,-1] == 0) & (cur_tokens[:,-1] == PAD)).all():
             cur_types = cur_types[:,:-1]
             cur_tokens = cur_tokens[:,:-1]
             cur_token_idxs = cur_token_idxs[:,:-1]
+            cur_token_locs = cur_token_locs[:,:-1]
             
     pbar.close()
 
@@ -201,9 +219,15 @@ def sample(
         output_tokens[batch_idx].extend((
             [
                 decode(int(token)),
-                float(frame_times[token_idx]),
+                TimingToken(float(frame_times[token_idx])),
+                PositionToken((x.item()+4)*64,(y.item()+3)*64),
             ][typ]
-            for typ, token, token_idx in zip(cur_types[sl], cur_tokens[sl], cur_token_idxs[sl])
+            for typ, token, token_idx, (x,y) in zip(
+                cur_types[sl], 
+                cur_tokens[sl], 
+                cur_token_idxs[sl],
+                cur_token_locs[sl],
+            )
         ))
 
     return output_tokens, th.stack([ th.stack(l).mean(dim=0) for l in pred_labels ])

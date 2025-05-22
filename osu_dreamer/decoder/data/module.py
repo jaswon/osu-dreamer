@@ -24,7 +24,8 @@ class Batch(NamedTuple):
     audio: Float[Tensor, str(f"B {A_DIM} L")]
     types: Int[Tensor, "B N"]
     tokens: Int[Tensor, "B N"]
-    timestamps: Int[Tensor, "B N"]
+    timestamps: Float[Tensor, "B N"]
+    positions: Float[Tensor, "B N 2"]
 
 class TokenDataset(BeatmapDataset):
     def __init__(self, max_audio_len: int, dataset):
@@ -37,7 +38,7 @@ class TokenDataset(BeatmapDataset):
             return
         with open(map_file, 'rb') as f:
             bm = pickle.load(f)
-        types, tokens, timestamps = tokenize(bm)
+        types, tokens, timestamps, positions = tokenize(bm)
         labels = get_labels(bm)
         
         yield Batch(
@@ -46,6 +47,7 @@ class TokenDataset(BeatmapDataset):
             th.tensor(types).long(),
             th.tensor(tokens).long(),
             th.tensor(timestamps).float(),
+            th.tensor(positions).float(),
         )
 
     

@@ -1,6 +1,8 @@
 
 from typing import Iterator
 
+from dataclasses import dataclass
+
 from jaxtyping import Int, Float
 import numpy as np
 
@@ -8,21 +10,34 @@ from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.osu.hit_objects import Circle, HitObject, Slider, Spinner
 from osu_dreamer.osu.sliders import Bezier, Line, Perfect
 
-from .tokens import TokenType, Token, encode
+from .tokens import TokenType, Token, encode, PAD
 
-def timing_token(t: int|float) -> float:
-    return float(t)
+@dataclass
+class TimingToken:
+    t: float
 
-def location_token(x: int|float, y: int|float) -> Token:
-    x = min(512+256,max(-256,x))
-    y = min(384+256,max(-256,y))
-    r = 4 if (0<=x<=512) and (0<=y<=384) else 16
-    return Token(TokenType.LOCATION, (round(x/r)*r, round(y/r)*r))
+    def __str__(self):
+        return f"t= {self.t:.2f}"
+
+@dataclass
+class PositionToken:
+    x: float
+    y: float
+
+    def __str__(self):
+        return f"({self.x:.2f}, {self.y:.2f})"
+
+def timing_token(t: int|float) -> TimingToken:
+    return TimingToken(float(t))
+
+def location_token(x: int|float, y: int|float) -> PositionToken:
+    # rescale (0,512)x(0,384) -> (-4,4)x(-3,3)
+    return PositionToken(float(x)/64-4, float(y)/64-3)
 
 def onset_tokens(ho: HitObject) -> Iterator[Token]:
     yield Token(TokenType.FLAGS, (ho.new_combo, ho.whistle, ho.finish, ho.clap))
 
-def slider_tokens(ho: Slider) -> Iterator[Token]:
+def slider_tokens(ho: Slider) -> Iterator[Token | TimingToken | PositionToken]:
     yield Token(TokenType.SLIDES, min(99,ho.slides))
 
     match ho:
@@ -50,7 +65,7 @@ def slider_tokens(ho: Slider) -> Iterator[Token]:
         case _:
             raise ValueError(f'unexpected slider type and control points: ({type(ho)}) {ho.ctrl_pts}')
 
-def beatmap_tokens(bm: Beatmap) -> Iterator[Token | float]:
+def beatmap_tokens(bm: Beatmap) -> Iterator[Token | TimingToken | PositionToken]:
     breaks = iter(bm.breaks)
     next_break = next(breaks, None)
     for ho in bm.hit_objects:
@@ -80,31 +95,40 @@ def beatmap_tokens(bm: Beatmap) -> Iterator[Token | float]:
                     raise ValueError(f'bad slider @ {ho.t} in {bm.filename}') from e
 
 def tokenize(bm: Beatmap) -> tuple[
-    Int[np.ndarray, "N"],   # type
-    Int[np.ndarray, "N"],   # tokens
-    Float[np.ndarray, "N"], # timestamps
+    Int[np.ndarray, "N"],       # type
+    Int[np.ndarray, "N"],       # tokens
+    Float[np.ndarray, "N"],     # timestamps
+    Float[np.ndarray, "N 2"],   # positions
 ]:
     """
-    return (types, tokens, timestamps) for the beatmap
+    return (types, tokens, timestamps, positions) for the beatmap
     """
     types: list[int] = []
     tokens: list[int] = []
     timestamps: list[float] = []
+    positions: list[tuple[float,float]] = []
     cur_t: float
+    cur_p = (256.,192.)
     for i, token in enumerate(beatmap_tokens(bm)):
         match token:
             case Token():
                 typ = 0
                 token_id = encode(token)
-            case float(t):
+            case TimingToken(t):
                 typ = 1
-                cur_t = float(t)
-                token_id = -1
+                token_id = PAD
+                cur_t = t
+            case PositionToken(x,y):
+                typ = 2
+                token_id = PAD
+                cur_p = (x,y)
         types.append(typ)
         tokens.append(token_id)
         timestamps.append(cur_t)
+        positions.append(cur_p)
     return (
         np.array(types, dtype=int),
         np.array(tokens, dtype=int), 
         np.array(timestamps, dtype=float), 
+        np.array(positions, dtype=float),
     )

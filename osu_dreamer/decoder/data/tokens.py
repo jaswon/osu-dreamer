@@ -10,9 +10,9 @@ class CustomReprEnum(Enum):
 
 TokenType = CustomReprEnum('TokenType', [
     # special tokens
+    "PAD",
     "BOS",
     "EOS",
-    "PAD",
     "DIFF",
 
     # object types
@@ -31,7 +31,6 @@ TokenType = CustomReprEnum('TokenType', [
     "BEZIER_END",
 
     "FLAGS",
-    "LOCATION",
 ])
 
 class Token(NamedTuple):
@@ -48,9 +47,9 @@ def decode(token_id: int) -> Token:
     return _id2token[token_id]
 
 _id2token: tuple[Token, ...] = (
+    Token(TokenType.PAD),
     Token(TokenType.BOS),
     Token(TokenType.EOS),
-    Token(TokenType.PAD),
     Token(TokenType.DIFF),
 
     Token(TokenType.CIRCLE),
@@ -72,17 +71,6 @@ _id2token: tuple[Token, ...] = (
     *( # new combo, whistle, finish, clap
         Token(TokenType.FLAGS, flags)
         for flags in product([False, True], repeat=4)
-    ),
-    *( # hi-res on-screen coordinates
-        Token(TokenType.LOCATION, (x,y))
-        for x in range(0, 512+4, 4)
-        for y in range(0, 384+4, 4)
-    ),
-    *( # low-res off-screen coordinates
-        Token(TokenType.LOCATION, (x,y))
-        for x in range(-256, 512+256+16, 16)
-        for y in range(-256, 384+256+16, 16)
-        if not ((0<=x<=512) and (0<=y<=384))
     ),
 )
 

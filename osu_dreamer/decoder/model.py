@@ -17,7 +17,8 @@ from osu_dreamer.modules.muon import Muon
 
 
 from .data.module import Batch
-from .data.tokens import Token, TokenType, encode, BOS, VOCAB_SIZE, DIFF, PAD
+from .data.tokens import Token, BOS, VOCAB_SIZE, DIFF, PAD
+from .data.tokenize import PositionToken, TimingToken
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -77,7 +78,7 @@ class Model(pl.LightningModule):
         )
 
         self.type_head = nn.Sequential(
-            MP.Linear(embed_dim, 2), # { token, timestamp }
+            MP.Linear(embed_dim, 3), # { token, timestamp, position }
             MP.Gain(),
         )
 
@@ -94,6 +95,12 @@ class Model(pl.LightningModule):
             MP.Gain(),
         )
         self.token_head[0].weight = self.token_emb.weight
+
+        self.pos_emb = MP.Linear(2, embed_dim)
+        self.pos_head = nn.Sequential(
+            MP.Linear(embed_dim, 2),
+            MP.Gain(),
+        )
 
         self.label_emb = LabelEmbedding(label_dim, label_emb_args)
         self.label_head = nn.Linear(embed_dim, NUM_LABELS)
@@ -113,12 +120,13 @@ class Model(pl.LightningModule):
         types: Int[Tensor, "1 N"],
         tokens: Int[Tensor, "1 N"],
         timestamps: Float[Tensor, "1 N"],
+        positions: Float[Tensor, "1 N 2"],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
         D = audio.device
         ctx = self.audio_encoder(audio.transpose(1,2))[0] # L H
-        b_ctx_idxs, b_types, b_token_idxs, b_tokens = make_batch(
-            types[0], tokens[0], timestamps[0],
+        b_ctx_idxs, b_types, b_token_idxs, b_tokens, b_token_locs = make_batch(
+            types[0], tokens[0], timestamps[0], positions[0],
             seq_len = self.seq_len,
             num_frames = ctx.size(0),
             max_token_numel = self.max_token_numel,
@@ -139,6 +147,7 @@ class Model(pl.LightningModule):
             th.stack([
                 self.token_emb(b_tokens),
                 self.timestamp_emb(th.clamp(b_token_idxs - b_ctx_idxs[:,:1], min=0)),
+                self.pos_emb(b_token_locs),
             ], dim=0),
             dim = 0,
             index = b_types[None,:,:,None].expand(-1,-1,-1,self.embed_dim),
@@ -156,7 +165,7 @@ class Model(pl.LightningModule):
         label_loss = (b_labels - pred_labels).pow(2).mean()
 
         pred_embs = h[:,1:-1] # B N E
-        pred_typs = self.type_head(pred_embs) # B N 2
+        pred_typs = self.type_head(pred_embs) # B N 3
         type_loss = focal_loss(
             pred_typs.flatten(0,1),
             b_types.flatten(),
@@ -179,13 +188,20 @@ class Model(pl.LightningModule):
             - true_timestamp_cdf[b_types == 1]
         ).pow(2).mean()
 
-        loss = label_loss + type_loss + token_loss + timestamp_loss
+        pred_locs = self.pos_head(pred_embs) # B N 2
+        position_loss = ( 
+            pred_locs[b_types == 2]
+            - b_token_locs[b_types == 2]
+        ).pow(2).mean()
+
+        loss = label_loss + type_loss + token_loss + timestamp_loss + position_loss
         return loss, {
             "loss": loss.detach(),
             "label": label_loss.detach(),
             "type": type_loss.detach(),
             "token": token_loss.detach(),
             "timestamp": timestamp_loss.detach(),
+            "position": position_loss.detach(),
             "b_tokens.numel": th.tensor(b_tokens.numel(), dtype=th.float),
             "audio_len": th.tensor(audio.size(-1), dtype=th.float),
         }
@@ -198,7 +214,7 @@ class Model(pl.LightningModule):
         time_budget: int | float = float('inf'), # max allowed time (sec)
         show_progress: bool = False,
     ) -> tuple[
-        list[list[Token|float]],                # list of B lists of tokens and timestamps
+        list[list[Token | TimingToken | PositionToken]],                # list of B lists of tokens
         Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
     ]:
         from .sample import sample
@@ -222,11 +238,11 @@ class Model(pl.LightningModule):
         return loss
     
     def on_after_backward(self):
-        self.log("train/grad_l2", sum(
-            p.grad.detach().norm(2).item() ** 2
+        self.log("train/grad_l2", th.cat([
+            p.grad.detach().flatten()
             for p in self.parameters()
             if p.grad is not None
-        ) ** .5)
+        ], dim=0).norm(2).item())
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         _, log_dict = self(*batch)

@@ -13,14 +13,16 @@ def make_batch(
     types: Int[Tensor, "N"],
     tokens: Int[Tensor, "N"],
     timestamps: Float[Tensor, "N"],
+    positions: Float[Tensor, "N 2"],
     seq_len: int,
     num_frames: int,
     max_token_numel: int,
 ) -> tuple[
-    Int[Tensor, "B S"],         # audio positioning 
+    Int[Tensor, "B S"],         # audio timing 
     Int[Tensor, "B T"],         # output types
-    Int[Tensor, "B T"],         # token positioning
-    Int[Tensor, "B T"],         # tokens
+    Int[Tensor, "B T"],         # token timing
+    Int[Tensor, "B T"],         # tokens 
+    Float[Tensor, "B T 2"],     # token positioning
 ]:
     D = tokens.device
     frame_times = th.tensor(get_frame_times(num_frames), device=D).float() # L
@@ -58,6 +60,7 @@ def make_batch(
     b_types = th.full((len(batches), max_tokens+1), 0).long().to(D)
     b_tokens = th.full((len(batches), max_tokens+1), PAD).to(D)
     b_token_idxs = th.full((len(batches), max_tokens+1), -1).long().to(D)
+    b_token_locs = th.full((len(batches), max_tokens+1, 2), 0.).to(D)
 
     for idx, (ctx_start_idx, token_start_idx, token_end_idx) in enumerate(batches):
         b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_start_idx+seq_len)
@@ -65,11 +68,8 @@ def make_batch(
         num_tokens = token_end_idx - token_start_idx
         b_types[idx, :num_tokens] = types[token_start_idx:token_end_idx]
         b_token_idxs[idx, :num_tokens] = token_frame_idxs[token_start_idx:token_end_idx]
-        b_tokens[idx, :num_tokens] = th.where(
-            b_types[idx, :num_tokens] == 0,
-            tokens[token_start_idx:token_end_idx],
-            PAD,
-        )
+        b_token_locs[idx, :num_tokens] = positions[token_start_idx:token_end_idx]
+        b_tokens[idx, :num_tokens] = tokens[token_start_idx:token_end_idx]
         b_tokens[idx, num_tokens] = EOS
 
-    return b_ctx_idxs, b_types, b_token_idxs, b_tokens
+    return b_ctx_idxs, b_types, b_token_idxs, b_tokens, b_token_locs
