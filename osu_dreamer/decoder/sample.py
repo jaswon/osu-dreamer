@@ -52,7 +52,7 @@ def sample(
     
     L = audio.size(-1)
     half_window = int(model.seq_len * .5)
-    ctx = model.audio_encoder(F.pad(audio, (0, model.seq_len-1))[None])[0].transpose(0,1) # L+s-1 H
+    ctx = model.audio_encoder(F.pad(audio, (0, model.seq_len-1))[None].transpose(1,2))[0] # L+s-1 H
     frame_times = th.tensor(get_frame_times(L+model.seq_len-1))
 
     prelude_tokens = th.tensor([DIFF, BOS], device=D).long().repeat(B,1)

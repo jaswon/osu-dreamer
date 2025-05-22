@@ -15,13 +15,13 @@ from osu_dreamer.data.load_audio import A_DIM
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.muon import Muon
 
-from osu_dreamer.modules.dit import DiT, DiTArgs
 
 from .data.module import Batch
 from .data.tokens import Token, TokenType, encode, BOS, VOCAB_SIZE, DIFF, PAD
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
 from .modules.decoder import Decoder, DecoderArgs
+from .modules.encoder import Encoder, EncoderArgs
 
 from .make_batch import make_batch
 
@@ -51,7 +51,7 @@ class Model(pl.LightningModule):
         # model hparams
         ctx_dim: int,
         encoder_dim: int,
-        encoder_args: DiTArgs,
+        encoder_args: EncoderArgs,
 
         label_dim: int,
         label_emb_args: LabelEmbeddingArgs,
@@ -75,9 +75,9 @@ class Model(pl.LightningModule):
 
         # model
         self.audio_encoder = nn.Sequential(
-            MP.Conv1d(A_DIM, encoder_dim, 1),
-            DiT(encoder_dim, None, encoder_args),
-            MP.Conv1d(encoder_dim, ctx_dim, 1),
+            MP.Linear(A_DIM, encoder_dim),
+            Encoder(encoder_dim, encoder_args),
+            MP.Linear(encoder_dim, ctx_dim),
         )
 
         self.embed = MP.Embedding(VOCAB_SIZE, embed_dim)
@@ -108,7 +108,7 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
         D = audio.device
-        ctx = self.audio_encoder(audio)[0].transpose(0,1) # L H
+        ctx = self.audio_encoder(audio.transpose(1,2))[0] # L H
         b_ctx_idxs, b_token_idxs, b_tokens = make_batch(
             tokens[0], timestamps[0],
             seq_len = self.seq_len,
