@@ -10,7 +10,7 @@ from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.osu.hit_objects import Circle, HitObject, Slider, Spinner
 from osu_dreamer.osu.sliders import Bezier, Line, Perfect
 
-from .tokens import TokenType, Token, encode, PAD
+from .tokens import BOS, EOS, TokenType, Token, encode, PAD
 
 @dataclass
 class TimingToken:
@@ -95,39 +95,43 @@ def beatmap_tokens(bm: Beatmap) -> Iterator[Token | TimingToken | PositionToken]
                     raise ValueError(f'bad slider @ {ho.t} in {bm.filename}') from e
 
 def tokenize(bm: Beatmap) -> tuple[
-    Int[np.ndarray, "N"],       # type
+    Int[np.ndarray, "N"],       # modes
     Int[np.ndarray, "N"],       # tokens
     Float[np.ndarray, "N"],     # timestamps
     Float[np.ndarray, "N 2"],   # positions
 ]:
     """
-    return (types, tokens, timestamps, positions) for the beatmap
+    return (modes, tokens, timestamps, positions) for the beatmap
     """
-    types: list[int] = []
-    tokens: list[int] = []
-    timestamps: list[float] = []
-    positions: list[tuple[float,float]] = []
+    modes: list[int] = [0]
+    tokens: list[int] = [BOS]
+    timestamps: list[float] = [0]
+    positions: list[tuple[float,float]] = [(0,0)]
     cur_t: float
-    cur_p = (256.,192.)
+    cur_p = (0.,0.)
     for i, token in enumerate(beatmap_tokens(bm)):
         match token:
             case Token():
-                typ = 0
+                mode = 0
                 token_id = encode(token)
             case TimingToken(t):
-                typ = 1
+                mode = 1
                 token_id = PAD
                 cur_t = t
             case PositionToken(x,y):
-                typ = 2
+                mode = 2
                 token_id = PAD
                 cur_p = (x,y)
-        types.append(typ)
+        modes.append(mode)
         tokens.append(token_id)
         timestamps.append(cur_t)
         positions.append(cur_p)
+    modes.append(0)
+    tokens.append(EOS)
+    timestamps.append(cur_t)
+    positions.append(cur_p)
     return (
-        np.array(types, dtype=int),
+        np.array(modes, dtype=int),
         np.array(tokens, dtype=int), 
         np.array(timestamps, dtype=float), 
         np.array(positions, dtype=float),

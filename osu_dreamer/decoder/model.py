@@ -108,24 +108,20 @@ class Model(pl.LightningModule):
             ctx = b_ctx,
             ctx_t = b_ctx_idxs,
             c = label_embs,
-        ) # B N+2 E - DIFF, BOS, ...
-
-        pred_labels = self.label_head(h[:,0]) # B NUM_LABELS
-        label_loss = (b_labels - pred_labels).pow(2).mean()
+        ) # B N E - ...
 
         pred_loss, modal_log_dict = self.modal_head(
-            pred_embs = h[:,1:-1],
-            true_modes = b_modes[:,2:],
-            true_tokens = b_tokens[:,2:],
-            true_timings = b_timings[:,2:],
-            true_positions = b_positions[:,2:],
+            pred_embs = h[:,:-1],
+            true_modes = b_modes[:,1:],
+            true_tokens = b_tokens[:,1:],
+            true_timings = b_timings[:,1:],
+            true_positions = b_positions[:,1:],
             focal_gamma = self.focal_gamma,
         )
 
-        loss = label_loss + pred_loss
+        loss = pred_loss
         return loss, {
             "loss": loss.detach(),
-            "label": label_loss.detach(),
             "b_tokens.numel": th.tensor(b_tokens.numel(), dtype=th.float),
             "audio_len": th.tensor(audio.size(-1), dtype=th.float),
             **modal_log_dict,
@@ -138,10 +134,7 @@ class Model(pl.LightningModule):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         time_budget: int | float = float('inf'), # max allowed time (sec)
         show_progress: bool = False,
-    ) -> tuple[
-        list[list[Token | TimingToken | PositionToken]],                # list of B lists of tokens
-        Float[Tensor, str(f"B {NUM_LABELS}")],  # predicted labels
-    ]:
+    ) -> list[list[Token | TimingToken | PositionToken]]:
         from .sample import sample
         return sample(self, audio, labels, time_budget, show_progress)
 
@@ -186,15 +179,7 @@ class Model(pl.LightningModule):
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
 
-        def f_label(label: Float[Tensor, str(f"{NUM_LABELS}")]):
-            sr, ar, od, cs, hp = [ round(l.item(), ndigits=1) for l in label ]
-            return f'{sr=:>4} {ar=:>4} {od=:>4} {cs=:>4} {hp=:>4}'
-
-        samples, pred_labels = self.sample(audio, label, time_budget=10)
-        for i, (sample, pred_label) in enumerate(zip(samples, pred_labels)):
-            sample_text = '\n'.join([
-                f'true: {f_label(true_label)}',
-                f'pred: {f_label(pred_label)}',
-                '',
-            ] + [ str(event) for event in sample ])
+        samples = self.sample(audio, label, time_budget=10)
+        for i, sample in enumerate(samples):
+            sample_text = '\n'.join([ str(event) for event in sample ])
             exp.add_text(f'sample/{i}', sample_text, global_step=self.global_step)

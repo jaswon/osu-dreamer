@@ -48,23 +48,19 @@ def make_batch(
         batches.append((ctx_start_idx, token_start_idx, token_end_idx))
 
     b_ctx_idxs = th.empty(len(batches), seq_len).long().to(D) # B S
-    b_modes = th.full((len(batches), max_tokens+3), 0).long().to(D)
-    b_tokens = th.full((len(batches), max_tokens+3), PAD).long().to(D)
-    b_timings = th.full((len(batches), max_tokens+3), 0).long().to(D)
-    b_positions = th.full((len(batches), max_tokens+3, 2), 0.).to(D)
-
-    mode_prelude = th.tensor([0, 0]).to(D)
-    token_prelude = th.tensor([DIFF, BOS]).to(D)
+    b_modes = th.full((len(batches), max_tokens), 0).long().to(D)
+    b_tokens = th.full((len(batches), max_tokens), PAD).long().to(D)
+    b_timings = th.full((len(batches), max_tokens), 0).long().to(D)
+    b_positions = th.full((len(batches), max_tokens, 2), 0.).to(D)
     
     for idx, (ctx_start_idx, token_start_idx, token_end_idx) in enumerate(batches):
         b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_start_idx+seq_len)
 
         num_tokens = token_end_idx - token_start_idx
         sl = slice(token_start_idx,token_end_idx)
-        b_modes[idx, :2+num_tokens] = th.cat([ mode_prelude, modes[sl] ], dim=0)
-        b_tokens[idx, :2+num_tokens] = th.cat([ token_prelude, tokens[sl] ], dim=0)
-        b_tokens[idx, 2+num_tokens] = EOS
-        b_timings[idx, 2:2+num_tokens] = token_frame_idxs[sl] - ctx_start_idx
-        b_positions[idx, 2:2+num_tokens] = positions[sl]
+        b_modes[idx, :num_tokens] = modes[sl]
+        b_tokens[idx, :num_tokens] = tokens[sl]
+        b_timings[idx, :num_tokens] = token_frame_idxs[sl] - ctx_start_idx
+        b_positions[idx, :num_tokens] = positions[sl]
 
     return b_ctx_idxs, b_modes, b_tokens, b_timings, b_positions
