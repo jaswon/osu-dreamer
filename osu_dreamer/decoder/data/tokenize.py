@@ -7,7 +7,7 @@ from jaxtyping import Int, Float
 import numpy as np
 
 from osu_dreamer.osu.beatmap import Beatmap
-from osu_dreamer.osu.hit_objects import Circle, HitObject, Slider, Spinner
+from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner
 from osu_dreamer.osu.sliders import Bezier, Line, Perfect
 
 from .tokens import BOS, EOS, TokenType, Token, encode, PAD
@@ -27,39 +27,29 @@ class PositionToken:
     def __str__(self):
         return f"POSITION({self.x:.2f}, {self.y:.2f})"
 
-def timing_token(t: int|float) -> TimingToken:
-    return TimingToken(float(t))
-
-def location_token(x: int|float, y: int|float) -> PositionToken:
-    # rescale (0,512)x(0,384) -> (-4,4)x(-3,3)
-    return PositionToken(float(x)/64-4, float(y)/64-3)
-
-def onset_tokens(ho: HitObject) -> Iterator[Token]:
-    yield Token(TokenType.FLAGS, (ho.new_combo, ho.whistle, ho.finish, ho.clap))
-
-def slider_tokens(ho: Slider) -> Iterator[Token | TimingToken | PositionToken]:
+def slider_tokens(ho: Slider) -> Iterator[Token | PositionToken]:
     yield Token(TokenType.SLIDES, min(99,ho.slides))
 
     match ho:
         case Line(ctrl_pts=[a,b]):
-            yield location_token(*a)
+            yield PositionToken(*a)
             yield Token(TokenType.LINE)
-            yield location_token(*b)
+            yield PositionToken(*b)
         case Perfect(ctrl_pts=[a,b,c]):
-            yield location_token(*a)
+            yield PositionToken(*a)
             yield Token(TokenType.PERFECT)
-            yield location_token(*b)
-            yield location_token(*c)
+            yield PositionToken(*b)
+            yield PositionToken(*c)
         case Bezier(ctrl_pts=[a,b,*rest]):
-            yield location_token(*a)
+            yield PositionToken(*a)
             yield Token(TokenType.BEZIER)
-            yield location_token(*b)
+            yield PositionToken(*b)
             last = tuple(b)
             for c in rest:
                 if tuple(c) == last:
                     yield Token(TokenType.KNOT)
                 else:
-                    yield location_token(*c)
+                    yield PositionToken(*c)
                 last = tuple(c)
             yield Token(TokenType.BEZIER_END)
         case _:
@@ -70,23 +60,23 @@ def beatmap_tokens(bm: Beatmap) -> Iterator[Token | TimingToken | PositionToken]
     next_break = next(breaks, None)
     for ho in bm.hit_objects:
         if next_break is not None and next_break.t < ho.t:
-            yield timing_token(next_break.t)
+            yield TimingToken(float(next_break.t))
             yield Token(TokenType.BREAK)
 
-            yield timing_token(next_break.end_time())
+            yield TimingToken(float(next_break.end_time()))
             yield Token(TokenType.RELEASE)
             next_break = next(breaks, None)
 
-        yield timing_token(ho.t)
+        yield TimingToken(float(ho.t))
         match ho:
             case Circle(): yield Token(TokenType.CIRCLE)
             case Spinner(): yield Token(TokenType.SPINNER)
             case Slider(): yield Token(TokenType.SLIDER)
-        yield from onset_tokens(ho)
+        yield Token(TokenType.FLAGS, (ho.new_combo, ho.whistle, ho.finish, ho.clap))
         if isinstance(ho, Circle):
-            yield location_token(ho.x, ho.y)
+            yield PositionToken(ho.x, ho.y)
         else:
-            yield timing_token(ho.end_time())
+            yield TimingToken(float(ho.end_time()))
             yield Token(TokenType.RELEASE)
             if isinstance(ho, Slider):
                 try:
@@ -121,7 +111,8 @@ def tokenize(bm: Beatmap) -> tuple[
             case PositionToken(x,y):
                 mode = 2
                 token_id = PAD
-                cur_p = (x,y)
+                # rescale (0,512)x(0,384) -> (-4,4)x(-3,3)
+                cur_p = (float(x)/64-4, float(y)/64-3)
         modes.append(mode)
         tokens.append(token_id)
         timestamps.append(cur_t)
