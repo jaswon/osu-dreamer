@@ -18,6 +18,19 @@ def focal_loss(
     inputs = (1 - logpt.exp()).pow(gamma) * logpt
     return F.nll_loss(inputs, target, weight, reduction='none', *args, **kwargs)
 
+
+def kumaraswamy_cdf(params: Float[Tensor, "... 2"], n_points: int) -> Float[Tensor, "... N"]:
+    from torch.distributions import Kumaraswamy
+    dist = Kumaraswamy(1+params[...,:1], 1+params[...,1:])
+    points = th.linspace(0, 1, n_points, device=params.device).view(*([1] * (params.ndim-1)), -1)
+    return dist.cdf(points)
+
+def kumaraswamy_logits(params: Float[Tensor, "... 2"], n_points: int) -> Float[Tensor, "... N"]:
+    from torch.distributions import Kumaraswamy
+    dist = Kumaraswamy(1+params[...,:1], 1+params[...,1:])
+    points = th.linspace(0, 1, n_points, device=params.device).view(*([1] * (params.ndim-1)), -1)
+    return th.nan_to_num(dist.log_prob(points), nan=-th.inf)
+
 class ModalHead(nn.Module):
     def __init__(
         self,
@@ -33,15 +46,17 @@ class ModalHead(nn.Module):
 
         # token head
         self.token_emb = nn.Embedding(VOCAB_SIZE, emb_dim)
-        self.token_head = nn.Linear(emb_dim, VOCAB_SIZE)
         th.nn.init.normal_(self.token_emb.weight)
+        self.token_head = nn.Linear(emb_dim, VOCAB_SIZE)
         self.token_head.weight = self.token_emb.weight
 
         # timing head
         self.timing_emb = nn.Embedding(timing_domain, emb_dim) # ... -> ... E
-        self.timing_head = nn.Linear(emb_dim, timing_domain) # ... E -> ... S
         th.nn.init.normal_(self.timing_emb.weight)
-        self.timing_head.weight = self.timing_emb.weight
+        self.timing_head = nn.Sequential(
+            nn.Linear(emb_dim, 2),
+            nn.Softplus(),
+        ) # parametrize timing distribution via kumaraswamy
 
         # position head
         self.pos_emb = nn.Linear(2, emb_dim) # ... 2 -> ... E
@@ -79,8 +94,8 @@ class ModalHead(nn.Module):
         ).mean()
 
         # timing loss - crps
-        pred_timing_logits = self.timing_head(pred_embs) # ... S
-        pred_timing_cdf = pred_timing_logits.softmax(dim=-1).cumsum(dim=-1) # ... S
+        pred_timing_dist_params = self.timing_head(pred_embs) # ... 2
+        pred_timing_cdf = kumaraswamy_cdf(pred_timing_dist_params, self.timing_domain) # ... S
         true_timing_cdf = (th.arange(self.timing_domain).to(D) >= true_timings[...,None]).float() # ... S
         timing_loss = F.mse_loss(
             pred_timing_cdf[true_modes == 1],
@@ -136,7 +151,8 @@ class ModalHead(nn.Module):
         tokens[modes != 0] = PAD
 
         # sample timings
-        timing_logits = self.timing_head(embs) # B S
+        timing_dist_params = self.timing_head(embs) # ... 2
+        timing_logits = kumaraswamy_logits(timing_dist_params, self.timing_domain) # ... S
         for b_idx, num_mask in enumerate(timings_to_mask):
             timing_logits[b_idx, :num_mask] = -th.inf
         timings = th.multinomial(timing_logits.softmax(dim=-1), num_samples=1)[:,0] # B
