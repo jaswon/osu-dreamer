@@ -56,16 +56,16 @@ def sample(
     cur_start_idxs = th.zeros(B).long().to(D)       # current context window start index
     cur_tail_idx = th.zeros(B).long().to(D)         # index of most recently generated token
 
+    cur_idxs        = th.tensor([0]).to(D).repeat(B,1)
     cur_modes       = th.tensor([0]).to(D).repeat(B,1)          # modes
     cur_tokens      = th.tensor([BOS]).to(D).repeat(B,1)        # tokens
-    cur_timings     = th.tensor([0]).to(D).repeat(B,1)          # timings
     cur_positions   = th.tensor([[0.,0.]]).to(D).repeat(B,1,1)  # positions
 
     def pred_output(sl):
         for typ, token, token_idx, (x,y) in zip(
             cur_modes[sl], 
             cur_tokens[sl], 
-            cur_timings[sl],
+            cur_idxs[sl],
             cur_positions[sl],
         ):
             yield [
@@ -87,16 +87,19 @@ def sample(
         cur_ctx_idxs = th.arange(model.seq_len).to(D)[None] + cur_start_idxs[:,None] # B S
         cur_ctx = ctx[cur_ctx_idxs] # B S H
 
+        cur_timings = cur_idxs - cur_start_idxs[:,None]
+
+        cur_pad_idxs = th.arange(cur_modes.size(1)).to(D) > cur_tail_idx[:,None]
         cur_embs = model.modal_head.embed(
-            modes = cur_modes,
-            tokens = cur_tokens,
-            timings = cur_timings,
-            positions = cur_positions,
+            modes = cur_modes.index_put((cur_pad_idxs,), th.tensor(0)),
+            tokens = cur_tokens.index_put((cur_pad_idxs,), th.tensor(PAD)),
+            timings = cur_timings.index_put((cur_pad_idxs,), th.tensor(0)),
+            positions = cur_positions.index_put((cur_pad_idxs,), th.tensor(0)),
         )
 
         h = model.decoder(
             x = cur_embs,
-            x_t = cur_timings + cur_start_idxs[:,None],
+            x_t = cur_idxs,
             ctx = cur_ctx, 
             ctx_t = cur_ctx_idxs, 
             c = c,
@@ -112,27 +115,28 @@ def sample(
             timings_to_mask = cur_timings[rB, cur_tail_idx], # prevent emitting already emitted timings
         )
 
-        pred_latest_timings = th.where(
-            pred_modes == 1,                  # timing predicted
-            pred_timings,                     # ? use predicted timings
-            cur_timings[rB, cur_tail_idx],    # : use current timings
+        pred_latest_idxs = th.where(
+            pred_modes == 1,                    # timing predicted
+            pred_timings + cur_start_idxs,      # ? use predicted timings
+            cur_idxs[rB, cur_tail_idx],         # : use current timings
         ) # B
 
         # grow sequence
+        cur_idxs = th.cat([cur_idxs, cur_idxs[:,-1:]], dim=1)
         cur_modes = th.cat([cur_modes, cur_modes[:,-1:]], dim=1)
         cur_tokens = th.cat([cur_tokens, cur_tokens[:,-1:]], dim=1)
-        cur_timings = th.cat([cur_timings, cur_timings[:,-1:]], dim=1)
         cur_positions = th.cat([cur_positions, cur_positions[:,-1:]], dim=1)
 
         # update sequence
         cur_tail_idx += ((pred_modes != 0) | (pred_tokens != PAD)).long()
         pred_tokens[pred_tokens == EOS] = PAD
+        cur_idxs[rB, cur_tail_idx] = pred_latest_idxs
         cur_modes[rB, cur_tail_idx] = pred_modes
         cur_tokens[rB, cur_tail_idx] = pred_tokens
-        cur_timings[rB, cur_tail_idx] = pred_latest_timings
         cur_positions[rB, cur_tail_idx] = pred_positions
 
         # update windows
+        pred_latest_timings = pred_latest_idxs - cur_start_idxs
         update = th.where(
             (pred_modes == 0) & (pred_tokens == EOS),               # no tokens remaining for current window
             model.seq_len,                                          # ? slide full window
@@ -140,25 +144,18 @@ def sample(
         ) # B
         pbar.update(update.sum().item())
         cur_start_idxs += update
-        cur_timings -= update[:,None]
-        cur_timings[th.arange(cur_timings.size(1)) > cur_tail_idx[:,None]] = 0
 
         # dequeue tokens that are before start of new window
         shifts = (cur_timings >= 0).long().argmax(dim=1) # B
+        cur_idxs = roll_by_shifts(cur_idxs, shifts)
         cur_modes = roll_by_shifts(cur_modes, shifts)
         cur_tokens = roll_by_shifts(cur_tokens, shifts)
-        cur_timings = roll_by_shifts(cur_timings, shifts)
         cur_positions = roll_by_shifts(cur_positions, shifts)
         cur_tail_idx -= shifts
 
         for b, (shift,batch_idx) in enumerate(zip(shifts, active_batches)):
             sl = (b, slice(cur_tokens.size(1)-shift,None)) # ...[b,-shift:]
-
             output_tokens[batch_idx].extend(pred_output(sl))
-            cur_modes[sl] = 0
-            cur_tokens[sl] = PAD
-            cur_timings[sl] = 0
-            cur_positions[sl] = 0
 
         # remove completed samples from batch 
         next_active = cur_start_idxs < L
@@ -170,17 +167,17 @@ def sample(
             active_batches = active_batches[next_active]
             cur_start_idxs = cur_start_idxs[next_active]
             cur_tail_idx = cur_tail_idx[next_active]
+            cur_idxs = cur_idxs[next_active]
             cur_modes = cur_modes[next_active]
             cur_tokens = cur_tokens[next_active]
-            cur_timings = cur_timings[next_active]
             cur_positions = cur_positions[next_active]
             c = c[next_active]
 
         # shrink sequence
         while cur_tokens.size(1) > 0 and ((cur_modes[:,-1] == 0) & (cur_tokens[:,-1] == PAD)).all():
+            cur_idxs = cur_idxs[:,:-1]
             cur_modes = cur_modes[:,:-1]
             cur_tokens = cur_tokens[:,:-1]
-            cur_timings = cur_timings[:,:-1]
             cur_positions = cur_positions[:,:-1]
             
     pbar.close()
