@@ -5,6 +5,8 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+import osu_dreamer.modules.mp as MP
+
 from .data.tokens import VOCAB_SIZE, PAD
 
 def focal_loss(
@@ -45,14 +47,15 @@ class ModalHead(nn.Module):
         self.mode_head = nn.Linear(emb_dim, 3)
 
         # token head
-        self.token_emb = nn.Embedding(VOCAB_SIZE, emb_dim)
-        th.nn.init.normal_(self.token_emb.weight)
-        self.token_head = nn.Linear(emb_dim, VOCAB_SIZE)
-        self.token_head.weight = self.token_emb.weight
+        self.token_emb = MP.Embedding(VOCAB_SIZE, emb_dim)
+        self.token_head = nn.Sequential(
+            MP.Linear(emb_dim, VOCAB_SIZE),
+            MP.Gain(),
+        )
+        self.token_head[0].weight = self.token_emb.weight
 
         # timing head
-        self.timing_emb = nn.Embedding(timing_domain, emb_dim) # ... -> ... E
-        th.nn.init.normal_(self.timing_emb.weight)
+        self.timing_emb = MP.Embedding(timing_domain, emb_dim) # ... -> ... E
         self.timing_head = nn.Sequential(
             nn.Linear(emb_dim, 2),
             nn.Softplus(),
