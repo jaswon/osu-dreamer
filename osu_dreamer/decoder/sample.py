@@ -83,6 +83,7 @@ def sample(
             break
 
         B = active_batches.size(0)
+        rB = th.arange(B)
         cur_ctx_idxs = th.arange(model.seq_len).to(D)[None] + cur_start_idxs[:,None] # B S
         cur_ctx = ctx[cur_ctx_idxs] # B S H
 
@@ -107,14 +108,14 @@ def sample(
             pred_timings, 
             pred_positions,
         ) = model.modal_head.sample(
-            embs = h[th.arange(B), cur_tail_idx], 
-            timings_to_mask = cur_timings[th.arange(B), cur_tail_idx], # prevent emitting already emitted timings
+            embs = h[rB, cur_tail_idx], 
+            timings_to_mask = cur_timings[rB, cur_tail_idx], # prevent emitting already emitted timings
         )
 
         pred_latest_timings = th.where(
-            pred_modes == 1,        # timing predicted
-            pred_timings,           # ? use predicted timings
-            cur_timings[th.arange(B), cur_tail_idx],  # : use current timings
+            pred_modes == 1,                  # timing predicted
+            pred_timings,                     # ? use predicted timings
+            cur_timings[rB, cur_tail_idx],    # : use current timings
         ) # B
 
         # grow sequence
@@ -126,10 +127,10 @@ def sample(
         # update sequence
         cur_tail_idx += ((pred_modes != 0) | (pred_tokens != PAD)).long()
         pred_tokens[pred_tokens == EOS] = PAD
-        cur_modes[th.arange(B), cur_tail_idx] = pred_modes
-        cur_tokens[th.arange(B), cur_tail_idx] = pred_tokens
-        cur_timings[th.arange(B), cur_tail_idx] = pred_latest_timings
-        cur_positions[th.arange(B), cur_tail_idx] = pred_positions
+        cur_modes[rB, cur_tail_idx] = pred_modes
+        cur_tokens[rB, cur_tail_idx] = pred_tokens
+        cur_timings[rB, cur_tail_idx] = pred_latest_timings
+        cur_positions[rB, cur_tail_idx] = pred_positions
 
         # update windows
         update = th.where(
@@ -140,7 +141,7 @@ def sample(
         pbar.update(update.sum().item())
         cur_start_idxs += update
         cur_timings -= update[:,None]
-        cur_timings = th.clamp(cur_timings - update[:,None], min=0)
+        cur_timings[th.arange(cur_timings.size(1)) > cur_tail_idx[:,None]] = 0
 
         # dequeue tokens that are before start of new window
         shifts = (cur_timings >= 0).long().argmax(dim=1) # B
