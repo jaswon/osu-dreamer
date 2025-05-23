@@ -35,7 +35,8 @@ class Model(pl.LightningModule):
         seq_len: int,
         opt_args: dict[str, Any],
         focal_gamma: float,
-        max_token_numel: int,
+        batch_size: int,
+        tgt_len: int,
 
         # model hparams
         ctx_dim: int,
@@ -55,7 +56,8 @@ class Model(pl.LightningModule):
         self.seq_len = seq_len
         self.opt_args = opt_args
         self.focal_gamma = focal_gamma
-        self.max_token_numel = max_token_numel
+        self.batch_size = batch_size
+        self.tgt_len = tgt_len
 
         # model
         self.audio_encoder = nn.Sequential(
@@ -90,9 +92,10 @@ class Model(pl.LightningModule):
         ctx = self.audio_encoder(audio.transpose(1,2))[0] # L H
         b_ctx_idxs, b_modes, b_tokens, b_timings, b_positions = make_batch(
             types[0], tokens[0], timestamps[0], positions[0],
-            seq_len = self.seq_len,
+            src_len = self.seq_len,
             num_frames = ctx.size(0),
-            max_token_numel = self.max_token_numel,
+            batch_size = self.batch_size,
+            tgt_len = self.tgt_len,
         )
         batch_size = b_ctx_idxs.size(0)
         b_ctx = ctx[b_ctx_idxs]
@@ -122,7 +125,6 @@ class Model(pl.LightningModule):
         loss = pred_loss
         return loss, {
             "loss": loss.detach(),
-            "b_tokens.numel": th.tensor(b_tokens.numel(), dtype=th.float),
             "audio_len": th.tensor(audio.size(-1), dtype=th.float),
             **modal_log_dict,
         }

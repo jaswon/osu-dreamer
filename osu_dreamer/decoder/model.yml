@@ -53,7 +53,8 @@ model:
     opt_args:
         lr: .001
     focal_gamma: 2
-    max_token_numel: 4000
+    batch_size: 8
+    tgt_len: 512
 
     # model hyperparameters
     ctx_dim: 512

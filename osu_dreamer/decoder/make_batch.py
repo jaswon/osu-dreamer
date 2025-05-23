@@ -1,24 +1,27 @@
 
 from jaxtyping import Float, Int
 
+import random
+
 import torch as th
 from torch import Tensor
 
 from osu_dreamer.data.load_audio import get_frame_times
 
-from .data.tokens import PAD, EOS, DIFF, BOS
+from .data.tokens import PAD
 
 @th.no_grad
 def make_batch(
     modes: Int[Tensor, "N"],
     tokens: Int[Tensor, "N"],
-    timings: Float[Tensor, "N"],
+    timestamps: Float[Tensor, "N"],
     positions: Float[Tensor, "N 2"],
-    seq_len: int,
+    src_len: int,
     num_frames: int,
-    max_token_numel: int,
+    batch_size: int,
+    tgt_len: int,
 ) -> tuple[
-    Int[Tensor, "B S"],         # audio timing
+    Int[Tensor, "B S"],         # ctx idxs
     Int[Tensor, "B T"],         # modes
     Int[Tensor, "B T"],         # tokens 
     Int[Tensor, "B T"],         # timings
@@ -26,35 +29,28 @@ def make_batch(
 ]:
     D = tokens.device
     frame_times = th.tensor(get_frame_times(num_frames), device=D).float() # L
-    token_frame_idxs = th.searchsorted(frame_times, timings) # T
+    token_frame_idxs = th.searchsorted(frame_times, timestamps) # T
 
-    max_tokens = 0
-    batches: list[tuple[int, int, int]] = []
-    for ctx_start_idx in th.randperm(num_frames - seq_len).tolist():
+    b_ctx_idxs = th.empty(batch_size, src_len).long().to(D) # B S
+    b_modes = th.full((batch_size, tgt_len), 0).long().to(D)
+    b_tokens = th.full((batch_size, tgt_len), PAD).long().to(D)
+    b_timings = th.full((batch_size, tgt_len), 0).long().to(D)
+    b_positions = th.full((batch_size, tgt_len, 2), 0.).to(D)
+
+    for idx, ctx_start_idx in enumerate(th.randperm(num_frames - src_len)[:batch_size].tolist()):
         token_start_idx, token_end_idx = th.searchsorted(
             token_frame_idxs,
             th.tensor([
                 ctx_start_idx, 
-                ctx_start_idx+seq_len,
+                ctx_start_idx+src_len,
             ], device=D),
         ).tolist()
-
-        num_tokens = token_end_idx - token_start_idx
-        if (1+max(max_tokens, num_tokens)) * (len(batches)+1) > max_token_numel:
-            if len(batches) == 0:
-                continue
-            break
-        max_tokens = max(max_tokens, num_tokens)
-        batches.append((ctx_start_idx, token_start_idx, token_end_idx))
-
-    b_ctx_idxs = th.empty(len(batches), seq_len).long().to(D) # B S
-    b_modes = th.full((len(batches), max_tokens), 0).long().to(D)
-    b_tokens = th.full((len(batches), max_tokens), PAD).long().to(D)
-    b_timings = th.full((len(batches), max_tokens), 0).long().to(D)
-    b_positions = th.full((len(batches), max_tokens, 2), 0.).to(D)
     
-    for idx, (ctx_start_idx, token_start_idx, token_end_idx) in enumerate(batches):
-        b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_start_idx+seq_len)
+        b_ctx_idxs[idx] = th.arange(ctx_start_idx,ctx_start_idx+src_len)
+
+        if token_end_idx - token_start_idx > tgt_len:
+            token_start_idx = random.randint(token_start_idx, token_end_idx-tgt_len)
+            token_end_idx = token_start_idx + tgt_len
 
         num_tokens = token_end_idx - token_start_idx
         sl = slice(token_start_idx,token_end_idx)
