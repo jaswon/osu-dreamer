@@ -17,7 +17,7 @@ class TimingToken:
     t: float
 
     def __str__(self):
-        return f"t= {self.t:.2f}"
+        return f"TIMESTAMP({self.t:.2f})"
 
 @dataclass
 class PositionToken:
@@ -25,7 +25,7 @@ class PositionToken:
     y: float
 
     def __str__(self):
-        return f"({self.x:.2f}, {self.y:.2f})"
+        return f"POSITION({self.x:.2f}, {self.y:.2f})"
 
 def timing_token(t: int|float) -> TimingToken:
     return TimingToken(float(t))

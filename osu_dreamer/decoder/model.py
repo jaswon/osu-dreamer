@@ -4,7 +4,6 @@ from jaxtyping import Float, Int
 
 import torch as th
 from torch import Tensor, nn
-import torch.nn.functional as F
 
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -12,12 +11,13 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.load_audio import A_DIM
 
+from osu_dreamer.decoder.modal_head import ModalHead
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.muon import Muon
 
 
 from .data.module import Batch
-from .data.tokens import Token, BOS, VOCAB_SIZE, DIFF, PAD
+from .data.tokens import Token
 from .data.tokenize import PositionToken, TimingToken
 
 from .modules.label import LabelEmbedding, LabelEmbeddingArgs
@@ -25,18 +25,6 @@ from .modules.decoder import Decoder, DecoderArgs
 from .modules.encoder import Encoder, EncoderArgs
 
 from .make_batch import make_batch
-
-
-def focal_loss(
-    inputs: Float[Tensor, "B D ..."],
-    target: Int[Tensor, "B ..."],
-    gamma: float,
-    weight: None | Float[Tensor, "D"] = None,
-    *args, **kwargs,
-) -> Float[Tensor, "B ..."]:
-    logpt = F.log_softmax(inputs, dim=1)
-    inputs = (1 - logpt.exp()).pow(gamma) * logpt
-    return F.nll_loss(inputs, target, weight, reduction='none', *args, **kwargs)
 
     
 class Model(pl.LightningModule):
@@ -57,8 +45,6 @@ class Model(pl.LightningModule):
         label_dim: int,
         label_emb_args: LabelEmbeddingArgs,
 
-        pos_emb_dim: int,
-        seq_idx_emb_dim: int,
         embed_dim: int,
         decoder_args: DecoderArgs,
     ):
@@ -72,48 +58,13 @@ class Model(pl.LightningModule):
         self.max_token_numel = max_token_numel
 
         # model
-        self.embed_dim = embed_dim
         self.audio_encoder = nn.Sequential(
             MP.Linear(A_DIM, encoder_dim),
             Encoder(encoder_dim, encoder_args),
             MP.Linear(encoder_dim, ctx_dim),
         )
 
-        self.type_head = nn.Sequential(
-            MP.Linear(embed_dim, 3), # { token, timestamp, position }
-            MP.Gain(),
-        )
-
-        self.timestamp_emb = nn.Sequential(
-            nn.Unflatten(-1, (-1, 1)),
-            MP.RandomFourierFeatures(1, seq_idx_emb_dim, domain=float(seq_len)),
-            MP.Linear(seq_idx_emb_dim, embed_dim),
-        )
-        self.timestamp_head = nn.Sequential(
-            MP.Linear(embed_dim, seq_idx_emb_dim),
-            MP.SiLU(),
-            MP.Linear(seq_idx_emb_dim, seq_len),
-            MP.Gain(),
-        )
-
-        self.token_emb = MP.Embedding(VOCAB_SIZE, embed_dim)
-        self.token_head = nn.Sequential(
-            MP.Linear(embed_dim, VOCAB_SIZE),
-            MP.Gain(),
-        )
-        self.token_head[0].weight = self.token_emb.weight
-
-        self.pos_emb = nn.Sequential(
-            MP.Linear(2, pos_emb_dim),
-            MP.SiLU(),
-            MP.Linear(pos_emb_dim, embed_dim),
-        )
-        self.pos_head = nn.Sequential(
-            MP.Linear(embed_dim, pos_emb_dim),
-            MP.SiLU(),
-            MP.Linear(pos_emb_dim, 2),
-            MP.Gain(),
-        )
+        self.modal_head = ModalHead(embed_dim, seq_len)
 
         self.label_emb = LabelEmbedding(label_dim, label_emb_args)
         self.label_head = nn.Linear(embed_dim, NUM_LABELS)
@@ -135,10 +86,9 @@ class Model(pl.LightningModule):
         timestamps: Float[Tensor, "1 N"],
         positions: Float[Tensor, "1 N 2"],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
-        
-        D = audio.device
+    
         ctx = self.audio_encoder(audio.transpose(1,2))[0] # L H
-        b_ctx_idxs, b_types, b_token_idxs, b_tokens, b_token_locs = make_batch(
+        b_ctx_idxs, b_modes, b_tokens, b_timings, b_positions = make_batch(
             types[0], tokens[0], timestamps[0], positions[0],
             seq_len = self.seq_len,
             num_frames = ctx.size(0),
@@ -151,72 +101,34 @@ class Model(pl.LightningModule):
         b_labels = labels.repeat(batch_size, 1)
         label_embs = self.label_emb(th.where(th.rand_like(b_labels) < .5, -1, b_labels))
 
-        # prepare decoder prelude
-        b_prelude_embs = self.token_emb(th.tensor([DIFF, BOS], device=D)).repeat(batch_size, 1, 1)
-        b_prelude_idxs = b_ctx_idxs[:,:1].repeat(1, 2)
-
         # prepare decoder inputs
-        b_token_embs = th.gather(
-            th.stack([
-                self.token_emb(b_tokens),
-                self.timestamp_emb(th.clamp(b_token_idxs - b_ctx_idxs[:,:1], min=0)),
-                self.pos_emb(b_token_locs),
-            ], dim=0),
-            dim = 0,
-            index = b_types[None,:,:,None].expand(-1,-1,-1,self.embed_dim),
-        )[0]
-
         h = self.decoder(
-            x = th.cat([b_prelude_embs, b_token_embs], dim=1),
-            x_t = th.cat([b_prelude_idxs, b_token_idxs], dim=1),
+            x = self.modal_head.embed( b_modes, b_tokens, b_timings, b_positions ),
+            x_t = b_timings + b_ctx_idxs[:,:1],
             ctx = b_ctx,
             ctx_t = b_ctx_idxs,
             c = label_embs,
-        ) # B N+2 E
+        ) # B N+2 E - DIFF, BOS, ...
 
         pred_labels = self.label_head(h[:,0]) # B NUM_LABELS
         label_loss = (b_labels - pred_labels).pow(2).mean()
 
-        pred_embs = h[:,1:-1] # B N E
-        pred_typs = self.type_head(pred_embs) # B N 3
-        type_loss = focal_loss(
-            pred_typs.flatten(0,1),
-            b_types.flatten(),
-            gamma = self.focal_gamma,
-        ).mean()
+        pred_loss, modal_log_dict = self.modal_head(
+            pred_embs = h[:,1:-1],
+            true_modes = b_modes[:,2:],
+            true_tokens = b_tokens[:,2:],
+            true_timings = b_timings[:,2:],
+            true_positions = b_positions[:,2:],
+            focal_gamma = self.focal_gamma,
+        )
 
-        pred_token_logits = self.token_head(pred_embs) # B N V
-        token_loss = focal_loss(
-            pred_token_logits[b_types == 0],
-            b_tokens[b_types == 0],
-            gamma = self.focal_gamma,
-            ignore_index = PAD,
-        ).mean()
-
-        pred_timestamp_logits = self.timestamp_head(pred_embs) # B N S
-        pred_timestamp_cdf = pred_timestamp_logits.softmax(dim=-1).cumsum(dim=-1) # B N S
-        true_timestamp_cdf = (b_token_idxs[:,:,None] >= b_ctx_idxs[:,None,:]).long() # B N S
-        timestamp_loss = (
-            pred_timestamp_cdf[b_types == 1]
-            - true_timestamp_cdf[b_types == 1]
-        ).pow(2).mean()
-
-        pred_locs = self.pos_head(pred_embs) # B N 2
-        position_loss = ( 
-            pred_locs[b_types == 2]
-            - b_token_locs[b_types == 2]
-        ).pow(2).mean()
-
-        loss = label_loss + type_loss + token_loss + timestamp_loss + position_loss
+        loss = label_loss + pred_loss
         return loss, {
             "loss": loss.detach(),
             "label": label_loss.detach(),
-            "type": type_loss.detach(),
-            "token": token_loss.detach(),
-            "timestamp": timestamp_loss.detach(),
-            "position": position_loss.detach(),
             "b_tokens.numel": th.tensor(b_tokens.numel(), dtype=th.float),
             "audio_len": th.tensor(audio.size(-1), dtype=th.float),
+            **modal_log_dict,
         }
     
     @th.no_grad

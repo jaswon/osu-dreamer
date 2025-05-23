@@ -70,8 +70,6 @@ model:
     label_emb_args:
         features: 8
 
-    pos_emb_dim: 64
-    seq_idx_emb_dim: 64
     embed_dim: 384
     decoder_args:
         depth: 8
