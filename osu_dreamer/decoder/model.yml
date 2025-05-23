@@ -56,29 +56,21 @@ model:
     max_token_numel: 4000
 
     # model hyperparameters
-    ctx_dim: 384
-    encoder_dim: 384
+    ctx_dim: 512
+    encoder_dim: 512
     encoder_args:
-        depth: 8
+        depth: 6
         expand: 1
-        deltanet_args:
-            head_dim: 64
-            n_heads: 8
-            n_householder: 2
 
     label_dim: 16
     label_emb_args:
         features: 8
 
-    embed_dim: 384
+    embed_dim: 512
     decoder_args:
-        depth: 8
+        depth: 6
         expand: 1
         attn_args:
-            head_dim: 64
+            head_dim: 96
             n_heads: 8
             kv_heads: 8
-        deltanet_args:
-            head_dim: 128
-            n_heads: 4
-            n_householder: 3
