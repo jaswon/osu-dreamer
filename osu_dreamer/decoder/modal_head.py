@@ -138,8 +138,7 @@ class ModalHead(nn.Module):
 
         # sample timings
         timing_logits = self.timing_head.logits(embs) # ... S
-        for b_idx, num_mask in enumerate(timings_to_mask):
-            timing_logits[b_idx, :num_mask] = -th.inf
+        timing_logits[th.arange(timing_logits.size(-1)).to(embs.device) < timings_to_mask[:,None]] = -th.inf
         timings = th.multinomial(timing_logits.softmax(dim=-1), num_samples=1)[:,0] # B
         timings[modes != 1] = 0
 
