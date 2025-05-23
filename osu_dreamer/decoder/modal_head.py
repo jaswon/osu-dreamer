@@ -9,7 +9,7 @@ import osu_dreamer.modules.mp as MP
 
 from .data.tokens import VOCAB_SIZE, PAD
 
-from .modules.interval_dist import IntervalDist
+from .modules.interval_dist import IntervalDist, IntervalEmbedding
 
 def focal_loss(
     inputs: Float[Tensor, "B D ..."],
@@ -44,7 +44,7 @@ class ModalHead(nn.Module):
         self.token_head[0].weight = self.token_emb.weight
 
         # timing head
-        self.timing_emb = MP.Embedding(timing_domain, emb_dim) # ... -> ... E
+        self.timing_emb = IntervalEmbedding(timing_domain, emb_dim)
         self.timing_head = IntervalDist(emb_dim, timing_domain)
 
         # position head

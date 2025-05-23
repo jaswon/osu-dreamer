@@ -6,6 +6,17 @@ from torch.distributions import Kumaraswamy
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+import osu_dreamer.modules.mp as MP
+
+class IntervalEmbedding(nn.Module):
+    def __init__(self, interval_len: int, dim: int):
+        super().__init__()
+        self.proj = MP.Linear(1, dim)
+        self.domain = th.linspace(0, 1, interval_len)
+
+    def forward(self, x: Int[Tensor, "..."]) -> Float[Tensor, "... E"]:
+        return self.proj(self.domain.to(x.device)[x,None])
+
 class IntervalDist(nn.Module):
     def __init__(self, dim: int, interval_len: int):
         super().__init__()
