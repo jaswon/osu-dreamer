@@ -10,19 +10,19 @@ from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.osu.hit_objects import Circle, Slider, Spinner
 from osu_dreamer.osu.sliders import Bezier, Line, Perfect
 
-from .tokens import BOS, EOS, TokenType, Token, encode, PAD
+from .tokens import PAD, BOS, EOS, TokenType, Token, encode
 
 @dataclass
 class TimingToken:
-    t: float
+    t: int|float
 
     def __str__(self):
         return f"TIMESTAMP({self.t:.2f})"
 
 @dataclass
 class PositionToken:
-    x: float
-    y: float
+    x: int|float
+    y: int|float
 
     def __str__(self):
         return f"POSITION({self.x:.2f}, {self.y:.2f})"
@@ -60,14 +60,14 @@ def beatmap_tokens(bm: Beatmap) -> Iterator[Token | TimingToken | PositionToken]
     next_break = next(breaks, None)
     for ho in bm.hit_objects:
         if next_break is not None and next_break.t < ho.t:
-            yield TimingToken(float(next_break.t))
+            yield TimingToken(next_break.t)
             yield Token(TokenType.BREAK)
 
-            yield TimingToken(float(next_break.end_time()))
+            yield TimingToken(next_break.end_time())
             yield Token(TokenType.RELEASE)
             next_break = next(breaks, None)
 
-        yield TimingToken(float(ho.t))
+        yield TimingToken(ho.t)
         match ho:
             case Circle(): yield Token(TokenType.CIRCLE)
             case Spinner(): yield Token(TokenType.SPINNER)
@@ -76,7 +76,7 @@ def beatmap_tokens(bm: Beatmap) -> Iterator[Token | TimingToken | PositionToken]
         if isinstance(ho, Circle):
             yield PositionToken(ho.x, ho.y)
         else:
-            yield TimingToken(float(ho.end_time()))
+            yield TimingToken(ho.end_time())
             yield Token(TokenType.RELEASE)
             if isinstance(ho, Slider):
                 try:
@@ -107,7 +107,7 @@ def tokenize(bm: Beatmap) -> tuple[
             case TimingToken(t):
                 mode = 1
                 token_id = PAD
-                cur_t = t
+                cur_t = float(t)
             case PositionToken(x,y):
                 mode = 2
                 token_id = PAD
