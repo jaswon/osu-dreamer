@@ -3,17 +3,32 @@ from dataclasses import dataclass
 
 from jaxtyping import Float
 
+import torch as th
 from torch import nn, Tensor
 
 from osu_dreamer.data.labels import NUM_LABELS
 
 import osu_dreamer.modules.mp as MP
-from osu_dreamer.modules.dit import DiT
+from osu_dreamer.modules.dit import DiT, DiTArgs
 
+
+class FourierFeatures(nn.Module):
+    def __init__(self, dim: int, features: int):
+        super().__init__()
+        self.proj_in = nn.Linear(dim, features)
+        th.nn.init.normal_(self.proj_in.weight)
+        th.nn.init.uniform_(self.proj_in.bias, -th.pi, th.pi)
+        self.scale = (2/features) ** .5
+
+    def forward(self, x: Float[Tensor, "*B I"]) -> Float[Tensor, "*B O"]:
+        return self.scale * th.cos(self.proj_in(x))
 
 @dataclass
 class DenoiserArgs:
     h_dim: int
+    f_dim: int
+    noise_level_features: int
+    noise_level_h_dim: int
     depth: int
     expand: int
 
@@ -22,24 +37,25 @@ class Denoiser(nn.Module):
         self,
         dim: int,
         a_dim: int,
-        f_dim: int,
         args: DenoiserArgs,
     ):
         super().__init__()
 
+        self.nlf = nn.Sequential(
+            FourierFeatures(1, args.noise_level_features),
+            MP.Linear(args.noise_level_features, args.noise_level_h_dim),
+            MP.SiLU(),
+            MP.Linear(args.noise_level_h_dim, args.f_dim)
+        )
+
         self.proj_h = MP.Conv1d(dim+a_dim, args.h_dim, 1)
         self.proj_label = nn.Sequential(
-            MP.Linear(NUM_LABELS, f_dim),
+            MP.Linear(NUM_LABELS, args.f_dim),
             MP.SiLU(),
-            MP.Linear(f_dim, f_dim),
-        )
-        self.proj_f = nn.Sequential(
-            MP.Linear(f_dim, f_dim),
-            MP.SiLU(),
-            MP.Linear(f_dim, f_dim),
+            MP.Linear(args.f_dim, args.f_dim),
         )
             
-        self.net = DiT(args.h_dim, f_dim, args.depth, args.expand)
+        self.net = DiT(args.h_dim, args.f_dim, DiTArgs(args.depth, args.expand))
 
         self.proj_out = nn.Sequential(
             MP.PixelNorm(),
@@ -54,9 +70,9 @@ class Denoiser(nn.Module):
         
         # --- diffusion args --- #
         x: Float[Tensor, "B X L"],  # noised input
-        f: Float[Tensor, "B F"],    # noise level features
+        t: Float[Tensor, "B"],      # noise level
     ) -> Float[Tensor, "B X L"]:
-        c = MP.silu(self.proj_f(f) + self.proj_label(label))
+        c = MP.silu(self.nlf(t[:,None]) + self.proj_label(label))
         h = self.proj_h(MP.cat([a,x], dim=1))
         h = self.net(h,c)
         return self.proj_out(h)

@@ -18,9 +18,9 @@ from osu_dreamer.data.labels import NUM_LABELS
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.muon import Muon
+from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from .data.dataset import Batch
-from .diffusion import Diffusion, DiffusionArgs
 from .denoiser import Denoiser, DenoiserArgs
 
     
@@ -33,33 +33,28 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
+        grad_clip: float,
         opt_args: dict[str, Any],
+        schedule_args: LRScheduleArgs,
 
         # model hparams
-        diffusion_args: DiffusionArgs,
         denoiser_args: DenoiserArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
-
-        # model
-        self.diffusion = Diffusion(diffusion_args)
-        self.denoiser = Denoiser(
-            X_DIM, 
-            A_DIM, 
-            diffusion_args.noise_level_features, 
-            denoiser_args,
-        )
-
-        # self.diffusion.compile()
-        # self.denoiser.compile()
 
         # validation params
         self.val_batches = val_batches
         self.val_steps = val_steps
 
         # training params
+        self.grad_clip = grad_clip
         self.opt_args = opt_args
+        self.lr_schedule = make_lr_schedule(schedule_args)
+
+        # model
+        self.denoiser = Denoiser(X_DIM, A_DIM, denoiser_args)
+        # self.denoiser.compile()
     
     def preprocess_labels(
         self, 
@@ -70,18 +65,21 @@ class Model(pl.LightningModule):
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-        chart: Float[Tensor, str(f"B {X_DIM} L")],
+        x1: Float[Tensor, str(f"B {X_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
-
+        
+        B = audio.size(0)
         denoiser = partial(self.denoiser,audio,self.preprocess_labels(labels))
-        pred_chart, u, loss_weight = self.diffusion.training_sample(denoiser, chart)
-
-        pixel_loss = loss_weight * (pred_chart - chart).pow(2).mean((1,2))
-        loss = (pixel_loss / th.exp(u) + u).mean()
+        
+        x0 = th.randn_like(x1)
+        true_flow = x1 - x0
+        t = ((th.arange(B) + th.rand(1)) / B).to(x1.device)
+        xt = th.lerp(x0,x1,t[:,None,None])
+        pred_flow = denoiser(xt, t)
+        loss = (true_flow - pred_flow).pow(2).mean()
         return loss, {
             "loss": loss.detach(),
-            "pixel": pixel_loss.detach().mean(),
         }
     
     @th.no_grad()
@@ -96,12 +94,11 @@ class Model(pl.LightningModule):
         num_samples = labels.size(0)
 
         z_a = repeat(audio[None], '1 a l -> b a l', b=num_samples)
-        z = th.randn(num_samples, X_DIM, z_a.size(-1), device=audio.device)
-        return self.diffusion.sample(
-            partial(self.denoiser,z_a,self.preprocess_labels(labels)), 
-            num_steps, z,
-            **kwargs,
-        )
+        x = th.randn(num_samples, X_DIM, z_a.size(-1), device=audio.device)
+        denoiser = partial(self.denoiser,z_a,self.preprocess_labels(labels))
+        for t in th.linspace(0, 1, num_steps, device=audio.device):
+            x = x + denoiser(x, t.expand(x.size(0))) / num_steps 
+        return x.clamp(min=-1, max=1)
 
 #
 #
@@ -112,12 +109,22 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-        return Muon(self.parameters(), **self.opt_args)
+        opt = Muon(self.parameters(), **self.opt_args)
+        return {
+            "optimizer": opt,
+            "lr_scheduler": {
+                "scheduler": th.optim.lr_scheduler.LambdaLR(opt, self.lr_schedule),
+                "interval": "step",
+            }
+        }
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(*batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
+    
+    def configure_gradient_clipping(self, *args, **kwargs) -> None:
+        self.log("train/grad_l2", th.nn.utils.clip_grad_norm_(self.parameters(), self.grad_clip))
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():

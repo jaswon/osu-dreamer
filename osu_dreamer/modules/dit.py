@@ -15,9 +15,9 @@ class sequenceMixer(nn.Module):
         super().__init__()
         h_dim = dim // 2
         assert h_dim * 2 == dim
-        self.fore = MinGRU(dim, out_dim = h_dim * expand)
-        self.back = MinGRU(dim, out_dim = h_dim * expand)
-        self.out = MP.Conv1d(dim * expand, dim, 1)
+        self.fore = MinGRU(dim, h_dim*expand)
+        self.back = MinGRU(dim, h_dim*expand)
+        self.out = MP.Conv1d(dim*expand, dim, 1)
 
     def forward(
         self,
@@ -32,15 +32,8 @@ class channelMixer(nn.Module):
     def __init__(self, dim: int, expand: int):
         super().__init__()
         self.proj_in = MP.Conv1d(dim, dim, 1)
-        self.proj_h = nn.Sequential(
-            MP.Conv1d(dim, dim, 3,1,1, groups=dim),
-            MP.Conv1d(dim, dim * expand, 1),
-        )
-        self.proj_g = nn.Sequential(
-            MP.Conv1d(dim, dim, 3,1,1, groups=dim),
-            MP.Conv1d(dim, dim * expand, 1),
-            MP.SiLU(),
-        )
+        self.proj_h = MP.Conv1d(dim, dim*expand, 1)
+        self.proj_g = MP.Conv1d(dim, dim*expand, 1)
         self.proj_out = MP.Conv1d(dim * expand, dim, 1)
 
     def forward(
@@ -49,24 +42,15 @@ class channelMixer(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         x = self.proj_in(x)
         h,g = self.proj_h(x), self.proj_g(x)
-        return self.proj_out(h*g)
+        return self.proj_out(h*MP.silu(g))
     
 class condBlock(nn.Module):
     def __init__(self, dim: int, c_dim: int, op: nn.Module):
         super().__init__()
         self.op = op
-        self.scale = nn.Sequential(
-            MP.Linear(c_dim, dim),
-            MP.Gain(),
-        )
-        self.shift = nn.Sequential(
-            MP.Linear(c_dim, dim),
-            MP.Gain(),
-        )
-        self.alpha = nn.Sequential(
-            MP.Linear(c_dim, dim),
-            MP.Gain(),
-        )
+        self.scale = nn.Sequential( MP.Linear(c_dim, dim), MP.Gain() )
+        self.shift = nn.Sequential( MP.Linear(c_dim, dim), MP.Gain() )
+        self.alpha = nn.Sequential( MP.Linear(c_dim, dim), MP.Gain() )
 
     def forward(
         self,

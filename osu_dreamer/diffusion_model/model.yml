@@ -34,7 +34,7 @@ trainer:
             save_dir: runs
             name: denoiser
 
-    accumulate_grad_batches: 4
+    accumulate_grad_batches: 1
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
@@ -47,7 +47,7 @@ data:
     seq_len: 4096 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 8
+    batch_size: 32
     
     # number of workers to use for data loading
     num_workers: 6
@@ -63,18 +63,18 @@ model:
     val_batches: 64
 
     # training parameters
+    grad_clip: 10.
     opt_args:
-        lr: .01
+        lr: .001
+    schedule_args:
+        decay_start: 400
 
     # model hyperparameters
-    
-    diffusion_args:
-        log_snr_scale: 3e0
-        log_snr_bound: 5e-2
-        std_data: .7
-        noise_level_features: 256
 
     denoiser_args:
         h_dim: 256
-        depth: 16
+        f_dim: 256
+        noise_level_features: 256
+        noise_level_h_dim: 1024
+        depth: 6
         expand: 2
