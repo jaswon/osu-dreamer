@@ -22,6 +22,7 @@ from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from .data.dataset import Batch
 from .denoiser import Denoiser, DenoiserArgs
+from .encoder import Encoder, EncoderArgs
 
     
 class Model(pl.LightningModule):
@@ -38,6 +39,8 @@ class Model(pl.LightningModule):
         schedule_args: LRScheduleArgs,
 
         # model hparams
+        a_h_dim: int,
+        encoder_args: EncoderArgs,
         denoiser_args: DenoiserArgs,
     ):
         super().__init__()
@@ -53,8 +56,8 @@ class Model(pl.LightningModule):
         self.lr_schedule = make_lr_schedule(schedule_args)
 
         # model
-        self.denoiser = Denoiser(X_DIM, A_DIM, denoiser_args)
-        # self.denoiser.compile()
+        self.audio_encoder = Encoder(A_DIM, a_h_dim, encoder_args)
+        self.denoiser = Denoiser(X_DIM, a_h_dim, denoiser_args)
     
     def preprocess_labels(
         self, 
@@ -70,7 +73,11 @@ class Model(pl.LightningModule):
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
         B = audio.size(0)
-        denoiser = partial(self.denoiser,audio,self.preprocess_labels(labels))
+        denoiser = partial(
+            self.denoiser,
+            self.audio_encoder(audio),
+            self.preprocess_labels(labels),
+        )
         
         x0 = th.randn_like(x1)
         true_flow = x1 - x0
@@ -93,9 +100,12 @@ class Model(pl.LightningModule):
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
 
-        z_a = repeat(audio[None], '1 a l -> b a l', b=num_samples)
-        x = th.randn(num_samples, X_DIM, z_a.size(-1), device=audio.device)
-        denoiser = partial(self.denoiser,z_a,self.preprocess_labels(labels))
+        x = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
+        denoiser = partial(
+            self.denoiser,
+            repeat(self.audio_encoder(audio[None]), '1 a l -> b a l', b=num_samples),
+            self.preprocess_labels(labels),
+        )
         for t in th.linspace(0, 1, num_steps, device=audio.device):
             x = x + denoiser(x, t.expand(x.size(0))) / num_steps 
         return x.clamp(min=-1, max=1)
