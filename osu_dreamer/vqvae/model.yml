@@ -34,12 +34,12 @@ trainer:
             save_dir: runs
             name: vqvae
 
-    accumulate_grad_batches: 1
+    accumulate_grad_batches: 3
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
 
-    val_check_interval: 100
+    val_check_interval: 1000
     check_val_every_n_epoch: null
     
 data:
@@ -47,7 +47,7 @@ data:
     seq_len: 4096 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 64
+    batch_size: 24
     
     # number of workers to use for data loading
     num_workers: 6
@@ -61,22 +61,16 @@ model:
     # training parameters
     opt_args:
         lr: .001
-    focal_gamma: 2
-    class_weights: [1,50,2,30,15]
+    lr_schedule_args:
+        decay_start: 500
 
     # model hyperparameters
     stride: 3
     depth: 3
+    expand: 2
 
-    n_embs: 8192
-    emb_dim: 64
-    vq_args:
-        h_dim: 16
-
-    audio_args:
-        depth: 6
-        expand: 1
-
-    mix_args:
-        depth: 3
-        expand: 1
+    emb_dim: 256
+    hard_attn_args:
+        num_codes: 8
+        code_dim: 1024
+        num_heads: 8

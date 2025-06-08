@@ -1,82 +1,66 @@
 
+from typing import NamedTuple
+from torch import Tensor
+from jaxtyping import Float
+
+import pickle
 from pathlib import Path
+from collections.abc import Iterator
 
-from torch.utils.data import DataLoader, random_split
+import numpy as np
 
-import pytorch_lightning as pl
+import torch as th
+from torch.utils.data import Dataset, DataLoader
 
-from .dataset import FullSequenceDataset, SubsequenceDataset
+from osu_dreamer.data.module import BeatmapDataModule, BeatmapDataset
+from osu_dreamer.data.load_audio import A_DIM, get_frame_times
+from osu_dreamer.data.beatmap.encode import X_DIM, encode_beatmap
 
+class Batch(NamedTuple):
+    audio: Float[Tensor, str(f"B {A_DIM} L")]
+    chart: Float[Tensor, str(f"B {X_DIM} L")]
 
-class Data(pl.LightningDataModule):
+class SignalDataset(BeatmapDataset):
+    def make_samples(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
+        audio = th.tensor(np.load(map_file.parent / "spec.pt")).float()
+        L = audio.size(1)
+        with open(map_file, 'rb') as f:
+            bm = pickle.load(f)
+        chart = th.tensor(encode_beatmap(bm, get_frame_times(L))).float()
+        yield Batch(audio,chart)
+
+class BatchedSignalDataset(SignalDataset):
+    def __init__(self, seq_len: int, dataset):
+        super().__init__(dataset)
+        self.seq_len = seq_len
+
+    def make_samples(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
+        audio,chart = next(super().make_samples(map_file, map_idx))
+        L = chart.size(-1)
+        for i in th.arange(0, L-self.seq_len+1, self.seq_len):
+            yield Batch(audio[...,i:i+self.seq_len], chart[...,i:i+self.seq_len])
+    
+class Data(BeatmapDataModule):
     def __init__(
-        self,
-        
-        seq_len: int,
+        self, 
         batch_size: int,
-        num_workers: int,
-        
-        val_size: float | int,
+        seq_len: int,
+        num_workers: int, 
+        val_size: float | int, 
         data_path: str = "./data",
     ):
-        super().__init__()
-        
+        super().__init__(num_workers, val_size, data_path)
+        self.batch_size = batch_size
         self.seq_len = seq_len
         
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        
-        # check if data dir exists
-        self.data_dir = Path(data_path)
-        if not self.data_dir.exists():
-            raise ValueError(f'data dir `{self.data_dir}` does not exist, generate dataset first')
-        
-        # data dir exists, check for samples
-        self.full_set = list(self.data_dir.rglob("*.map.pkl"))
-        if len(self.full_set) == 0:
-            raise ValueError(f'data dir `{self.data_dir}` is empty, generate dataset first')
-        
-        # check validation size
-        if val_size <= 0:
-            raise ValueError(f'invalid {val_size=}')
-        elif val_size < 1:
-            # interpret as fraction of full set
-            val_size = int(len(self.full_set) * val_size)
-            if val_size == 0:
-                raise ValueError(f'empty validation set, given {val_size=} and {len(self.full_set)=}')
-        else:
-            # interpret as number of samples
-            val_size = round(val_size)
-            if val_size > len(self.full_set):
-                raise ValueError(f"{val_size=} is greater than {len(self.full_set)=}")
-        self.val_size = val_size
-
-            
-    def setup(self, stage: str):
-        
-        train_size = len(self.full_set) - self.val_size
-        print(f'train: {train_size} | val: {self.val_size}')
-        train_split, val_split = random_split(self.full_set, [train_size, self.val_size])
-        
-        self.train_set = SubsequenceDataset(
-            dataset=train_split,
-            seq_len=self.seq_len,
-        )
-        self.val_set = FullSequenceDataset(
-            dataset=val_split,
-            seq_len=self.seq_len,
-        )
+    def make_train_set(self, split) -> Dataset:
+        return BatchedSignalDataset(self.seq_len, split)
+    
+    def make_val_set(self, split) -> Dataset:
+        return SignalDataset(split)
             
     def train_dataloader(self):
-        return DataLoader(
-            self.train_set,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-        )
+        return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=self.num_workers)
     
     def val_dataloader(self):
-        return DataLoader(
-            self.val_set,
-            batch_size=1,
-            num_workers=self.num_workers,
-        )
+        return DataLoader(self.val_set, batch_size=1, num_workers=self.num_workers)
