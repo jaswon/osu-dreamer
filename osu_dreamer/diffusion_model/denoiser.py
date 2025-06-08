@@ -47,16 +47,14 @@ class Denoiser(nn.Module):
             MP.SiLU(),
             MP.Linear(args.noise_level_h_dim, args.f_dim)
         )
-
-        self.proj_h = MP.Conv1d(dim+a_dim, args.h_dim, 1)
         self.proj_label = nn.Sequential(
             MP.Linear(NUM_LABELS, args.f_dim),
             MP.SiLU(),
             MP.Linear(args.f_dim, args.f_dim),
         )
             
+        self.proj_h = MP.Conv1d(dim+a_dim, args.h_dim, 1)
         self.net = DiT(args.h_dim, args.f_dim, DiTArgs(args.depth, args.expand))
-
         self.proj_out = nn.Sequential(
             MP.PixelNorm(),
             MP.Conv1d(args.h_dim, dim, 1),

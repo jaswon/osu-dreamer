@@ -11,6 +11,7 @@ from einops import repeat, rearrange
 
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
+import tqdm
 
 from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.beatmap.encode import X_DIM
@@ -95,7 +96,7 @@ class Model(pl.LightningModule):
         audio: Float[Tensor, str(f"{A_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         num_steps: int = 0,
-        **kwargs,
+        show_progress: bool = False,
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
@@ -106,7 +107,10 @@ class Model(pl.LightningModule):
             repeat(self.audio_encoder(audio[None]), '1 a l -> b a l', b=num_samples),
             self.preprocess_labels(labels),
         )
-        for t in th.linspace(0, 1, num_steps, device=audio.device):
+        for t in tqdm.tqdm(
+            th.linspace(0, 1, num_steps, device=audio.device),
+            disable=not show_progress,
+        ):
             x = x + denoiser(x, t.expand(x.size(0))) / num_steps 
         return x.clamp(min=-1, max=1)
 
