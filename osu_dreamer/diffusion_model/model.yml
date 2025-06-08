@@ -72,13 +72,12 @@ model:
     # model hyperparameters
     a_h_dim: 256
     encoder_args:
-        depth: 12
+        depth: 8
         expand: 2
 
     denoiser_args:
         h_dim: 512
-        f_dim: 128
+        f_dim: 256
         noise_level_features: 256
-        noise_level_h_dim: 512
         depth: 8
         expand: 2

@@ -28,7 +28,6 @@ class DenoiserArgs:
     h_dim: int
     f_dim: int
     noise_level_features: int
-    noise_level_h_dim: int
     depth: int
     expand: int
 
@@ -43,14 +42,17 @@ class Denoiser(nn.Module):
 
         self.nlf = nn.Sequential(
             FourierFeatures(1, args.noise_level_features),
-            MP.Linear(args.noise_level_features, args.noise_level_h_dim),
-            MP.SiLU(),
-            MP.Linear(args.noise_level_h_dim, args.f_dim)
+            MP.Linear(args.noise_level_features, args.f_dim),
         )
         self.proj_label = nn.Sequential(
             MP.Linear(NUM_LABELS, args.f_dim),
             MP.SiLU(),
             MP.Linear(args.f_dim, args.f_dim),
+        )
+        self.proj_c = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(args.f_dim, args.f_dim),
+            nn.SiLU(),
         )
             
         self.proj_h = MP.Conv1d(dim+a_dim, args.h_dim, 1)
