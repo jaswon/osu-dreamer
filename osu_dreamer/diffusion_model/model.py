@@ -82,7 +82,12 @@ class Model(pl.LightningModule):
         
         x0 = th.randn_like(x1)
         true_flow = x1 - x0
-        t = ((th.arange(B) + th.rand(1)) / B).to(x1.device)
+        if self.training:
+            # sample t from logit-normal distribution
+            t = th.randn(B, device=x1.device).sigmoid()
+        else:
+            # sample t at evenly spaced points
+            t = th.linspace(0, 1, B+2, device=x1.device)[1:-1]
         xt = th.lerp(x0,x1,t[:,None,None])
         pred_flow = denoiser(xt, t)
         loss = (true_flow - pred_flow).pow(2).mean()
