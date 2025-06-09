@@ -54,7 +54,7 @@ model:
     # training parameters
     opt_args:
         lr: .001
-    grad_clip: 10.
+    grad_clip: -1
     gp_factor: 10.
     gan_factor: 5e-3
     prior_schedule:

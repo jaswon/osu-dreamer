@@ -204,8 +204,9 @@ class Model(pl.LightningModule):
         gen_loss = rec_loss + self.gan_factor * gen_adv_loss + prior_factor * prior_loss
         g_opt.zero_grad()
         self.manual_backward(gen_loss)
-        g_opt_params = [ p for g in g_opt.param_groups for p in g['params'] if p.grad is not None ]
-        self.log("train/gen/grad_l2", th.nn.utils.clip_grad_norm_(g_opt_params, self.grad_clip).item())
+        if self.grad_clip > 0:
+            g_opt_params = [ p for g in g_opt.param_groups for p in g['params'] if p.grad is not None ]
+            self.log("train/gen/grad_l2", th.nn.utils.clip_grad_norm_(g_opt_params, self.grad_clip).item())
         g_opt.step()
         g_opt.zero_grad()
         self.log_dict({
