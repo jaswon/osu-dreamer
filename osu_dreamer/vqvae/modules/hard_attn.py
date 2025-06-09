@@ -8,13 +8,15 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from einops import rearrange, repeat
-from einops.layers.torch import EinMix as Mix
+from einops.layers.torch import Rearrange
+
+import osu_dreamer.modules.mp as MP
 
 @dataclass
 class HardAttnArgs:
     num_codes: int
     code_dim: int
-    num_heads: int = 8
+    num_heads: int
     temperature: float = 1.
 
 class HardAttn(nn.Module):
@@ -33,9 +35,15 @@ class HardAttn(nn.Module):
         self.num_codes = args.num_codes
         self.temperature = args.temperature
 
-        self.codes = nn.Parameter(th.randn(args.num_codes, args.code_dim))
-        self.to_k = Mix('n c -> h n d', 'c h d', c=args.code_dim, h=args.num_heads, d=head_dim)
-        self.to_v = Mix('n c -> h n d', 'c h d', c=args.code_dim, h=args.num_heads, d=head_dim)
+        self.codes = nn.Parameter(th.randn(args.num_codes, args.code_dim) * args.code_dim**.5)
+        self.to_k = nn.Sequential(
+            MP.Linear(args.code_dim, dim),
+            Rearrange('n (h d) -> h n d', h=args.num_heads),
+        )
+        self.to_v = nn.Sequential(
+            MP.Linear(args.code_dim, dim),
+            Rearrange('n (h d) -> h n d', h=args.num_heads),
+        )
     
     def lookup(
         self,
