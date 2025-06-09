@@ -63,11 +63,13 @@ model:
         rate: 1e-3
 
     # model hyperparameters
+    emb_dim: 256
+    h_dim: 256
+
     stride: 4
     depth: 3
+    expand: 2
 
-    emb_dim: 256
-    h_dim: 512
     hard_attn_args:
         num_codes: 8
         code_dim: 1024

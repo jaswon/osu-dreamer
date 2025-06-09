@@ -13,12 +13,13 @@ class Encoder(nn.Module):
         h_dim: int,
         depth: int,
         stride: int,
+        expand: int,
     ):
         super().__init__()
-        self.proj_in = MP.Conv1d(dim, h_dim, 1)
-        self.proj_out = MP.Conv1d(h_dim, dim, 1)
+        self.proj_in = MP.Conv1d(dim, h_dim, 1) if dim != h_dim else nn.Identity()
+        self.proj_out = MP.Conv1d(h_dim, dim, 1) if dim != h_dim else nn.Identity()
         self.blocks = nn.ModuleList([
-            DiTBlock(h_dim, None, 1)
+            DiTBlock(h_dim, None, expand)
             for _ in range(depth)
         ])
         self.downs = nn.ModuleList([
@@ -49,12 +50,13 @@ class Decoder(nn.Module):
         h_dim: int,
         depth: int,
         stride: int,
+        expand: int,
     ):
         super().__init__()
-        self.proj_in = MP.Conv1d(dim, h_dim, 1)
-        self.proj_out = MP.Conv1d(h_dim, dim, 1)
+        self.proj_in = MP.Conv1d(dim, h_dim, 1) if dim != h_dim else nn.Identity()
+        self.proj_out = MP.Conv1d(h_dim, dim, 1) if dim != h_dim else nn.Identity()
         self.blocks = nn.ModuleList([
-            DiTBlock(h_dim, None, 1)
+            DiTBlock(h_dim, None, expand)
             for _ in range(depth)
         ])
         self.ups = nn.ModuleList([
