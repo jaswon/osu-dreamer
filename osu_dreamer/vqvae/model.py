@@ -18,7 +18,6 @@ from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.plot import plot_signals
 
 import osu_dreamer.modules.mp as MP
-from osu_dreamer.modules.lr_schedule import make_lr_schedule, LRScheduleArgs
 
 from .data.module import Batch
 
@@ -43,7 +42,6 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        lr_schedule_args: LRScheduleArgs,
         grad_clip: float,
         gp_factor: float,
         gan_factor: float,
@@ -66,7 +64,6 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
-        self.lr_schedule = make_lr_schedule(lr_schedule_args)
         self.grad_clip = grad_clip
         self.gp_factor = gp_factor
         self.gan_factor = gan_factor
@@ -139,21 +136,7 @@ class Model(pl.LightningModule):
             *self.encoder.parameters(),
             *self.decoder.parameters(),
         ], **self.opt_args)
-        return (
-            {
-                "optimizer": c_opt,
-                "lr_scheduler": {
-                    "scheduler": th.optim.lr_scheduler.LambdaLR(c_opt, self.lr_schedule),
-                    "interval": "step",
-                }
-            },{
-                "optimizer": g_opt,
-                "lr_scheduler": {
-                    "scheduler": th.optim.lr_scheduler.LambdaLR(g_opt, self.lr_schedule),
-                    "interval": "step",
-                }
-            },
-        )
+        return c_opt, g_opt
 
     def training_step(self, batch: Batch, batch_idx):
         opts: list[LightningOptimizer] = self.optimizers() # type: ignore
