@@ -65,12 +65,16 @@ class HardAttn(nn.Module):
         x: Float[Tensor, "B X L"],
     ) -> tuple[
         Float[Tensor, "B X L"], # hard attention
+        Float[Tensor, ""],      # entropy
         Int[Tensor, "B H L"],   # codebook indices
     ]:
         q = self.scale * rearrange(x, 'b (h d) l -> b h l d', h=self.num_heads)
         k = self.to_k(self.codes)
         v = self.to_v(self.codes)
         logits = th.einsum('bhnd,hmd->bhnm', q, k)
+
+        posterior_dist = th.distributions.Categorical(logits=logits)
+        entropy = posterior_dist.entropy().mean()
 
         if self.training:
             # softmax for gradient stability (Appendix B.1.5)
@@ -82,4 +86,4 @@ class HardAttn(nn.Module):
 
         out = th.einsum('bhnm,hmd->bhnd', attn, v)
         
-        return rearrange(out, 'b h l d -> b (h d) l'), codebook_indices
+        return rearrange(out, 'b h l d -> b (h d) l'), entropy, codebook_indices

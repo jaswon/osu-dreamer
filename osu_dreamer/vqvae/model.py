@@ -2,6 +2,10 @@
 from typing import Any
 from jaxtyping import Float, Int
 
+from dataclasses import dataclass
+
+import numpy as np
+
 import torch as th
 from torch import Tensor, nn
 import torch.nn.functional as F
@@ -22,6 +26,16 @@ from .modules.hard_attn import HardAttn, HardAttnArgs
 from .modules.ae import Encoder, Decoder
 from .modules.critic import Critic
 
+@dataclass
+class PriorFactorScheduleArgs:
+    midpoint: int
+    rate: float
+
+def make_prior_factor_schedule(args: PriorFactorScheduleArgs):
+    def get_factor(step: int) -> float:
+        return 1. / (1. + np.exp(-args.rate * (step - args.midpoint)))
+    return get_factor
+
     
 class Model(pl.LightningModule):
     def __init__(
@@ -33,6 +47,7 @@ class Model(pl.LightningModule):
         grad_clip: float,
         gp_factor: float,
         gan_factor: float,
+        prior_schedule: PriorFactorScheduleArgs,
 
         # model hparams
         stride: int,                    # convolution stride
@@ -55,6 +70,7 @@ class Model(pl.LightningModule):
         self.grad_clip = grad_clip
         self.gp_factor = gp_factor
         self.gan_factor = gan_factor
+        self.prior_schedule = make_prior_factor_schedule(prior_schedule)
 
         # model
         self.hard_attn = HardAttn(emb_dim, hard_attn_args)
@@ -82,11 +98,12 @@ class Model(pl.LightningModule):
         true_chart: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> tuple[
         Float[Tensor, str(f"B {X_DIM} L")],
+        Float[Tensor, ""],
         Int[Tensor, "B H l"],
     ]:
         z = self.encoder(true_chart)
-        z_q, indices = self.hard_attn(z)
-        return self.decoder(z_q), indices
+        z_q, entropy, indices = self.hard_attn(z)
+        return self.decoder(z_q), entropy, indices
     
     @th.no_grad
     def encode(
@@ -97,7 +114,7 @@ class Model(pl.LightningModule):
         if pad > 0:
             chart = F.pad(chart, (0, pad))
         z = self.encoder(chart) # B H l
-        z_q, _ = self.hard_attn(z)
+        z_q, _, _ = self.hard_attn(z)
         return z_q
     
     @th.no_grad
@@ -183,8 +200,9 @@ class Model(pl.LightningModule):
         })
 
         # train generator
-        pred_chart, pred_indices = self(true_chart)
+        pred_chart, pred_entropy, pred_indices = self(true_chart)
         perplexity = self.hard_attn.compute_perplexity(pred_indices)
+        prior_loss = -pred_entropy
 
         gen_adv_loss = th.tensor(0, device=self.device)
         rec_loss = th.tensor(0, device=self.device)
@@ -199,7 +217,8 @@ class Model(pl.LightningModule):
                 rec_loss_i = (pred_fmap - true_fmap).abs().mean() / pred_fmap.size(1)
                 rec_loss = rec_loss + rec_loss_i
 
-        gen_loss = rec_loss + self.gan_factor * gen_adv_loss
+        prior_factor = self.prior_schedule(self.global_step)
+        gen_loss = rec_loss + self.gan_factor * gen_adv_loss + prior_factor * prior_loss
         g_opt.zero_grad()
         self.manual_backward(gen_loss)
         g_opt_params = [ p for g in g_opt.param_groups for p in g['params'] if p.grad is not None ]
@@ -207,6 +226,8 @@ class Model(pl.LightningModule):
         g_opt.step()
         g_opt.zero_grad()
         self.log_dict({
+            "train/gen/prior_factor": prior_factor,
+            "train/gen/prior": prior_loss.detach(),
             "train/gen/adversarial": gen_adv_loss.detach(),
             "train/gen/reconstruction": rec_loss.detach(),
             "train/gen/perplexity": perplexity,
@@ -223,7 +244,7 @@ class Model(pl.LightningModule):
         if pad > 0:
             true_chart = F.pad(true_chart, (0,pad))
 
-        pred_chart, _ = self(true_chart)
+        pred_chart, _, _ = self(true_chart)
         self.log_dict({
             'val/l2_rec': (true_chart - pred_chart).pow(2).mean(),
         })
