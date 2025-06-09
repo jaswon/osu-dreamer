@@ -28,9 +28,9 @@ class HardAttn(nn.Module):
         super().__init__()
         head_dim = dim // args.num_heads
         assert head_dim * args.num_heads == dim
+        self.head_dim = head_dim
         self.num_heads = args.num_heads
         self.num_codes = args.num_codes
-        self.scale = head_dim ** -0.5
         self.temperature = args.temperature
 
         self.codes = nn.Parameter(th.randn(args.num_codes, args.code_dim))
@@ -68,8 +68,8 @@ class HardAttn(nn.Module):
         Float[Tensor, ""],      # entropy
         Int[Tensor, "B H L"],   # codebook indices
     ]:
-        q = self.scale * rearrange(x, 'b (h d) l -> b h l d', h=self.num_heads)
-        k = self.to_k(self.codes)
+        q = F.rms_norm(rearrange(x, 'b (h d) l -> b h l d', h=self.num_heads), (self.head_dim,))
+        k = F.rms_norm(self.to_k(self.codes), (self.head_dim,))
         v = self.to_v(self.codes)
         logits = th.einsum('bhnd,hmd->bhnm', q, k)
 
