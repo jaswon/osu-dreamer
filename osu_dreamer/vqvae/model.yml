@@ -58,12 +58,12 @@ model:
     gp_factor: 10.
     gan_factor: 5e-3
     prior_schedule:
-        max: .03 # = |z|/|x| = 8ln(8) / (9*4^3)
+        max: .001
         midpoint: 5_000
         rate: 1e-3
 
     # model hyperparameters
-    stride: 3
+    stride: 4
     depth: 3
 
     emb_dim: 256
@@ -75,8 +75,8 @@ model:
     critics:
         -
             - [ 32,  7, 1]
-            - [128, 15, 4]
-            - [512, 15, 4]
-            - [512, 15, 4]
+            - [128, 17, 5]
+            - [512, 17, 5]
+            - [512, 17, 5]
             - [512,  5, 1]
             - [512,  3, 1]
