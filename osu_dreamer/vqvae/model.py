@@ -7,6 +7,7 @@ from torch import Tensor, nn
 import torch.nn.functional as F
 
 import pytorch_lightning as pl
+from pytorch_lightning.core.optimizer import LightningOptimizer
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.beatmap.encode import X_DIM
@@ -29,6 +30,7 @@ class Model(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         lr_schedule_args: LRScheduleArgs,
+        grad_clip: float,
         gp_factor: float,
         gan_factor: float,
 
@@ -50,6 +52,7 @@ class Model(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(lr_schedule_args)
+        self.grad_clip = grad_clip
         self.gp_factor = gp_factor
         self.gan_factor = gan_factor
 
@@ -136,7 +139,8 @@ class Model(pl.LightningModule):
         )
 
     def training_step(self, batch: Batch, batch_idx):
-        c_opt, g_opt = self.optimizers() # type: ignore
+        opts: list[LightningOptimizer] = self.optimizers() # type: ignore
+        c_opt, g_opt = opts
         _, true_chart = batch
         B = true_chart.size(0)
 
@@ -198,6 +202,8 @@ class Model(pl.LightningModule):
         gen_loss = rec_loss + self.gan_factor * gen_adv_loss
         g_opt.zero_grad()
         self.manual_backward(gen_loss)
+        g_opt_params = [ p for g in g_opt.param_groups for p in g['params'] if p.grad is not None ]
+        self.log("train/gen/grad_l2", th.nn.utils.clip_grad_norm_(g_opt_params, self.grad_clip).item())
         g_opt.step()
         g_opt.zero_grad()
         self.log_dict({

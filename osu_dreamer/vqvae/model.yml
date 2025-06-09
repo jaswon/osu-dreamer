@@ -56,6 +56,7 @@ model:
         lr: .001
     lr_schedule_args:
         decay_start: 500
+    grad_clip: 10.
     gp_factor: 10.
     gan_factor: 5e-3
 
