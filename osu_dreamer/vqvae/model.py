@@ -29,10 +29,11 @@ from .modules.critic import Critic
 class PriorFactorScheduleArgs:
     midpoint: int
     rate: float
+    max: float = 1.
 
 def make_prior_factor_schedule(args: PriorFactorScheduleArgs):
     def get_factor(step: int) -> float:
-        return 1. / (1. + np.exp(-args.rate * (step - args.midpoint)))
+        return args.max / (1. + np.exp(-args.rate * (step - args.midpoint)))
     return get_factor
 
     
