@@ -51,9 +51,9 @@ class Model(pl.LightningModule):
         # model hparams
         stride: int,                    # convolution stride
         depth: int,                     # number of strided convs
-        expand: int,                    # hidden expansion factor
 
         emb_dim: int,                   # embedding dimension
+        h_dim: int,
         hard_attn_args: HardAttnArgs,
 
         critics: list[list[tuple[int, int, int]]],
@@ -74,10 +74,10 @@ class Model(pl.LightningModule):
         self.hard_attn = HardAttn(emb_dim, hard_attn_args)
         self.encoder = nn.Sequential(
             MP.Conv1d(X_DIM, emb_dim, 1),
-            Encoder(emb_dim, depth, stride, expand),
+            Encoder(emb_dim, h_dim, depth, stride),
         )
         self.decoder = nn.Sequential(
-            Decoder(emb_dim, depth, stride, expand),
+            Decoder(emb_dim, h_dim, depth, stride),
             MP.Conv1d(emb_dim, X_DIM, 1),
             MP.Gain(),
         )
