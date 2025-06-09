@@ -16,15 +16,9 @@ trainer:
         - # keep the best performing checkpoint
             class_path: pytorch_lightning.callbacks.ModelCheckpoint
             init_args:
-                monitor: val/loss
+                monitor: val/l2_rec
                 mode: min
                 save_top_k: 1
-        - # early stopping
-            class_path: pytorch_lightning.callbacks.EarlyStopping
-            init_args:
-                monitor: val/loss
-                mode: min
-                patience: 60
         - # learning rate monitor
             class_path: pytorch_lightning.callbacks.LearningRateMonitor
 
@@ -34,7 +28,6 @@ trainer:
             save_dir: runs
             name: vqvae
 
-    accumulate_grad_batches: 3
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
@@ -63,6 +56,8 @@ model:
         lr: .001
     lr_schedule_args:
         decay_start: 500
+    gp_factor: 10.
+    gan_factor: 5e-3
 
     # model hyperparameters
     stride: 3
@@ -74,3 +69,11 @@ model:
         num_codes: 8
         code_dim: 1024
         num_heads: 8
+    critics:
+        -
+            - [ 32,  7, 1]
+            - [128, 15, 4]
+            - [512, 15, 4]
+            - [512, 15, 4]
+            - [512,  5, 1]
+            - [512,  3, 1]

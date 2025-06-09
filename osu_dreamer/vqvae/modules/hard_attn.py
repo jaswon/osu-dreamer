@@ -29,6 +29,7 @@ class HardAttn(nn.Module):
         head_dim = dim // args.num_heads
         assert head_dim * args.num_heads == dim
         self.num_heads = args.num_heads
+        self.num_codes = args.num_codes
         self.scale = head_dim ** -0.5
         self.temperature = args.temperature
 
@@ -47,6 +48,17 @@ class HardAttn(nn.Module):
             index = repeat(i, 'b h l -> b h l d', d=v.size(-1)),
         )
         return rearrange(out, 'b h l d -> b (h d) l')
+    
+    def compute_perplexity(
+        self,
+        indices: Int[Tensor, "B H L"],
+    ) -> float:
+        indices = rearrange(indices, 'b h l -> (b l) h')
+        powers = th.arange(indices.size(1), device=indices.device)
+        ids = (indices * self.num_codes**powers).sum(dim=1)
+        _, counts = th.unique(ids, return_counts=True)
+        probs = counts / ids.numel()
+        return th.exp(-th.sum(probs * th.log(probs.clamp(min=1e-6)))).item()
 
     def forward(
         self, 
