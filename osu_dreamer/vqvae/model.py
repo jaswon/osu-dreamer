@@ -189,6 +189,8 @@ class Model(pl.LightningModule):
         pred_chart, pred_entropy, pred_indices = self(true_chart)
         perplexity = self.hard_attn.compute_perplexity(pred_indices)
         prior_loss = -pred_entropy
+        with th.no_grad():
+            l2_loss = (pred_chart - true_chart).pow(2).mean()
 
         gen_adv_loss = th.tensor(0, device=self.device)
         rec_loss = th.tensor(0, device=self.device)
@@ -218,6 +220,7 @@ class Model(pl.LightningModule):
             "train/gen/adversarial": gen_adv_loss.detach(),
             "train/gen/reconstruction": rec_loss.detach(),
             "train/gen/perplexity": perplexity,
+            "train/gen/l2": l2_loss,
         })
 
     @th.no_grad
