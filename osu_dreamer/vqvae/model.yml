@@ -40,7 +40,7 @@ data:
     seq_len: 4096 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 24
+    batch_size: 32
     
     # number of workers to use for data loading
     num_workers: 6
@@ -53,13 +53,13 @@ data:
 model:
     # training parameters
     opt_args:
-        lr: .001
+        lr: .01
     grad_clip: -1
     gp_factor: 10.
     gan_factor: 5e-3
     prior_schedule:
         max: .001
-        midpoint: 5_000
+        midpoint: 10_000
         rate: 1e-3
 
     # model hyperparameters

@@ -18,6 +18,7 @@ from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.plot import plot_signals
 
 import osu_dreamer.modules.mp as MP
+from osu_dreamer.modules.muon import Muon
 
 from .data.module import Batch
 
@@ -132,8 +133,8 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-        c_opt = th.optim.AdamW(self.critics.parameters(), **self.opt_args)
-        g_opt = th.optim.AdamW([
+        c_opt = Muon(self.critics.parameters(), **self.opt_args)
+        g_opt = Muon([
             *self.hard_attn.parameters(),
             *self.encoder.parameters(),
             *self.decoder.parameters(),
