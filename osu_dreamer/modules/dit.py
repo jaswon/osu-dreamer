@@ -111,6 +111,7 @@ class DiTBlock(nn.Module):
 class DiTArgs:
     depth: int
     expand: int
+    checkpoint: bool = True
 
 class DiT(nn.Module):
     def __init__(
@@ -124,6 +125,10 @@ class DiT(nn.Module):
             DiTBlock(dim, c_dim, args.expand)
             for _ in range(args.depth)
         ])
+        if args.checkpoint:
+            self.run_block = lambda block, x, c: checkpoint(block, x, c, use_reentrant=False)
+        else:
+            self.run_block = lambda block, x, c: block(x,c)
 
     def forward(
         self,
@@ -131,5 +136,5 @@ class DiT(nn.Module):
         c: None | Float[Tensor, "B C"] = None,
     ) -> Float[Tensor, "B X L"]:
         for block in self.blocks:
-            x = checkpoint(block, x, c, use_reentrant=False) # type: ignore
+            x = self.run_block(block, x, c) # type: ignore
         return x
