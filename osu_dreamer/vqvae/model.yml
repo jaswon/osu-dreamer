@@ -75,7 +75,6 @@ model:
     hard_attn_args:
         num_codes: 4
         num_heads: 8
-        code_dim: 512
 
     critics:
         - # MelGAN discriminator

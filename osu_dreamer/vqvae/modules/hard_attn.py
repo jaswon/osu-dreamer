@@ -7,15 +7,11 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from einops import rearrange, repeat
-from einops.layers.torch import Rearrange
-
-import osu_dreamer.modules.mp as MP
+from einops import rearrange
 
 @dataclass
 class HardAttnArgs:
     num_codes: int
-    code_dim: int
     num_heads: int
     temperature: float = 1.
 
@@ -35,27 +31,7 @@ class HardAttn(nn.Module):
         self.num_codes = args.num_codes
         self.temperature = args.temperature
 
-        self.codes = nn.Parameter(th.randn(args.num_codes, args.code_dim) * args.code_dim**.5)
-        self.to_k = nn.Sequential(
-            MP.Linear(args.code_dim, dim),
-            Rearrange('n (h d) -> h n d', h=args.num_heads),
-        )
-        self.to_v = nn.Sequential(
-            MP.Linear(args.code_dim, dim),
-            Rearrange('n (h d) -> h n d', h=args.num_heads),
-        )
-    
-    def lookup(
-        self,
-        i: Int[Tensor, "B H L"],
-    ) -> Float[Tensor, "B X L"]:
-        v = self.to_v(self.codes) # H N D
-        out = th.gather(
-            repeat(v, 'h n d -> b h n d', b=i.size(0)),
-            dim = 2,
-            index = repeat(i, 'b h l -> b h l d', d=v.size(-1)),
-        )
-        return rearrange(out, 'b h l d -> b (h d) l')
+        self.kv = nn.Parameter(th.randn(2, args.num_heads, args.num_codes, head_dim) * head_dim**.5)
     
     def compute_perplexity(
         self,
@@ -77,8 +53,7 @@ class HardAttn(nn.Module):
         Int[Tensor, "B H L"],   # codebook indices
     ]:
         q = F.rms_norm(rearrange(x, 'b (h d) l -> b h l d', h=self.num_heads), (self.head_dim,))
-        k = F.rms_norm(self.to_k(self.codes), (self.head_dim,))
-        v = self.to_v(self.codes)
+        k,v = F.rms_norm(self.kv, (self.head_dim,))
         logits = th.einsum('bhnd,hmd->bhnm', q, k)
 
         posterior_dist = th.distributions.Categorical(logits=logits)
@@ -90,7 +65,7 @@ class HardAttn(nn.Module):
             codebook_indices = attn.argmax(dim=-1)
         else:
             codebook_indices = logits.argmax(dim=-1)
-            attn = F.one_hot(codebook_indices, num_classes=self.codes.size(0)).float()
+            attn = F.one_hot(codebook_indices, num_classes=self.num_codes).float()
 
         out = th.einsum('bhnm,hmd->bhnd', attn, v)
         
