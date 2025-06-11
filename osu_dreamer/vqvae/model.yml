@@ -38,7 +38,7 @@ data:
     seq_len: 4096 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 32
+    batch_size: 8
     
     # number of workers to use for data loading
     num_workers: 6
@@ -53,6 +53,7 @@ model:
     opt_args:
         lr: .007
         adam_lr: 3e-4
+    grad_accum_steps: 4
     gen_grad_clip: 1.
     critic_grad_clip: 1.
     gp_factor: 10.

@@ -44,6 +44,7 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
+        grad_accum_steps: int,
         gen_grad_clip: float,
         critic_grad_clip: float,
         gp_factor: float,
@@ -64,6 +65,7 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
+        self.grad_accum_steps = max(1, grad_accum_steps)
         self.gen_grad_clip = gen_grad_clip
         self.critic_grad_clip = critic_grad_clip
         self.gp_factor = gp_factor
@@ -174,10 +176,10 @@ class Model(pl.LightningModule):
             gradient_penalty = gradient_penalty + ((gradients.norm(2, dim=1) - 1) ** 2).mean()
 
         critic_loss = critic_adv_loss + self.gp_factor * gradient_penalty
-        c_opt.zero_grad()
-        self.manual_backward(critic_loss)
-        c_opt.step()
-        c_opt.zero_grad()
+        self.manual_backward(critic_loss / self.grad_accum_steps)
+        if (batch_idx + 1) % self.grad_accum_steps == 0:
+            c_opt.step()
+            c_opt.zero_grad()
         self.log_dict({
             "train/critic/adversarial": critic_adv_loss.detach(),
             "train/critic/gradient_penalty": gradient_penalty.detach(),
@@ -205,10 +207,10 @@ class Model(pl.LightningModule):
 
         prior_factor = self.prior_schedule(self.global_step)
         gen_loss = rec_loss + self.gan_factor * gen_adv_loss + prior_factor * prior_loss
-        g_opt.zero_grad()
-        self.manual_backward(gen_loss)
-        g_opt.step()
-        g_opt.zero_grad()
+        self.manual_backward(gen_loss / self.grad_accum_steps)
+        if (batch_idx + 1) % self.grad_accum_steps == 0:
+            g_opt.step()
+            g_opt.zero_grad()
         self.log_dict({
             "train/gen/prior_factor": prior_factor,
             "train/gen/prior": prior_loss.detach(),
