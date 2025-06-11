@@ -57,22 +57,25 @@ model:
     gp_factor: 10.
     gan_factor: 5e-3
     prior_schedule:
-        max: .001
+        max: .0001
         midpoint: 10_000
         rate: 1e-3
 
     # model hyperparameters
-    emb_dim: 256
-    h_dim: 256
-
-    stride: 4
-    depth: 3
-    expand: 2
+    emb_dim: 128
+    ae_args:
+        h_dim: 384
+        stride: 4
+        depth: 3
+        block_args:
+            expand: 1
+            depth: 3
 
     hard_attn_args:
-        num_codes: 8
-        code_dim: 1024
+        num_codes: 4
         num_heads: 8
+        code_dim: 512
+
     critics:
         - # MelGAN discriminator
             - [  16,  5, 1,   1]

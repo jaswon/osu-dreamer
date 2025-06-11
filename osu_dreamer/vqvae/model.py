@@ -23,7 +23,7 @@ from osu_dreamer.modules.muon import Muon
 from .data.module import Batch
 
 from .modules.hard_attn import HardAttn, HardAttnArgs
-from .modules.ae import Encoder, Decoder
+from .modules.ae import Encoder, Decoder, AutoEncoderArgs
 from .modules.critic import Critic, CriticArgs
 
 @dataclass
@@ -50,20 +50,16 @@ class Model(pl.LightningModule):
         prior_schedule: PriorFactorScheduleArgs,
 
         # model hparams
-        stride: int,                    # convolution stride
-        depth: int,                     # number of strided convs
-        expand: int,
-
-        emb_dim: int,                   # embedding dimension
-        h_dim: int,
+        emb_dim: int,
+        ae_args: AutoEncoderArgs,
         hard_attn_args: HardAttnArgs,
-
         critics: list[CriticArgs],
     ):
         super().__init__()
         self.automatic_optimization = False
         self.save_hyperparameters()
-        self.chunk_size = stride ** depth
+        self.chunk_size = ae_args.stride ** ae_args.depth
+        self.emb_dim = emb_dim
 
         # training params
         self.opt_args = opt_args
@@ -76,10 +72,10 @@ class Model(pl.LightningModule):
         self.hard_attn = HardAttn(emb_dim, hard_attn_args)
         self.encoder = nn.Sequential(
             MP.Conv1d(X_DIM, emb_dim, 1),
-            Encoder(emb_dim, h_dim, depth, stride, expand),
+            Encoder(emb_dim, ae_args),
         )
         self.decoder = nn.Sequential(
-            Decoder(emb_dim, h_dim, depth, stride, expand),
+            Decoder(emb_dim, ae_args),
             MP.Conv1d(emb_dim, X_DIM, 1),
             MP.Gain(),
         )
