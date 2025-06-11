@@ -5,19 +5,21 @@ from torch import nn, Tensor
 
 import osu_dreamer.modules.mp as MP
 
+CriticArgs = list[tuple[int, int, int, int]] # out_dim, kernel_size, stride, group
+
 class Critic(nn.Module):
     def __init__(
         self,
         dim: int,
-        config: list[tuple[int, int, int]], # dim, kernel_size, stride
+        config: CriticArgs, 
     ):
         super().__init__()
         self.convs = nn.ModuleList()
         i = dim
-        for o,k,s in config:
+        for o,k,s,g in config:
             self.convs.append(nn.Sequential(
-                MP.Conv1d(i, i, k, s, groups=i),
-                MP.Conv1d(i, o, 1)
+                MP.Conv1d(i, o, k, s, groups=g),
+                MP.SiLU(),
             ))
             i = o
         self.convs.append(MP.Conv1d(i, 1, 1))
@@ -26,5 +28,4 @@ class Critic(nn.Module):
         f_maps = [x]
         for conv in self.convs:
             f_maps.append(conv(f_maps[-1]))
-        return f_maps
-        
+        return f_maps[1:]

@@ -24,7 +24,7 @@ from .data.module import Batch
 
 from .modules.hard_attn import HardAttn, HardAttnArgs
 from .modules.ae import Encoder, Decoder
-from .modules.critic import Critic
+from .modules.critic import Critic, CriticArgs
 
 @dataclass
 class PriorFactorScheduleArgs:
@@ -58,7 +58,7 @@ class Model(pl.LightningModule):
         h_dim: int,
         hard_attn_args: HardAttnArgs,
 
-        critics: list[list[tuple[int, int, int]]],
+        critics: list[CriticArgs],
     ):
         super().__init__()
         self.automatic_optimization = False
