@@ -44,7 +44,8 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
-        grad_clip: float,
+        gen_grad_clip: float,
+        critic_grad_clip: float,
         gp_factor: float,
         gan_factor: float,
         prior_schedule: PriorFactorScheduleArgs,
@@ -63,7 +64,8 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
-        self.grad_clip = grad_clip
+        self.gen_grad_clip = gen_grad_clip
+        self.critic_grad_clip = critic_grad_clip
         self.gp_factor = gp_factor
         self.gan_factor = gan_factor
         self.prior_schedule = make_prior_factor_schedule(prior_schedule)
@@ -205,9 +207,6 @@ class Model(pl.LightningModule):
         gen_loss = rec_loss + self.gan_factor * gen_adv_loss + prior_factor * prior_loss
         g_opt.zero_grad()
         self.manual_backward(gen_loss)
-        if self.grad_clip > 0:
-            g_opt_params = [ p for g in g_opt.param_groups for p in g['params'] if p.grad is not None ]
-            self.log("train/gen/grad_l2", th.nn.utils.clip_grad_norm_(g_opt_params, self.grad_clip).item())
         g_opt.step()
         g_opt.zero_grad()
         self.log_dict({
@@ -218,6 +217,17 @@ class Model(pl.LightningModule):
             "train/gen/perplexity": perplexity,
             "train/gen/l2": l2_loss,
         })
+
+    def on_before_optimizer_step(self, opt):
+        opts: list[LightningOptimizer] = self.optimizers() # type: ignore
+        c_opt, g_opt = opts
+
+        if opt is c_opt.optimizer:
+            grad_clip_val = self.critic_grad_clip
+        elif opt is g_opt.optimizer:
+            grad_clip_val = self.gen_grad_clip
+
+        self.clip_gradients(opt, gradient_clip_val=grad_clip_val, gradient_clip_algorithm="norm")
 
     @th.no_grad
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
