@@ -20,7 +20,6 @@ from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 import osu_dreamer.modules.mp as MP
-from osu_dreamer.modules.muon import Muon
 
 from .data.module import Batch
 
@@ -130,8 +129,8 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-        c_opt = Muon(self.critic.parameters(), **self.opt_args)
-        g_opt = Muon([
+        c_opt = th.optim.AdamW(self.critic.parameters(), **self.opt_args)
+        g_opt = th.optim.AdamW([
             *self.hard_attn.parameters(),
             *self.encoder.parameters(),
             *self.decoder.parameters(),

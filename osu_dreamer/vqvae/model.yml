@@ -41,7 +41,7 @@ data:
     seq_len: 4096 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 8
+    batch_size: 56
     
     # number of workers to use for data loading
     num_workers: 6
@@ -54,12 +54,9 @@ data:
 model:
     # training parameters
     opt_args:
-        lr: .007
-    lr_schedule_args:
-        warmup_steps: 40
-        warmup_init: .1
-        decay_start: 40
-    grad_accum_steps: 4
+        lr: .01
+        weight_decay: .01
+    grad_accum_steps: 1
     gp_factor: 10.
     gan_factor: 5e-3
     prior_schedule:
@@ -68,24 +65,24 @@ model:
         rate: 1e-3
 
     # model hyperparameters
-    emb_dim: 128
+    emb_dim: 32
     ae_args:
-        h_dim: 384
-        stride: 4
+        h_dim: 128
+        stride: 3
         depth: 3
         block_args:
             expand: 1
-            depth: 3
+            depth: 1
+            checkpoint: false
 
     hard_attn_args:
-        num_codes: 4
-        num_heads: 8
+        num_codes: 8
+        num_heads: 4
 
     critic_args:
         scales: 3
         convs:
-            - [ 16, 5, 1,   1]
-            - [ 64, 9, 3,   4]
-            - [256, 9, 3,  16]
-            - [512, 9, 3,  64]
-            - [512, 3, 1,   1]
+            - [ 16, 5, 1, 1]
+            - [ 32, 9, 3, 4]
+            - [ 64, 9, 3, 8]
+            - [128, 3, 1, 1]
