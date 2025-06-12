@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class LRScheduleArgs:
     warmup_steps: int = 0
     warmup_init: float = 1
-    decay_start: float
+    decay_start: float = float('inf')
 
 def make_lr_schedule(lr: LRScheduleArgs):
     assert lr.warmup_steps <= lr.decay_start
