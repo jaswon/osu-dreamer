@@ -166,7 +166,7 @@ class Model(pl.LightningModule):
         for pred_fmaps, true_fmaps in zip(pred_all_fmaps, true_all_fmaps):
             *_, pred_score = pred_fmaps
             *_, true_score = true_fmaps
-            critic_adv_loss.add_( -true_score.mean() + pred_score.mean() )
+            critic_adv_loss.add_( F.softplus(-true_score).mean() + F.softplus(pred_score).mean() )
 
         # gradient penalty
         gradient_penalty = th.tensor(0., device=self.device)
@@ -212,7 +212,7 @@ class Model(pl.LightningModule):
             *pred_fmaps, pred_score = pred_fmaps
             *true_fmaps, _          = true_fmaps
 
-            gen_adv_loss.add_( -pred_score.mean() )
+            gen_adv_loss.add_( F.softplus(-pred_score).mean() )
 
             # feature matching
             for pred_fmap, true_fmap in zip(pred_fmaps, true_fmaps):
