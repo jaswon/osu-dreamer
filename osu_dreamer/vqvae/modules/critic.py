@@ -1,11 +1,36 @@
 
 from jaxtyping import Float
 
+from dataclasses import dataclass
+
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 import osu_dreamer.modules.mp as MP
 
 CriticArgs = list[tuple[int, int, int, int]] # out_dim, kernel_size, stride, group
+
+@dataclass
+class MultiScaleCriticArgs:
+    scales: int
+    convs: CriticArgs
+
+class MultiScaleCritic(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        args: MultiScaleCriticArgs,
+    ):
+        super().__init__()
+        self.critics = nn.ModuleList([ Critic(dim, args.convs) for _ in range(args.scales) ])
+
+    def forward(self, x: Float[Tensor, "B D L"]) -> list[list[Float[Tensor, "B _D _L"]]]:
+        fmaps = []
+        for i, critic in enumerate(self.critics):
+            if i > 0:
+                x = F.avg_pool1d(x, 4,2,1)
+            fmaps.append(critic(x))
+        return fmaps
 
 class Critic(nn.Module):
     def __init__(

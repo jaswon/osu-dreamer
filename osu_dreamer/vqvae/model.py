@@ -26,7 +26,7 @@ from .data.module import Batch
 
 from .modules.hard_attn import HardAttn, HardAttnArgs
 from .modules.ae import Encoder, Decoder, AutoEncoderArgs
-from .modules.critic import Critic, CriticArgs
+from .modules.critic import MultiScaleCritic, MultiScaleCriticArgs
 
 @dataclass
 class PriorFactorScheduleArgs:
@@ -56,7 +56,7 @@ class Model(pl.LightningModule):
         emb_dim: int,
         ae_args: AutoEncoderArgs,
         hard_attn_args: HardAttnArgs,
-        critics: list[CriticArgs],
+        critic_args: MultiScaleCriticArgs,
     ):
         super().__init__()
         self.automatic_optimization = False
@@ -83,10 +83,7 @@ class Model(pl.LightningModule):
             MP.Conv1d(emb_dim, X_DIM, 1),
             MP.Gain(),
         )
-        self.critics = nn.ModuleList([
-            Critic(X_DIM, conf)
-            for conf in critics
-        ])
+        self.critic = MultiScaleCritic(X_DIM, critic_args)
 
     def padding(self, L: int) -> int:
         """returns the amount of padding required to align a sequence of length L"""
@@ -133,7 +130,7 @@ class Model(pl.LightningModule):
 #
 
     def configure_optimizers(self):
-        c_opt = Muon(self.critics.parameters(), **self.opt_args)
+        c_opt = Muon(self.critic.parameters(), **self.opt_args)
         g_opt = Muon([
             *self.hard_attn.parameters(),
             *self.encoder.parameters(),
@@ -164,20 +161,23 @@ class Model(pl.LightningModule):
             pred_chart = self(true_chart)[0]
 
         critic_adv_loss = th.tensor(0., device=self.device)
-        gradient_penalty = th.tensor(0., device=self.device)
-        for critic in self.critics:
-            *_, pred_score = critic(pred_chart)
-            *_, true_score = critic(true_chart)
+        pred_all_fmaps = self.critic(pred_chart)
+        true_all_fmaps = self.critic(true_chart)
+        for pred_fmaps, true_fmaps in zip(pred_all_fmaps, true_all_fmaps):
+            *_, pred_score = pred_fmaps
+            *_, true_score = true_fmaps
             critic_adv_loss.add_( -true_score.mean() + pred_score.mean() )
 
-            # gradient penalty
-            alpha = ((th.arange(B) + th.rand(1)) / B)[:,None,None].to(self.device)
-            interpolates = ( alpha * true_chart + (1-alpha) * pred_chart ).requires_grad_(True)
-            *_, interpolates_score = critic(interpolates)
+        # gradient penalty
+        gradient_penalty = th.tensor(0., device=self.device)
+        alpha = ((th.arange(B) + th.rand(1)) / B)[:,None,None].to(self.device)
+        lerp_chart = ( alpha * true_chart + (1-alpha) * pred_chart ).requires_grad_(True)
+        for lerp_fmaps in self.critic(lerp_chart):
+            lerp_score = lerp_fmaps[-1]
             gradients = th.autograd.grad(
-                outputs=interpolates_score,
-                inputs=interpolates,
-                grad_outputs=th.ones_like(interpolates_score),
+                outputs=lerp_score,
+                inputs=lerp_chart,
+                grad_outputs=th.ones_like(lerp_score),
                 create_graph=True,
                 retain_graph=True,
             )[0].view(B, -1)
@@ -205,10 +205,12 @@ class Model(pl.LightningModule):
 
         gen_adv_loss = th.tensor(0., device=self.device)
         rec_loss = th.tensor(0., device=self.device)
-        for critic in self.critics:
-            *pred_fmaps, pred_score = critic(pred_chart)
-            with th.no_grad():
-                *true_fmaps, _      = critic(true_chart)
+        pred_all_fmaps = self.critic(pred_chart)
+        with th.no_grad():
+            true_all_fmaps = self.critic(true_chart)
+        for pred_fmaps, true_fmaps in zip(pred_all_fmaps, true_all_fmaps):
+            *pred_fmaps, pred_score = pred_fmaps
+            *true_fmaps, _          = true_fmaps
 
             gen_adv_loss.add_( -pred_score.mean() )
 
