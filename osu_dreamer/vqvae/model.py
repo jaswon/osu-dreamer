@@ -122,7 +122,7 @@ class Model(pl.LightningModule):
         self,
         z_q: Float[Tensor, "B D l"]
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        return self.decoder(z_q)
+        return self.decoder(z_q).clamp(min=-1, max=1)
 
 #
 #
@@ -160,18 +160,18 @@ class Model(pl.LightningModule):
             true_chart = F.pad(true_chart, (0,pad))
 
         # train critics
-        pred_chart = self(true_chart)[0].detach()
+        with th.no_grad():
+            pred_chart = self(true_chart)[0]
 
-        critic_adv_loss = th.tensor(0, device=self.device)
-        gradient_penalty = th.tensor(0, device=self.device)
+        critic_adv_loss = th.tensor(0., device=self.device)
+        gradient_penalty = th.tensor(0., device=self.device)
         for critic in self.critics:
             *_, pred_score = critic(pred_chart)
             *_, true_score = critic(true_chart)
-
-            critic_adv_loss = critic_adv_loss + ( -true_score.mean() + pred_score.mean() )
+            critic_adv_loss.add_( -true_score.mean() + pred_score.mean() )
 
             # gradient penalty
-            alpha = th.rand(B,1,1, device=self.device)
+            alpha = ((th.arange(B) + th.rand(1)) / B)[:,None,None].to(self.device)
             interpolates = ( alpha * true_chart + (1-alpha) * pred_chart ).requires_grad_(True)
             *_, interpolates_score = critic(interpolates)
             gradients = th.autograd.grad(
@@ -181,10 +181,12 @@ class Model(pl.LightningModule):
                 create_graph=True,
                 retain_graph=True,
             )[0].view(B, -1)
-            gradient_penalty = gradient_penalty + ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+            gradient_penalty.add_( ((gradients.norm(2, dim=1) - 1) ** 2).mean() )
 
-        critic_loss = critic_adv_loss + self.gp_factor * gradient_penalty
-        self.manual_backward(critic_loss / self.grad_accum_steps)
+        self.manual_backward((
+            + critic_adv_loss
+            + self.gp_factor * gradient_penalty
+        ) / self.grad_accum_steps)
         if (batch_idx + 1) % self.grad_accum_steps == 0:
             c_opt.step()
             c_opt.zero_grad()
@@ -196,27 +198,30 @@ class Model(pl.LightningModule):
 
         # train generator
         pred_chart, pred_entropy, pred_indices = self(true_chart)
-        perplexity = self.hard_attn.compute_perplexity(pred_indices)
         prior_loss = -pred_entropy
         with th.no_grad():
+            perplexity = self.hard_attn.compute_perplexity(pred_indices)
             l2_loss = (pred_chart - true_chart).pow(2).mean()
 
-        gen_adv_loss = th.tensor(0, device=self.device)
-        rec_loss = th.tensor(0, device=self.device)
+        gen_adv_loss = th.tensor(0., device=self.device)
+        rec_loss = th.tensor(0., device=self.device)
         for critic in self.critics:
             *pred_fmaps, pred_score = critic(pred_chart)
-            *true_fmaps, _          = critic(true_chart)
+            with th.no_grad():
+                *true_fmaps, _      = critic(true_chart)
 
-            gen_adv_loss = gen_adv_loss + ( -pred_score.mean() )
+            gen_adv_loss.add_( -pred_score.mean() )
 
             # feature matching
             for pred_fmap, true_fmap in zip(pred_fmaps, true_fmaps):
-                rec_loss_i = (pred_fmap - true_fmap).abs().mean() / pred_fmap.size(1)
-                rec_loss = rec_loss + rec_loss_i
+                rec_loss.add_( (pred_fmap - true_fmap).abs().mean() )
 
         prior_factor = self.prior_schedule(self.global_step)
-        gen_loss = rec_loss + self.gan_factor * gen_adv_loss + prior_factor * prior_loss
-        self.manual_backward(gen_loss / self.grad_accum_steps)
+        self.manual_backward((
+            + rec_loss 
+            + self.gan_factor * gen_adv_loss 
+            + prior_factor * prior_loss
+        ) / self.grad_accum_steps)
         if (batch_idx + 1) % self.grad_accum_steps == 0:
             g_opt.step()
             g_opt.zero_grad()
