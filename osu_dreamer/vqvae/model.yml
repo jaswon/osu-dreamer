@@ -60,8 +60,6 @@ model:
         warmup_init: .1
         decay_start: 40
     grad_accum_steps: 4
-    gen_grad_clip: 1.
-    critic_grad_clip: 1.
     gp_factor: 10.
     gan_factor: 5e-3
     prior_schedule:

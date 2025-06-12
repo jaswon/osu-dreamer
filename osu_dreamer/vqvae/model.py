@@ -48,8 +48,6 @@ class Model(pl.LightningModule):
         opt_args: dict[str, Any],
         lr_schedule_args: LRScheduleArgs,
         grad_accum_steps: int,
-        gen_grad_clip: float,
-        critic_grad_clip: float,
         gp_factor: float,
         gan_factor: float,
         prior_schedule: PriorFactorScheduleArgs,
@@ -70,8 +68,6 @@ class Model(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(lr_schedule_args)
         self.grad_accum_steps = max(1, grad_accum_steps)
-        self.gen_grad_clip = gen_grad_clip
-        self.critic_grad_clip = critic_grad_clip
         self.gp_factor = gp_factor
         self.gan_factor = gan_factor
         self.prior_schedule = make_prior_factor_schedule(prior_schedule)
@@ -233,17 +229,6 @@ class Model(pl.LightningModule):
             "train/gen/perplexity": perplexity,
             "train/gen/l2": l2_loss,
         })
-
-    def on_before_optimizer_step(self, opt):
-        opts: list[LightningOptimizer] = self.optimizers() # type: ignore
-        c_opt, g_opt = opts
-
-        if opt is c_opt.optimizer:
-            grad_clip_val = self.critic_grad_clip
-        elif opt is g_opt.optimizer:
-            grad_clip_val = self.gen_grad_clip
-
-        self.clip_gradients(opt, gradient_clip_val=grad_clip_val, gradient_clip_algorithm="norm")
 
     @th.no_grad
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
