@@ -49,7 +49,7 @@ class Muon(torch.optim.Optimizer):
         self, 
         param_groups,
         lr=.02,
-        adam_lr=3e-4,
+        adam_lr_factor=.01,
         weight_decay=0.1,
         momentum=0.95, 
         adamw_betas=(0.9, 0.95), 
@@ -57,7 +57,7 @@ class Muon(torch.optim.Optimizer):
     ):
         super().__init__(param_groups, dict(
             lr=lr,
-            adam_lr=adam_lr,
+            adam_lr_factor=adam_lr_factor,
             momentum=momentum,
             weight_decay=weight_decay,
             adamw_betas=adamw_betas, 
@@ -72,9 +72,10 @@ class Muon(torch.optim.Optimizer):
                 if p.grad is None:
                     continue
 
+                lr = group["lr"]
                 if p.ndim < 2:
                     # adamw update
-                    lr = group["adam_lr"]
+                    lr *= group["adam_lr_factor"]
                     if 'step' not in state:
                         state['step'] = 0
                         state['moment1'] = torch.zeros_like(p.grad)
@@ -87,7 +88,6 @@ class Muon(torch.optim.Optimizer):
                     )
                 else:
                     # muon update
-                    lr = group["lr"]
                     if 'momentum_buffer' not in state:
                         state['momentum_buffer'] = torch.zeros_like(p.grad)
                     update = muon_update(p.grad, state["momentum_buffer"], group["momentum"])

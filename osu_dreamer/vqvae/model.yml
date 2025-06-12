@@ -55,7 +55,6 @@ model:
     # training parameters
     opt_args:
         lr: .007
-        adam_lr: 3e-4
     lr_schedule_args:
         warmup_steps: 40
         warmup_init: .1
