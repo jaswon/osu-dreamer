@@ -12,11 +12,13 @@ import torch.nn.functional as F
 
 import pytorch_lightning as pl
 from pytorch_lightning.core.optimizer import LightningOptimizer
+from pytorch_lightning.utilities.types import LRSchedulerPLType
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.beatmap.encode import X_DIM
 from osu_dreamer.data.plot import plot_signals
 
+from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 import osu_dreamer.modules.mp as MP
 from osu_dreamer.modules.muon import Muon
 
@@ -44,6 +46,7 @@ class Model(pl.LightningModule):
 
         # training parameters
         opt_args: dict[str, Any],
+        lr_schedule_args: LRScheduleArgs,
         grad_accum_steps: int,
         gen_grad_clip: float,
         critic_grad_clip: float,
@@ -65,6 +68,7 @@ class Model(pl.LightningModule):
 
         # training params
         self.opt_args = opt_args
+        self.lr_schedule = make_lr_schedule(lr_schedule_args)
         self.grad_accum_steps = max(1, grad_accum_steps)
         self.gen_grad_clip = gen_grad_clip
         self.critic_grad_clip = critic_grad_clip
@@ -139,11 +143,19 @@ class Model(pl.LightningModule):
             *self.encoder.parameters(),
             *self.decoder.parameters(),
         ], **self.opt_args)
-        return c_opt, g_opt
+        return [c_opt, g_opt], [
+            {
+                "scheduler": th.optim.lr_scheduler.LambdaLR(opt, self.lr_schedule),
+                "interval": "step",
+            }
+            for opt in [c_opt, g_opt]
+        ]
 
     def training_step(self, batch: Batch, batch_idx):
         opts: list[LightningOptimizer] = self.optimizers() # type: ignore
+        schs: list[LRSchedulerPLType] = self.lr_schedulers() # type: ignore
         c_opt, g_opt = opts
+        c_sch, g_sch = schs
         _, true_chart = batch
         B = true_chart.size(0)
 
@@ -180,6 +192,7 @@ class Model(pl.LightningModule):
         if (batch_idx + 1) % self.grad_accum_steps == 0:
             c_opt.step()
             c_opt.zero_grad()
+            c_sch.step() # type: ignore
         self.log_dict({
             "train/critic/adversarial": critic_adv_loss.detach(),
             "train/critic/gradient_penalty": gradient_penalty.detach(),
@@ -211,6 +224,7 @@ class Model(pl.LightningModule):
         if (batch_idx + 1) % self.grad_accum_steps == 0:
             g_opt.step()
             g_opt.zero_grad()
+            g_sch.step() # type: ignore
         self.log_dict({
             "train/gen/prior_factor": prior_factor,
             "train/gen/prior": prior_loss.detach(),
