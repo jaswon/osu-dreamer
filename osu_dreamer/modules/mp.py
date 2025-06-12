@@ -65,11 +65,11 @@ class Gain(nn.Module):
 
 ### Magnitude-preserving learned layers
 
-def get_normed_weight(W: Float[Tensor, "O ..."], training: bool) -> Float[Tensor, "O ..."]:
+def get_normed_weight(W: Float[Tensor, "O ..."], training: bool, dim=None) -> Float[Tensor, "O ..."]:
     if training and W._version < 2:
         with th.no_grad():
-            W.copy_(normalize(W))
-    return normalize(W) / np.sqrt(W[0].numel())
+            W.copy_(normalize(W, dim))
+    return normalize(W, dim) / np.sqrt(W[0].numel())
 
 class Linear(nn.Linear):
     def __init__(self, *args, **kwargs):
@@ -97,11 +97,37 @@ class Embedding(nn.Embedding):
 
 class Conv1d(nn.Conv1d):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, bias=False)
+        super().__init__(*args, **kwargs, bias=False, padding_mode='zeros')
         th.nn.init.normal_(self.weight)
     
     def forward(self, x: Float[Tensor, "B iD iL"]) -> Float[Tensor, "B oD oL"]:
-        return self._conv_forward(x, get_normed_weight(self.weight, self.training), None)
+        return F.conv1d(
+            x,
+            get_normed_weight(self.weight, self.training),
+            None, self.stride, self.padding, self.dilation, self.groups,
+        )
+
+class ConvTranspose1d(nn.ConvTranspose1d):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, bias=False, padding_mode='zeros')
+        th.nn.init.normal_(self.weight)
+    
+    def forward(self, x: Float[Tensor, "B iD iL"]) -> Float[Tensor, "B oD oL"]:
+        assert isinstance(self.padding, tuple)
+        output_padding = self._output_padding(
+            x,
+            None,
+            self.stride,  # type: ignore[arg-type]
+            self.padding,  # type: ignore[arg-type]
+            self.kernel_size,  # type: ignore[arg-type]
+            1,
+            self.dilation,  # type: ignore[arg-type]
+        )
+        return F.conv_transpose1d(
+            x,
+            get_normed_weight(self.weight, self.training, dim=(0,2)),
+            None, self.stride, self.padding, output_padding, self.groups, self.dilation,
+        )
 
 class Conv2d(nn.Conv2d):
     def __init__(self, *args, **kwargs):
