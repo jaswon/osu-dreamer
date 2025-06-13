@@ -36,7 +36,7 @@ class Encoder(nn.Module):
                     args.stride, 1, 'same', 
                     groups=args.h_dim,
                 ),
-                nn.MaxPool1d(args.stride),
+                nn.AvgPool1d(args.stride),
             )
             for _ in range(args.depth)
         ])
