@@ -73,6 +73,7 @@ model:
         layer_args:
             num_stacks: 1
             stack_depth: 3
+            squeeze: 16
 
     hard_attn_args:
         num_codes: 8

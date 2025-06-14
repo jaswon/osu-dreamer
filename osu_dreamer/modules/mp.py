@@ -36,6 +36,13 @@ def silu(x):
 class SiLU(nn.Module):
     def forward(self, x):
         return silu(x)
+    
+def sigmoid(x):
+    return F.sigmoid(x) / .542
+
+class Sigmoid(nn.Module):
+    def forward(self, x):
+        return sigmoid(x)
 
 def add(
     a: Float[Tensor, "..."], 
