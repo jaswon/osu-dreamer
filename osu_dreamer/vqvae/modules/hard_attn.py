@@ -29,7 +29,7 @@ class HardAttn(nn.Module):
         self.head_dim = head_dim
         self.num_heads = args.num_heads
         self.num_codes = args.num_codes
-        self.temperature = args.temperature
+        self.register_buffer('temperature', th.tensor(args.temperature)); self.temperature: Tensor
 
         self.kv = nn.Parameter(th.randn(2, args.num_heads, args.num_codes, head_dim) * head_dim**.5)
     
@@ -61,8 +61,9 @@ class HardAttn(nn.Module):
 
         if self.training:
             # softmax for gradient stability (Appendix B.1.5)
-            attn = F.gumbel_softmax(logits, tau=self.temperature, dim=-1, hard=True)
+            attn = F.gumbel_softmax(logits, tau=self.temperature.item(), dim=-1, hard=True)
             codebook_indices = attn.argmax(dim=-1)
+            self.temperature = (self.temperature * 0.9999).clamp(min=.1)
         else:
             codebook_indices = logits.argmax(dim=-1)
             attn = F.one_hot(codebook_indices, num_classes=self.num_codes).float()
