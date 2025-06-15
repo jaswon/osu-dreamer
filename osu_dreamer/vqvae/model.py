@@ -53,6 +53,7 @@ class Model(pl.LightningModule):
 
         # model hparams
         emb_dim: int,
+        h_dim: int,
         ae_args: AutoEncoderArgs,
         hard_attn_args: HardAttnArgs,
         critic_args: MultiScaleCriticArgs,
@@ -73,13 +74,24 @@ class Model(pl.LightningModule):
 
         # model
         self.hard_attn = HardAttn(emb_dim, hard_attn_args)
+        rt_h = int(h_dim**.5)
         self.encoder = nn.Sequential(
-            MP.Conv1d(X_DIM, emb_dim, 1),
-            Encoder(emb_dim, ae_args),
+            MP.Conv1d(X_DIM, rt_h, 1),
+            MP.SiLU(),
+            MP.Conv1d(rt_h, h_dim, 1),
+            Encoder(h_dim, ae_args),
+            MP.Conv1d(h_dim, rt_h, 1),
+            MP.SiLU(),
+            MP.Conv1d(rt_h, emb_dim, 1),
         )
         self.decoder = nn.Sequential(
-            Decoder(emb_dim, ae_args),
-            MP.Conv1d(emb_dim, X_DIM, 1),
+            MP.Conv1d(emb_dim, rt_h, 1),
+            MP.SiLU(),
+            MP.Conv1d(rt_h, h_dim, 1),
+            Decoder(h_dim, ae_args),
+            MP.Conv1d(h_dim, rt_h, 1),
+            MP.SiLU(),
+            MP.Conv1d(rt_h, X_DIM, 1),
             MP.Gain(),
         )
         self.critic = MultiScaleCritic(X_DIM, critic_args)
