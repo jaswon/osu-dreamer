@@ -55,7 +55,7 @@ model:
     # training parameters
     opt_args:
         lr: .01
-        weight_decay: .01
+        weight_decay: 0.
     grad_accum_steps: 1
     gp_factor: 10.
     gan_factor: 5e-3
