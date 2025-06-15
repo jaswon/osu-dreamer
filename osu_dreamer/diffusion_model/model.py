@@ -21,6 +21,8 @@ from osu_dreamer.data.plot import plot_signals
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
+from osu_dreamer.vqvae.model import Model as LatentModel
+
 from .data.dataset import Batch
 from .denoiser import Denoiser, DenoiserArgs
 from .encoder import Encoder, EncoderArgs
@@ -40,6 +42,7 @@ class Model(pl.LightningModule):
         schedule_args: LRScheduleArgs,
 
         # model hparams
+        latent_model_ckpt: str,
         a_h_dim: int,
         encoder_args: EncoderArgs,
         denoiser_args: DenoiserArgs,
@@ -57,6 +60,8 @@ class Model(pl.LightningModule):
         self.lr_schedule = make_lr_schedule(schedule_args)
 
         # model
+        self.latent = LatentModel.load_from_checkpoint(latent_model_ckpt)
+        self.latent.freeze()
         self.audio_encoder = Encoder(A_DIM, a_h_dim, encoder_args)
         self.denoiser = Denoiser(X_DIM, a_h_dim, denoiser_args)
     
@@ -69,9 +74,11 @@ class Model(pl.LightningModule):
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-        x1: Float[Tensor, str(f"B {X_DIM} L")],
+        chart: Float[Tensor, str(f"B {X_DIM} L")],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
+        
+        x1 = self.latent.encode(chart)
         
         B = audio.size(0)
         denoiser = partial(
@@ -106,7 +113,8 @@ class Model(pl.LightningModule):
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
 
-        x = th.randn(num_samples, X_DIM, audio.size(-1), device=audio.device)
+        l = (audio.size(-1) + self.latent.padding(audio.size(-1))) // self.latent.chunk_size
+        x = th.randn(num_samples, self.latent.emb_dim, l, device=audio.device)
         denoiser = partial(
             self.denoiser,
             repeat(self.audio_encoder(audio[None]), '1 a l -> b a l', b=num_samples),
@@ -117,7 +125,7 @@ class Model(pl.LightningModule):
             disable=not show_progress,
         ):
             x = x + denoiser(x, t.expand(x.size(0))) / num_steps 
-        return x.clamp(min=-1, max=1)
+        return self.latent.decode(x)
 
 #
 #
