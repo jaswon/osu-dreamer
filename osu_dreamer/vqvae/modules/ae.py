@@ -13,6 +13,7 @@ from .wavenet import WaveNet, WaveNetArgs
 class AutoEncoderArgs:
     depth: int
     stride: int
+    expand: int
     layer_args: WaveNetArgs
 
 class Encoder(nn.Module):
@@ -26,14 +27,14 @@ class Encoder(nn.Module):
             WaveNet(dim, args.layer_args)
             for _ in range(args.depth)
         ])
+        h_dim = dim * args.expand
         self.downs = nn.ModuleList([
             nn.Sequential(
-                MP.Conv1d(
-                    dim, dim, 
-                    args.stride*2, 1, 'same', 
-                    groups=dim,
-                ),
+                MP.Conv1d(dim, h_dim, 1),
+                MP.Conv1d(h_dim, h_dim, args.stride*2, 1, 'same', groups=h_dim),
                 nn.AvgPool1d(args.stride),
+                MP.SiLU(),
+                MP.Conv1d(h_dim, dim, 1),
             )
             for _ in range(args.depth)
         ])
@@ -56,14 +57,14 @@ class Decoder(nn.Module):
             WaveNet(dim, args.layer_args)
             for _ in range(args.depth)
         ])
+        h_dim = dim * args.expand
         self.ups = nn.ModuleList([
             nn.Sequential(
+                MP.Conv1d(dim, h_dim, 1),
                 nn.Upsample(scale_factor=args.stride, mode='linear'),
-                MP.Conv1d(
-                    dim, dim, 
-                    args.stride*2, 1, 'same', 
-                    groups=dim,
-                ),
+                MP.Conv1d(h_dim, h_dim, args.stride*2, 1, 'same', groups=h_dim),
+                MP.SiLU(),
+                MP.Conv1d(h_dim, dim, 1),
             )
             for _ in range(args.depth)
         ])
