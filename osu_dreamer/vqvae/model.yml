@@ -68,7 +68,7 @@ model:
 
     # model hyperparameters
     emb_dim: 32
-    h_dim: 768
+    h_dim: 512
     ae_args:
         stride: 3
         depth: 3
@@ -76,7 +76,7 @@ model:
         layer_args:
             num_stacks: 1
             stack_depth: 3
-            squeeze: 16
+            expand: 2
 
     hard_attn_args:
         num_codes: 8
