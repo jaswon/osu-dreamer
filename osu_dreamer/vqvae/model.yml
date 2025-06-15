@@ -38,10 +38,10 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 4096 # * 6ms/frame ~= 24.6s
+    seq_len: 2048 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 32
+    batch_size: 20
     
     # number of workers to use for data loading
     num_workers: 6
@@ -68,7 +68,7 @@ model:
 
     # model hyperparameters
     emb_dim: 32
-    h_dim: 512
+    h_dim: 256
     ae_args:
         stride: 3
         depth: 3
@@ -85,7 +85,8 @@ model:
     critic_args:
         scales: 3
         convs:
-            - [ 16, 5, 1, 1]
-            - [ 32, 9, 3, 4]
-            - [ 64, 9, 3, 8]
-            - [128, 3, 1, 1]
+            - [  16, 3, 1,  1]
+            - [  64, 5, 2,  4]
+            - [ 256, 5, 2, 16]
+            - [ 512, 5, 2, 64]
+            - [1024, 3, 1,  1]
