@@ -49,6 +49,8 @@ class Model(pl.LightningModule):
         grad_accum_steps: int,
         gp_factor: float,
         gan_factor: float,
+        fm_factor: float,
+        pixel_factor: float,
         prior_schedule: PriorFactorScheduleArgs,
 
         # model hparams
@@ -70,6 +72,8 @@ class Model(pl.LightningModule):
         self.grad_accum_steps = max(1, grad_accum_steps)
         self.gp_factor = gp_factor
         self.gan_factor = gan_factor
+        self.fm_factor = fm_factor
+        self.pixel_factor = pixel_factor
         self.prior_schedule = make_prior_factor_schedule(prior_schedule)
 
         # model
@@ -212,10 +216,11 @@ class Model(pl.LightningModule):
         prior_loss = -pred_entropy
         with th.no_grad():
             perplexity = self.hard_attn.compute_perplexity(pred_indices)
-            l2_loss = (pred_chart - true_chart).pow(2).mean()
+            
+        pixel_loss = ( pred_chart - true_chart ).pow(2).mean()
 
         gen_adv_loss = th.tensor(0., device=self.device)
-        rec_loss = th.tensor(0., device=self.device)
+        fm_loss = th.tensor(0., device=self.device)
         pred_all_fmaps = self.critic(pred_chart)
         with th.no_grad():
             true_all_fmaps = self.critic(true_chart)
@@ -227,11 +232,12 @@ class Model(pl.LightningModule):
 
             # feature matching
             for pred_fmap, true_fmap in zip(pred_fmaps, true_fmaps):
-                rec_loss.add_( (pred_fmap - true_fmap).abs().mean() )
+                fm_loss.add_( (pred_fmap - true_fmap).abs().mean() )
 
         prior_factor = self.prior_schedule(self.global_step)
         self.manual_backward((
-            + rec_loss 
+            + self.fm_factor * fm_loss 
+            + self.pixel_factor * pixel_loss
             + self.gan_factor * gen_adv_loss 
             + prior_factor * prior_loss
         ) / self.grad_accum_steps)
@@ -243,9 +249,9 @@ class Model(pl.LightningModule):
             "train/gen/prior_factor": prior_factor,
             "train/gen/prior": prior_loss.detach(),
             "train/gen/adversarial": gen_adv_loss.detach(),
-            "train/gen/reconstruction": rec_loss.detach(),
+            "train/gen/reconstruction": fm_loss.detach(),
             "train/gen/perplexity": perplexity,
-            "train/gen/l2": l2_loss,
+            "train/gen/l2": pixel_loss.detach(),
         })
 
     @th.no_grad

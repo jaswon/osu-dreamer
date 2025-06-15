@@ -59,6 +59,8 @@ model:
     grad_accum_steps: 1
     gp_factor: 10.
     gan_factor: 5e-3
+    fm_factor: 1.
+    pixel_factor: 0.
     prior_schedule:
         max: .01
         midpoint: 10_000
