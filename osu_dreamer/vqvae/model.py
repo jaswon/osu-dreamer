@@ -1,10 +1,5 @@
-
 from typing import Any
 from jaxtyping import Float, Int
-
-from dataclasses import dataclass
-
-import numpy as np
 
 import torch as th
 from torch import Tensor, nn
@@ -24,20 +19,9 @@ import osu_dreamer.modules.mp as MP
 
 from .data.module import Batch
 
-from .modules.hard_attn import HardAttn, HardAttnArgs
+from .modules.vq import ProductQuantizer, VQArgs
 from .modules.ae import Encoder, Decoder, AutoEncoderArgs
 from .modules.critic import MultiScaleCritic, MultiScaleCriticArgs
-
-@dataclass
-class PriorFactorScheduleArgs:
-    midpoint: int
-    rate: float
-    max: float = 1.
-
-def make_prior_factor_schedule(args: PriorFactorScheduleArgs):
-    def get_factor(step: int) -> float:
-        return args.max / (1. + np.exp(-args.rate * (step - args.midpoint)))
-    return get_factor
 
     
 class Model(pl.LightningModule):
@@ -52,13 +36,13 @@ class Model(pl.LightningModule):
         gan_factor: float,
         fm_factor: float,
         pixel_factor: float,
-        prior_schedule: PriorFactorScheduleArgs,
+        vq_factor: float,
 
         # model hparams
         emb_dim: int,
         h_dim: int,
         ae_args: AutoEncoderArgs,
-        hard_attn_args: HardAttnArgs,
+        vq_args: VQArgs,
         critic_args: MultiScaleCriticArgs,
     ):
         super().__init__()
@@ -75,10 +59,10 @@ class Model(pl.LightningModule):
         self.gan_factor = gan_factor
         self.fm_factor = fm_factor
         self.pixel_factor = pixel_factor
-        self.prior_schedule = make_prior_factor_schedule(prior_schedule)
+        self.vq_factor = vq_factor
 
         # model
-        self.hard_attn = HardAttn(emb_dim, hard_attn_args)
+        self.vq = ProductQuantizer(emb_dim, vq_args)
         rt_h = int(h_dim**.5)
         self.encoder = nn.Sequential(
             MP.Conv1d(X_DIM, rt_h, 1),
@@ -115,8 +99,8 @@ class Model(pl.LightningModule):
         Int[Tensor, "B H l"],
     ]:
         z = self.encoder(true_chart)
-        z_q, entropy, indices = self.hard_attn(z)
-        return self.decoder(z_q), entropy, indices
+        z_q, vq_loss, indices = self.vq(z)
+        return self.decoder(z_q), vq_loss, indices
     
     @th.no_grad
     def encode(
@@ -126,8 +110,8 @@ class Model(pl.LightningModule):
         pad = self.padding(chart.size(-1))
         if pad > 0:
             chart = F.pad(chart, (0, pad))
-        z = self.encoder(chart) # B H l
-        z_q, _, _ = self.hard_attn(z)
+        z = self.encoder(chart)
+        z_q, _, _ = self.vq(z)
         return z_q
     
     @th.no_grad
@@ -148,7 +132,7 @@ class Model(pl.LightningModule):
     def configure_optimizers(self):
         c_opt = Muon(self.critic.parameters(), **self.opt_args)
         g_opt = Muon([
-            *self.hard_attn.parameters(),
+            *self.vq.parameters(),
             *self.encoder.parameters(),
             *self.decoder.parameters(),
         ], **self.opt_args)
@@ -213,10 +197,10 @@ class Model(pl.LightningModule):
         })
 
         # train generator
-        pred_chart, pred_entropy, pred_indices = self(true_chart)
-        prior_loss = -pred_entropy
+        pred_chart, vq_loss, pred_indices = self(true_chart)
         with th.no_grad():
-            perplexity = self.hard_attn.compute_perplexity(pred_indices)
+            perplexity = self.vq.compute_perplexity(pred_indices)
+            usage_stats = self.vq.get_usage_stats()
             
         pixel_loss = ( pred_chart - true_chart ).pow(2).mean()
 
@@ -235,24 +219,23 @@ class Model(pl.LightningModule):
             for pred_fmap, true_fmap in zip(pred_fmaps, true_fmaps):
                 fm_loss.add_( (pred_fmap - true_fmap).abs().mean() )
 
-        prior_factor = self.prior_schedule(self.global_step)
         self.manual_backward((
             + self.fm_factor * fm_loss 
             + self.pixel_factor * pixel_loss
             + self.gan_factor * gen_adv_loss 
-            + prior_factor * prior_loss
+            + self.vq_factor * vq_loss
         ) / self.grad_accum_steps)
         if (batch_idx + 1) % self.grad_accum_steps == 0:
             g_opt.step()
             g_opt.zero_grad()
             g_sch.step() # type: ignore
         self.log_dict({
-            "train/gen/prior_factor": prior_factor,
-            "train/gen/prior": prior_loss.detach(),
+            "train/gen/vq": vq_loss.detach(),
             "train/gen/adversarial": gen_adv_loss.detach(),
             "train/gen/reconstruction": fm_loss.detach(),
             "train/gen/perplexity": perplexity,
             "train/gen/l2": pixel_loss.detach(),
+            **usage_stats,
         })
 
     @th.no_grad

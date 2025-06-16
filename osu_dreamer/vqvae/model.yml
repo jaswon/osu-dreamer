@@ -61,10 +61,7 @@ model:
     gan_factor: 5e-3
     fm_factor: 1.
     pixel_factor: 0.
-    prior_schedule:
-        max: .01
-        midpoint: 10_000
-        rate: 1e-3
+    vq_factor: 1.
 
     # model hyperparameters
     emb_dim: 32
@@ -78,9 +75,11 @@ model:
             stack_depth: 3
             expand: 2
 
-    hard_attn_args:
-        num_codes: 8
+    vq_args:
+        num_codes: 64
         num_heads: 4
+        commitment_cost: 0.25
+        decay: 0.99
 
     critic_args:
         scales: 3
