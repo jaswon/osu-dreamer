@@ -1,4 +1,5 @@
 from typing import Any
+from einops import rearrange
 from jaxtyping import Float, Int
 
 import torch as th
@@ -145,6 +146,7 @@ class Model(pl.LightningModule):
         ]
 
     def training_step(self, batch: Batch, batch_idx):
+        exp: SummaryWriter = self.logger.experiment # type: ignore
         opts: list[LightningOptimizer] = self.optimizers() # type: ignore
         schs: list[LRSchedulerPLType] = self.lr_schedulers() # type: ignore
         c_opt, g_opt = opts
@@ -199,8 +201,13 @@ class Model(pl.LightningModule):
         # train generator
         pred_chart, vq_loss, pred_indices = self(true_chart)
         with th.no_grad():
-            perplexity = self.vq.compute_perplexity(pred_indices)
-            usage_stats = self.vq.get_usage_stats()
+            for head, head_indices in enumerate(rearrange(pred_indices, 'b h l -> h (b l)')):
+                exp.add_histogram(
+                    f'codebooks/{head}/usage', 
+                    head_indices, 
+                    global_step=self.global_step,
+                    bins=self.vq.num_codes, # type: ignore
+                )
             
         pixel_loss = ( pred_chart - true_chart ).pow(2).mean()
 
@@ -233,9 +240,7 @@ class Model(pl.LightningModule):
             "train/gen/vq": vq_loss.detach(),
             "train/gen/adversarial": gen_adv_loss.detach(),
             "train/gen/reconstruction": fm_loss.detach(),
-            "train/gen/perplexity": perplexity,
             "train/gen/l2": pixel_loss.detach(),
-            **usage_stats,
         })
 
     @th.no_grad

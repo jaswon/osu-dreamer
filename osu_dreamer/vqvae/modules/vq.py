@@ -33,38 +33,9 @@ class ProductQuantizer(nn.Module):
 
         self.rms_norm = nn.RMSNorm([self.head_dim], elementwise_affine=False)
         self.register_buffer('codebooks', self.rms_norm(th.randn(args.num_heads, args.num_codes, self.head_dim))); self.codebooks: Tensor
+
+        # TODO: remove
         self.register_buffer('codebook_usage', th.zeros(args.num_heads, args.num_codes)); self.codebook_usage: Tensor
-        
-    def get_usage_stats(self) -> dict[str, float]:
-        total_usage = self.codebook_usage.sum()
-        if total_usage == 0:
-            return {
-                'usage/active_codes': 0.,
-                'usage/mean_usage': 0.,
-                'usage/max_usage': 0.,
-                'usage/min_usage': 0.,
-            }
-            
-        active_codes = (self.codebook_usage > 0).float().mean()
-        mean_usage = self.codebook_usage.mean() / total_usage
-        max_usage = self.codebook_usage.max() / total_usage
-        min_usage = self.codebook_usage[self.codebook_usage > 0].min() / total_usage
-        
-        return {
-            'usage/active_codes': active_codes.item(),
-            'usage/mean_usage': mean_usage.item(),
-            'usage/max_usage': max_usage.item(),
-            'usage/min_usage': min_usage.item(),
-        }
-    
-    def compute_perplexity(
-        self,
-        indices: Int[Tensor, "B H L"],
-    ) -> float:
-        """Compute perplexity of codebook usage across all heads"""
-        _, counts = th.unique(indices, return_counts=True)
-        probs = counts / indices.numel()
-        return th.exp(-th.sum(probs * th.log(probs.clamp(min=1e-6)))).item() 
         
     def forward(
         self, 
@@ -87,7 +58,6 @@ class ProductQuantizer(nn.Module):
             with th.no_grad():
                 for head, head_indices in enumerate(indices):
                     uniq_codes, uniq_code_locs = th.unique(head_indices, return_inverse=True)
-                    self.codebook_usage[head, uniq_codes] += 1
                     for code_idx, code in enumerate(uniq_codes):
                         z_sel = z_split[head,uniq_code_locs==code_idx] # U D
                         if len(z_sel) > 0:
