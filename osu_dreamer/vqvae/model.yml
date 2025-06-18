@@ -78,7 +78,6 @@ model:
     vq_args:
         num_codes: 64
         num_heads: 4
-        commitment_cost: 0.25
         decay: 0.99
 
     critic_args:

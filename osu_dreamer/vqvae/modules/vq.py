@@ -13,7 +13,6 @@ from einops import rearrange
 class VQArgs:
     num_codes: int
     num_heads: int
-    commitment_cost: float = 0.25
     decay: float = 0.99
 
 class ProductQuantizer(nn.Module):
@@ -25,17 +24,12 @@ class ProductQuantizer(nn.Module):
         super().__init__()
         self.num_codes = args.num_codes
         self.num_heads = args.num_heads
+        self.decay = args.decay
         self.head_dim = dim // args.num_heads
         assert self.head_dim * args.num_heads == dim, "dim must be divisible by num_heads"
-        
-        self.commitment_cost = args.commitment_cost
-        self.decay = args.decay
 
         self.rms_norm = nn.RMSNorm([self.head_dim], elementwise_affine=False)
         self.register_buffer('codebooks', self.rms_norm(th.randn(args.num_heads, args.num_codes, self.head_dim))); self.codebooks: Tensor
-
-        # TODO: remove
-        self.register_buffer('codebook_usage', th.zeros(args.num_heads, args.num_codes)); self.codebook_usage: Tensor
         
     def forward(
         self, 
@@ -49,9 +43,7 @@ class ProductQuantizer(nn.Module):
         indices = th.einsum('hnd,hmd->hnm', z_split, self.codebooks).argmax(dim=-1) # H N
         z_split_q = self.codebooks[th.arange(self.num_heads)[:,None], indices] # H N D
 
-        commitment_loss = F.mse_loss(z_split.detach(), z_split_q)
-        codebook_loss = F.mse_loss(z_split, z_split_q.detach())
-        vq_loss = codebook_loss + self.commitment_cost * commitment_loss
+        vq_loss = F.mse_loss(z_split, z_split_q.detach())
 
         # Update codebook
         if self.training and self.decay != 0:
