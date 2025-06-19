@@ -24,7 +24,12 @@ from .modules.vq import ProductQuantizer, VQArgs
 from .modules.ae import Encoder, Decoder, AutoEncoderArgs
 from .modules.critic import MultiScaleCritic, MultiScaleCriticArgs
 
-    
+@th.no_grad
+def compute_perplexity(indices: Int[Tensor, "..."]) -> float:
+    _, counts = th.unique(indices, return_counts=True)
+    probs = counts / indices.numel()
+    return th.exp(-th.sum(probs * th.log(probs.clamp(min=1e-6)))).item()
+
 class Model(pl.LightningModule):
     def __init__(
         self,
@@ -118,8 +123,9 @@ class Model(pl.LightningModule):
     @th.no_grad
     def decode(
         self,
-        z_q: Float[Tensor, "B D l"]
+        z: Float[Tensor, "B D l"]
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
+        z_q, _, _ = self.vq(z)
         return self.decoder(z_q).clamp(min=-1, max=1)
 
 #
@@ -200,14 +206,14 @@ class Model(pl.LightningModule):
 
         # train generator
         pred_chart, vq_loss, pred_indices = self(true_chart)
-        with th.no_grad():
-            for head, head_indices in enumerate(rearrange(pred_indices, 'b h l -> h (b l)')):
-                exp.add_histogram(
-                    f'codebooks/{head}/usage', 
-                    head_indices, 
-                    global_step=self.global_step,
-                    bins=self.vq.num_codes, # type: ignore
-                )
+        for head, head_indices in enumerate(pred_indices.unbind(dim=1)):
+            exp.add_histogram(
+                f'codebook/{head}/usage', 
+                head_indices.flatten(), 
+                global_step=self.global_step,
+                bins=self.vq.num_codes, # type: ignore
+            )
+            self.log(f'codebook/{head}/perplexity', compute_perplexity(head_indices))
             
         pixel_loss = ( pred_chart - true_chart ).pow(2).mean()
 
