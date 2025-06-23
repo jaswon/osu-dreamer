@@ -64,21 +64,21 @@ model:
     vq_factor: 1.
 
     # model hyperparameters
-    emb_dim: 32
-    h_dim: 256
+    emb_dim: 24
+    h_dim: 320
     ae_args:
         stride: 3
-        depth: 3
-        expand: 2
+        depth: 2
+        expand: 1
         layer_args:
             num_stacks: 1
-            stack_depth: 3
-            expand: 2
+            stack_depth: 4
+            expand: 1
 
     vq_args:
-        num_codes: 64
-        num_heads: 4
-        decay: 0.99
+        num_codes: 12
+        num_heads: 3
+        decay: 0.98
 
     critic_args:
         scales: 3
@@ -87,4 +87,4 @@ model:
             - [  64, 5, 2,  4]
             - [ 256, 5, 2, 16]
             - [ 512, 5, 2, 64]
-            - [1024, 3, 1,  1]
+            - [ 512, 3, 1,  1]
