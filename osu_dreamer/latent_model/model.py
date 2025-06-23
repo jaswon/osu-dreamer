@@ -20,7 +20,7 @@ import osu_dreamer.modules.mp as MP
 
 from .data.module import Batch
 
-from .modules.vq import ProductQuantizer, VQArgs
+from .modules.gaussian import GaussianVariationalBottleneck
 from .modules.ae import Encoder, Decoder, AutoEncoderArgs
 from .modules.critic import MultiScaleCritic, MultiScaleCriticArgs
 
@@ -42,13 +42,12 @@ class Model(pl.LightningModule):
         gan_factor: float,
         fm_factor: float,
         pixel_factor: float,
-        vq_factor: float,
+        kl_factor: float,
 
         # model hparams
         emb_dim: int,
         h_dim: int,
         ae_args: AutoEncoderArgs,
-        vq_args: VQArgs,
         critic_args: MultiScaleCriticArgs,
     ):
         super().__init__()
@@ -65,10 +64,9 @@ class Model(pl.LightningModule):
         self.gan_factor = gan_factor
         self.fm_factor = fm_factor
         self.pixel_factor = pixel_factor
-        self.vq_factor = vq_factor
+        self.kl_factor = kl_factor
 
         # model
-        self.vq = ProductQuantizer(emb_dim, vq_args)
         rt_h = int(h_dim**.5)
         self.encoder = nn.Sequential(
             MP.Conv1d(X_DIM, rt_h, 1),
@@ -78,6 +76,7 @@ class Model(pl.LightningModule):
             MP.Conv1d(h_dim, rt_h, 1),
             MP.SiLU(),
             MP.Conv1d(rt_h, emb_dim, 1),
+            GaussianVariationalBottleneck(emb_dim),
         )
         self.decoder = nn.Sequential(
             MP.Conv1d(emb_dim, rt_h, 1),
@@ -102,11 +101,9 @@ class Model(pl.LightningModule):
     ) -> tuple[
         Float[Tensor, str(f"B {X_DIM} L")],
         Float[Tensor, ""],
-        Int[Tensor, "B H l"],
     ]:
-        z = self.encoder(true_chart)
-        z_q, vq_loss, indices = self.vq(z)
-        return self.decoder(z_q), vq_loss, indices
+        z, kl_loss = self.encoder(true_chart)
+        return self.decoder(z), kl_loss
     
     @th.no_grad
     def encode(
@@ -116,17 +113,15 @@ class Model(pl.LightningModule):
         pad = self.padding(chart.size(-1))
         if pad > 0:
             chart = F.pad(chart, (0, pad))
-        z = self.encoder(chart)
-        z_q, _, _ = self.vq(z)
-        return z_q
+        z, _ = self.encoder(chart)
+        return z
     
     @th.no_grad
     def decode(
         self,
         z: Float[Tensor, "B D l"]
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        z_q, _, _ = self.vq(z)
-        return self.decoder(z_q).clamp(min=-1, max=1)
+        return self.decoder(z).clamp(min=-1, max=1)
 
 #
 #
@@ -139,7 +134,6 @@ class Model(pl.LightningModule):
     def configure_optimizers(self):
         c_opt = Muon(self.critic.parameters(), **self.opt_args)
         g_opt = Muon([
-            *self.vq.parameters(),
             *self.encoder.parameters(),
             *self.decoder.parameters(),
         ], **self.opt_args)
@@ -205,16 +199,7 @@ class Model(pl.LightningModule):
         })
 
         # train generator
-        pred_chart, vq_loss, pred_indices = self(true_chart)
-        for head, head_indices in enumerate(pred_indices.unbind(dim=1)):
-            exp.add_histogram(
-                f'codebook/{head}/usage', 
-                head_indices.flatten(), 
-                global_step=self.global_step,
-                bins=self.vq.num_codes, # type: ignore
-            )
-            self.log(f'codebook/{head}/perplexity', compute_perplexity(head_indices))
-            
+        pred_chart, kl_loss = self(true_chart)
         pixel_loss = ( pred_chart - true_chart ).pow(2).mean()
 
         gen_adv_loss = th.tensor(0., device=self.device)
@@ -236,14 +221,14 @@ class Model(pl.LightningModule):
             + self.fm_factor * fm_loss 
             + self.pixel_factor * pixel_loss
             + self.gan_factor * gen_adv_loss 
-            + self.vq_factor * vq_loss
+            + self.kl_factor * kl_loss
         ) / self.grad_accum_steps)
         if (batch_idx + 1) % self.grad_accum_steps == 0:
             g_opt.step()
             g_opt.zero_grad()
             g_sch.step() # type: ignore
         self.log_dict({
-            "train/gen/vq": vq_loss.detach(),
+            "train/gen/kl": kl_loss.detach(),
             "train/gen/adversarial": gen_adv_loss.detach(),
             "train/gen/reconstruction": fm_loss.detach(),
             "train/gen/l2": pixel_loss.detach(),
@@ -260,7 +245,7 @@ class Model(pl.LightningModule):
         if pad > 0:
             true_chart = F.pad(true_chart, (0,pad))
 
-        pred_chart, _, _ = self(true_chart)
+        pred_chart, _ = self(true_chart)
         self.log_dict({
             'val/l2_rec': (true_chart - pred_chart).pow(2).mean(),
         })

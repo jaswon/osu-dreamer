@@ -54,14 +54,14 @@ data:
 model:
     # training parameters
     opt_args:
-        lr: .01
+        lr: .002
         weight_decay: 0.
     grad_accum_steps: 1
     gp_factor: 10.
     gan_factor: 5e-3
     fm_factor: 1.
     pixel_factor: 0.
-    vq_factor: 1.
+    kl_factor: .001
 
     # model hyperparameters
     emb_dim: 24
@@ -74,11 +74,6 @@ model:
             num_stacks: 1
             stack_depth: 4
             expand: 1
-
-    vq_args:
-        num_codes: 12
-        num_heads: 3
-        decay: 0.98
 
     critic_args:
         scales: 3
