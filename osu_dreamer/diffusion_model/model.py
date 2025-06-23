@@ -21,7 +21,7 @@ from osu_dreamer.data.plot import plot_signals
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
-from osu_dreamer.vqvae.model import Model as LatentModel
+from osu_dreamer.latent_model.model import Model as LatentModel
 
 from .data.dataset import Batch
 from .denoiser import Denoiser, DenoiserArgs

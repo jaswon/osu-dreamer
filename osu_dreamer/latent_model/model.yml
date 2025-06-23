@@ -27,7 +27,7 @@ trainer:
         class_path: pytorch_lightning.loggers.TensorBoardLogger
         init_args:
             save_dir: runs
-            name: vqvae
+            name: latent
 
     enable_progress_bar: true
     log_every_n_steps: 1
