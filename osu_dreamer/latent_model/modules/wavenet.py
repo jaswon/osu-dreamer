@@ -31,7 +31,7 @@ class WaveNetLayer(nn.Module):
 class WaveNetArgs:
     num_stacks: int
     stack_depth: int
-    expand: int
+    expand: int = 1
 
 class WaveNet(nn.Sequential):
     def __init__(

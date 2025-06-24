@@ -69,11 +69,9 @@ model:
     ae_args:
         stride: 3
         depth: 2
-        expand: 1
         layer_args:
             num_stacks: 1
             stack_depth: 4
-            expand: 1
 
     critic_args:
         scales: 3

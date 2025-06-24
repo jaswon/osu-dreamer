@@ -13,8 +13,8 @@ from .wavenet import WaveNet, WaveNetArgs
 class AutoEncoderArgs:
     depth: int
     stride: int
-    expand: int
     layer_args: WaveNetArgs
+    expand: int = 1
 
 class Encoder(nn.Module):
     def __init__(
