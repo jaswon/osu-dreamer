@@ -37,7 +37,6 @@ class Model(pl.LightningModule):
         val_steps: int,
 
         # training parameters
-        grad_clip: float,
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
 
@@ -55,7 +54,6 @@ class Model(pl.LightningModule):
         self.val_steps = val_steps
 
         # training params
-        self.grad_clip = grad_clip
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
 
@@ -63,7 +61,7 @@ class Model(pl.LightningModule):
         self.latent = LatentModel.load_from_checkpoint(latent_model_ckpt)
         self.latent.freeze()
         self.audio_encoder = Encoder(A_DIM, a_h_dim, encoder_args)
-        self.denoiser = Denoiser(X_DIM, a_h_dim, denoiser_args)
+        self.denoiser = Denoiser(self.latent.emb_dim, a_h_dim, denoiser_args)
     
     def preprocess_labels(
         self, 
@@ -78,7 +76,8 @@ class Model(pl.LightningModule):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ) -> tuple[Float[Tensor, ""], dict[str, Float[Tensor, ""]]]:
         
-        x1 = self.latent.encode(chart)
+        with th.no_grad():
+            x1 = self.latent.encode(chart)
         
         B = audio.size(0)
         denoiser = partial(
@@ -113,7 +112,8 @@ class Model(pl.LightningModule):
         num_steps = num_steps if num_steps > 0 else self.val_steps
         num_samples = labels.size(0)
 
-        l = (audio.size(-1) + self.latent.padding(audio.size(-1))) // self.latent.chunk_size
+        L = audio.size(-1)
+        l = (L + self.latent.padding(L)) // self.latent.chunk_size
         x = th.randn(num_samples, self.latent.emb_dim, l, device=audio.device)
         denoiser = partial(
             self.denoiser,
@@ -125,7 +125,7 @@ class Model(pl.LightningModule):
             disable=not show_progress,
         ):
             x = x + denoiser(x, t.expand(x.size(0))) / num_steps 
-        return self.latent.decode(x)
+        return self.latent.decode(x)[:,:,:L]
 
 #
 #
@@ -149,9 +149,6 @@ class Model(pl.LightningModule):
         loss, log_dict = self(*batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
-    
-    def configure_gradient_clipping(self, *args, **kwargs) -> None:
-        self.log("train/grad_l2", th.nn.utils.clip_grad_norm_(self.parameters(), self.grad_clip))
  
     def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
         with th.no_grad():

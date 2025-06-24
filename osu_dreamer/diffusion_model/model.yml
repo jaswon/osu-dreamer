@@ -63,21 +63,20 @@ model:
     val_batches: 64
 
     # training parameters
-    grad_clip: 2.
     opt_args:
-        lr: .002
-    schedule_args:
-        decay_start: 1000
+        lr: .01
+        weight_decay: 0.
 
     # model hyperparameters
+    latent_model_ckpt: latent.ckpt
     a_h_dim: 256
     encoder_args:
         depth: 8
         expand: 2
 
     denoiser_args:
-        h_dim: 512
+        h_dim: 1024
         f_dim: 256
         noise_level_features: 256
         depth: 8
-        expand: 2
+        expand: 1

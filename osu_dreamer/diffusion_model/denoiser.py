@@ -5,6 +5,7 @@ from jaxtyping import Float
 
 import torch as th
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 from osu_dreamer.data.labels import NUM_LABELS
 
@@ -69,10 +70,11 @@ class Denoiser(nn.Module):
         label: Float[Tensor, str(f"B {NUM_LABELS}")],
         
         # --- diffusion args --- #
-        x: Float[Tensor, "B X L"],  # noised input
+        x: Float[Tensor, "B X l"],  # noised input
         t: Float[Tensor, "B"],      # noise level
-    ) -> Float[Tensor, "B X L"]:
+    ) -> Float[Tensor, "B X l"]:
         c = MP.silu(self.nlf(t[:,None]) + self.proj_label(label))
+        a = F.adaptive_avg_pool1d(a, x.size(-1))
         h = self.proj_h(MP.cat([a,x], dim=1))
         h = self.net(h,c)
         return self.proj_out(h)
