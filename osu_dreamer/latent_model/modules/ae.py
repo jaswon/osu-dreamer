@@ -11,8 +11,7 @@ from .wavenet import WaveNet, WaveNetArgs
 
 @dataclass
 class AutoEncoderArgs:
-    depth: int
-    stride: int
+    strides: list[int]
     layer_args: WaveNetArgs
     expand: int = 1
 
@@ -25,18 +24,18 @@ class Encoder(nn.Module):
         super().__init__()
         self.blocks = nn.ModuleList([
             WaveNet(dim, args.layer_args)
-            for _ in range(args.depth)
+            for _ in args.strides
         ])
         h_dim = dim * args.expand
         self.downs = nn.ModuleList([
             nn.Sequential(
                 MP.Conv1d(dim, h_dim, 1),
-                MP.Conv1d(h_dim, h_dim, args.stride*2, 1, 'same', groups=h_dim),
-                nn.AvgPool1d(args.stride),
+                MP.Conv1d(h_dim, h_dim, s*2, 1, 'same', groups=h_dim),
+                nn.AvgPool1d(s),
                 MP.SiLU(),
                 MP.Conv1d(h_dim, dim, 1),
             )
-            for _ in range(args.depth)
+            for s in args.strides
         ])
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D l"]:
@@ -55,18 +54,18 @@ class Decoder(nn.Module):
         super().__init__()
         self.blocks = nn.ModuleList([
             WaveNet(dim, args.layer_args)
-            for _ in range(args.depth)
+            for _ in args.strides
         ])
         h_dim = dim * args.expand
         self.ups = nn.ModuleList([
             nn.Sequential(
                 MP.Conv1d(dim, h_dim, 1),
-                nn.Upsample(scale_factor=args.stride, mode='linear'),
-                MP.Conv1d(h_dim, h_dim, args.stride*2, 1, 'same', groups=h_dim),
+                nn.Upsample(scale_factor=s, mode='linear'),
+                MP.Conv1d(h_dim, h_dim, s*2, 1, 'same', groups=h_dim),
                 MP.SiLU(),
                 MP.Conv1d(h_dim, dim, 1),
             )
-            for _ in range(args.depth)
+            for s in args.strides[::-1]
         ])
 
     def forward(self, x: Float[Tensor, "B D l"]) -> Float[Tensor, "B D L"]:

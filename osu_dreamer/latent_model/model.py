@@ -1,5 +1,5 @@
+
 from typing import Any
-from einops import rearrange
 from jaxtyping import Float, Int
 
 import torch as th
@@ -30,6 +30,12 @@ def compute_perplexity(indices: Int[Tensor, "..."]) -> float:
     probs = counts / indices.numel()
     return th.exp(-th.sum(probs * th.log(probs.clamp(min=1e-6)))).item()
 
+def product(factors: list[int]) -> int:
+    p = 1
+    for factor in factors:
+        p *= factor
+    return p
+
 class Model(pl.LightningModule):
     def __init__(
         self,
@@ -53,7 +59,7 @@ class Model(pl.LightningModule):
         super().__init__()
         self.automatic_optimization = False
         self.save_hyperparameters()
-        self.chunk_size = ae_args.stride ** ae_args.depth
+        self.chunk_size = product(ae_args.strides)
         self.emb_dim = emb_dim
 
         # training params
