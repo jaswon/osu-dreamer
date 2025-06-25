@@ -258,13 +258,17 @@ class Model(pl.LightningModule):
 
     @th.no_grad
     def plot_val(self, b: Batch):
+        from einops import repeat
+
         a,x = b
-        pred_x = self.decode(self.encode(x))[:,:,:x.size(-1)]
+        z = self.encode(x)
+        plot_z = repeat(z, 'b d l -> b d (l r)', r=self.chunk_size)[:,:,:x.size(-1)]
+        pred_x = self.decode(z)[:,:,:x.size(-1)]
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
         with plot_signals(
             a[0].cpu().numpy(),
-            [ x[0].cpu().numpy() for x in [ x, pred_x ] ],
+            [ s[0].cpu().numpy() for s in [ x, pred_x, x-pred_x, plot_z ] ],
         ) as fig:
             exp.add_figure("samples", fig, global_step=self.global_step)
         
