@@ -61,13 +61,13 @@ model:
     gan_factor: 5e-3
     fm_factor: 1.
     pixel_factor: 0.
-    kl_factor: .001
+    kl_factor: .01
 
     # model hyperparameters
-    emb_dim: 24
-    h_dim: 320
+    emb_dim: 48
+    h_dim: 384
     ae_args:
-        strides: [3, 3]
+        strides: [2, 3, 3]
         layer_args:
             num_stacks: 1
             stack_depth: 4
@@ -76,7 +76,7 @@ model:
         scales: 3
         convs:
             - [  16, 3, 1,  1]
-            - [  64, 5, 2,  4]
-            - [ 256, 5, 2, 16]
-            - [ 512, 5, 2, 64]
+            - [  64, 5, 3,  4]
+            - [ 256, 5, 3, 16]
+            - [1024, 5, 2, 64]
             - [ 512, 3, 1,  1]
