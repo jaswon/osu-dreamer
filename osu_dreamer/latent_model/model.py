@@ -44,6 +44,7 @@ class Model(pl.LightningModule):
         opt_args: dict[str, Any],
         lr_schedule_args: LRScheduleArgs,
         grad_accum_steps: int,
+        critic_steps_per_gen: int,
         gp_factor: float,
         gan_factor: float,
         fm_factor: float,
@@ -66,6 +67,7 @@ class Model(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(lr_schedule_args)
         self.grad_accum_steps = max(1, grad_accum_steps)
+        self.critic_steps_per_gen = max(1, critic_steps_per_gen)
         self.gp_factor = gp_factor
         self.gan_factor = gan_factor
         self.fm_factor = fm_factor
@@ -143,18 +145,24 @@ class Model(pl.LightningModule):
         ]
 
     def training_step(self, batch: Batch, batch_idx):
-        exp: SummaryWriter = self.logger.experiment # type: ignore
         opts: list[LightningOptimizer] = self.optimizers() # type: ignore
         schs: list[LRSchedulerPLType] = self.lr_schedulers() # type: ignore
         c_opt, g_opt = opts
         c_sch, g_sch = schs
         _, true_chart = batch
-        B = true_chart.size(0)
 
         pad = self.padding(true_chart.size(-1))
         if pad > 0:
             true_chart = F.pad(true_chart, (0,pad))
 
+        for i in range(self.critic_steps_per_gen):
+            self._train_critic_step(true_chart, c_opt, c_sch, batch_idx, i)
+        self._train_gen_step(true_chart, g_opt, g_sch, batch_idx)
+
+    def _train_critic_step(self, true_chart: Float[Tensor, str(f"B {X_DIM} L")], c_opt, c_sch, batch_idx: int, critic_step: int):
+        """Train the critic for one step"""
+        B = true_chart.size(0)
+        
         # train critics
         with th.no_grad():
             pred_chart = self(true_chart)[0]
@@ -186,16 +194,20 @@ class Model(pl.LightningModule):
             + critic_adv_loss
             + self.gp_factor * gradient_penalty
         ) / self.grad_accum_steps)
-        if (batch_idx + 1) % self.grad_accum_steps == 0:
+
+        if (batch_idx*self.critic_steps_per_gen + critic_step + 1) % self.grad_accum_steps == 0:
             c_opt.step()
             c_opt.zero_grad()
             c_sch.step() # type: ignore
-        self.log_dict({
-            "train/critic/adversarial": critic_adv_loss.detach(),
-            "train/critic/gradient_penalty": gradient_penalty.detach(),
-        })
 
-        # train generator
+        if critic_step == 0:
+            self.log_dict({
+                "train/critic/adversarial": critic_adv_loss.detach(),
+                "train/critic/gradient_penalty": gradient_penalty.detach(),
+            })
+
+    def _train_gen_step(self, true_chart: Float[Tensor, str(f"B {X_DIM} L")], g_opt, g_sch, batch_idx: int):
+        """Train the generator for one step"""
         pred_chart, kl_loss = self(true_chart)
         pixel_loss = ( pred_chart - true_chart ).pow(2).mean()
 
@@ -220,10 +232,12 @@ class Model(pl.LightningModule):
             + self.gan_factor * gen_adv_loss 
             + self.kl_factor * kl_loss
         ) / self.grad_accum_steps)
+
         if (batch_idx + 1) % self.grad_accum_steps == 0:
             g_opt.step()
             g_opt.zero_grad()
             g_sch.step() # type: ignore
+
         self.log_dict({
             "train/gen/kl": kl_loss.detach(),
             "train/gen/adversarial": gen_adv_loss.detach(),

@@ -57,6 +57,7 @@ model:
         lr: .002
         weight_decay: 0.
     grad_accum_steps: 1
+    critic_steps_per_gen: 1
     gp_factor: 10.
     gan_factor: 5e-3
     fm_factor: 1.
