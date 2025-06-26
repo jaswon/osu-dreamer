@@ -5,15 +5,14 @@ import torch as th
 from torch import nn, Tensor
 
 class GaussianVariationalBottleneck(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, h_dim: int, dim: int):
         super().__init__()
-        self.dim = dim
-        self.mu = nn.Conv1d(dim, dim, 1)
-        self.logvar = nn.Conv1d(dim, dim, 1)
+        self.mu = nn.Conv1d(h_dim, dim, 1)
+        self.logvar = nn.Conv1d(h_dim, dim, 1)
  
     def forward(
         self, 
-        z: Float[Tensor, "B D L"],
+        z: Float[Tensor, "B H L"],
     ) -> tuple[
         Float[Tensor, "B D L"], # quantized
         Float[Tensor, ""],      # loss

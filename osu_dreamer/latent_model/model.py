@@ -73,26 +73,16 @@ class Model(pl.LightningModule):
         self.kl_factor = kl_factor
 
         # model
-        rt_h = int(h_dim**.5)
         self.encoder = nn.Sequential(
-            MP.Conv1d(X_DIM, rt_h, 1),
-            MP.SiLU(),
-            MP.Conv1d(rt_h, h_dim, 1),
+            MP.Conv1d(X_DIM, h_dim, 1),
             Encoder(h_dim, ae_args),
-            MP.Conv1d(h_dim, rt_h, 1),
-            MP.SiLU(),
-            MP.Conv1d(rt_h, emb_dim, 1),
-            PowerSphericalVariationalBottleneck(emb_dim),
+            PowerSphericalVariationalBottleneck(h_dim, emb_dim),
         )
         self.decoder = nn.Sequential(
             MP.PixelNorm(),
-            MP.Conv1d(emb_dim, rt_h, 1),
-            MP.SiLU(),
-            MP.Conv1d(rt_h, h_dim, 1),
+            MP.Conv1d(emb_dim, h_dim, 1),
             Decoder(h_dim, ae_args),
-            MP.Conv1d(h_dim, rt_h, 1),
-            MP.SiLU(),
-            MP.Conv1d(rt_h, X_DIM, 1),
+            MP.Conv1d(h_dim, X_DIM, 1),
             MP.Gain(),
         )
         self.critic = MultiScaleCritic(X_DIM, critic_args)
