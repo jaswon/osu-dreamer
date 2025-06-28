@@ -20,7 +20,7 @@ import osu_dreamer.modules.mp as MP
 
 from .data.module import Batch
 
-from .modules.power_spherical import PowerSphericalVariationalBottleneck
+from .modules.gaussian import GaussianVariationalBottleneck
 from .modules.ae import Encoder, Decoder, AutoEncoderArgs
 from .modules.critic import MultiScaleCritic, MultiScaleCriticArgs
 
@@ -78,7 +78,7 @@ class Model(pl.LightningModule):
         self.encoder = nn.Sequential(
             MP.Conv1d(X_DIM, h_dim, 1),
             Encoder(h_dim, ae_args),
-            PowerSphericalVariationalBottleneck(h_dim, emb_dim),
+            GaussianVariationalBottleneck(h_dim, emb_dim),
         )
         self.decoder = nn.Sequential(
             MP.PixelNorm(),
