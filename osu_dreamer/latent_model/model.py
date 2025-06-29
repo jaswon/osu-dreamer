@@ -12,6 +12,7 @@ from pytorch_lightning.utilities.types import LRSchedulerPLType
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.beatmap.encode import X_DIM
+from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
@@ -23,6 +24,7 @@ from .data.module import Batch
 from .modules.gaussian import GaussianVariationalBottleneck
 from .modules.ae import Encoder, Decoder, AutoEncoderArgs
 from .modules.critic import MultiScaleCritic, MultiScaleCriticArgs
+from .modules.audio import AudioEncoder
 
 @th.no_grad
 def compute_perplexity(indices: Int[Tensor, "..."]) -> float:
@@ -54,6 +56,7 @@ class Model(pl.LightningModule):
         # model hparams
         emb_dim: int,
         h_dim: int,
+        audio_h_dim: int,
         ae_args: AutoEncoderArgs,
         critic_args: MultiScaleCriticArgs,
     ):
@@ -84,9 +87,8 @@ class Model(pl.LightningModule):
             MP.PixelNorm(),
             MP.Conv1d(emb_dim, h_dim, 1),
             Decoder(h_dim, ae_args),
-            MP.Conv1d(h_dim, X_DIM, 1),
-            MP.Gain(),
         )
+        self.align_audio = AudioEncoder(X_DIM, h_dim, audio_h_dim)
         self.critic = MultiScaleCritic(X_DIM, critic_args)
 
     def padding(self, L: int) -> int:
@@ -96,13 +98,17 @@ class Model(pl.LightningModule):
 
     def forward(
         self,
-        true_chart: Float[Tensor, str(f"B {X_DIM} L")],
+        audio: Float[Tensor, str(f"B {A_DIM} L")],
+        chart: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> tuple[
         Float[Tensor, str(f"B {X_DIM} L")],
         Float[Tensor, ""],
     ]:
-        z, kl_loss = self.encoder(true_chart)
-        return self.decoder(z), kl_loss
+        pad = self.padding(chart.size(-1))
+        if pad > 0:
+            chart = F.pad(chart, (0,pad))
+        z, kl_loss = self.encoder(chart)
+        return self.align_audio(audio, self.decoder(z)), kl_loss
     
     @th.no_grad
     def encode(
@@ -118,9 +124,10 @@ class Model(pl.LightningModule):
     @th.no_grad
     def decode(
         self,
-        z: Float[Tensor, "B D l"]
+        a: Float[Tensor, "B A L"],
+        z: Float[Tensor, "B D l"],
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        return self.decoder(z).clamp(min=-1, max=1)
+        return self.align_audio(a, self.decoder(z)).clamp(min=-1, max=1)
 
 #
 #
@@ -135,6 +142,7 @@ class Model(pl.LightningModule):
         g_opt = Muon([
             *self.encoder.parameters(),
             *self.decoder.parameters(),
+            *self.align_audio.parameters(),
         ], **self.opt_args)
         return [c_opt, g_opt], [
             {
@@ -149,23 +157,19 @@ class Model(pl.LightningModule):
         schs: list[LRSchedulerPLType] = self.lr_schedulers() # type: ignore
         c_opt, g_opt = opts
         c_sch, g_sch = schs
-        _, true_chart = batch
-
-        pad = self.padding(true_chart.size(-1))
-        if pad > 0:
-            true_chart = F.pad(true_chart, (0,pad))
+        audio, chart = batch
 
         for i in range(self.critic_steps_per_gen):
-            self._train_critic_step(true_chart, c_opt, c_sch, batch_idx, i)
-        self._train_gen_step(true_chart, g_opt, g_sch, batch_idx)
+            self._train_critic_step(audio, chart, c_opt, c_sch, batch_idx, i)
+        self._train_gen_step(audio, chart, g_opt, g_sch, batch_idx)
 
-    def _train_critic_step(self, true_chart: Float[Tensor, str(f"B {X_DIM} L")], c_opt, c_sch, batch_idx: int, critic_step: int):
+    def _train_critic_step(self, audio: Float[Tensor, str(f"B {A_DIM} L")], true_chart: Float[Tensor, str(f"B {X_DIM} L")], c_opt, c_sch, batch_idx: int, critic_step: int):
         """Train the critic for one step"""
         B = true_chart.size(0)
         
         # train critics
         with th.no_grad():
-            pred_chart = self(true_chart)[0]
+            pred_chart = self(audio, true_chart)[0]
 
         critic_adv_loss = th.tensor(0., device=self.device)
         pred_all_fmaps = self.critic(pred_chart)
@@ -206,9 +210,9 @@ class Model(pl.LightningModule):
                 "train/critic/gradient_penalty": gradient_penalty.detach(),
             })
 
-    def _train_gen_step(self, true_chart: Float[Tensor, str(f"B {X_DIM} L")], g_opt, g_sch, batch_idx: int):
+    def _train_gen_step(self, audio: Float[Tensor, str(f"B {A_DIM} L")], true_chart: Float[Tensor, str(f"B {X_DIM} L")], g_opt, g_sch, batch_idx: int):
         """Train the generator for one step"""
-        pred_chart, kl_loss = self(true_chart)
+        pred_chart, kl_loss = self(audio, true_chart)
         pixel_loss = ( pred_chart - true_chart ).pow(2).mean()
 
         gen_adv_loss = th.tensor(0., device=self.device)
@@ -250,13 +254,8 @@ class Model(pl.LightningModule):
         if batch_idx == 0:
             self.plot_val(batch)
 
-        _, true_chart = batch
-
-        pad = self.padding(true_chart.size(-1))
-        if pad > 0:
-            true_chart = F.pad(true_chart, (0,pad))
-
-        pred_chart, _ = self(true_chart)
+        audio, true_chart = batch
+        pred_chart, _ = self(audio, true_chart)
         self.log_dict({
             'val/l2_rec': (true_chart - pred_chart).pow(2).mean(),
         })
@@ -268,7 +267,7 @@ class Model(pl.LightningModule):
         a,x = b
         z = self.encode(x)
         plot_z = repeat(z, 'b d l -> b d (l r)', r=self.chunk_size)[:,:,:x.size(-1)]
-        pred_x = self.decode(z)[:,:,:x.size(-1)]
+        pred_x = self.decode(a, z)
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
         with plot_signals(

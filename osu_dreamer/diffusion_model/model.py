@@ -125,7 +125,7 @@ class Model(pl.LightningModule):
             disable=not show_progress,
         ):
             x = x + denoiser(x, t.expand(x.size(0))) / num_steps 
-        return self.latent.decode(x)[:,:,:L]
+        return self.latent.decode(audio[None],x)
 
 #
 #

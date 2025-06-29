@@ -38,10 +38,10 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 2048 # * 6ms/frame ~= 24.6s
+    seq_len: 1024 # * 6ms/frame ~= 12.3s
     
     # size of training batch
-    batch_size: 20
+    batch_size: 16
     
     # number of workers to use for data loading
     num_workers: 6
@@ -65,8 +65,9 @@ model:
     kl_factor: .001
 
     # model hyperparameters
-    emb_dim: 48
+    emb_dim: 32
     h_dim: 384
+    audio_h_dim: 32
     ae_args:
         strides: [2, 3, 3]
         layer_args:
