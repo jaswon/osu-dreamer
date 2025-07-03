@@ -78,6 +78,16 @@ def get_normed_weight(W: Float[Tensor, "O ..."], training: bool, dim=None) -> Fl
             W.copy_(normalize(W, dim))
     return normalize(W, dim) / np.sqrt(W[0].numel())
 
+class Sum(nn.Module):
+    def __init__(self, n: int):
+        super().__init__()
+        self.weight_logits = nn.Parameter(th.randn(n))
+
+    def forward(self, xs: list[Float[Tensor, "*B"]]) -> Float[Tensor, "*B"]:
+        weight = get_normed_weight(self.weight_logits, self.training).softmax(dim=0)
+        weighted_sum = (th.stack(xs, dim=-1) * weight).sum(dim=-1)
+        return weighted_sum * weight.pow(2).sum().pow(-.5)
+
 class Linear(nn.Linear):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs, bias=False)
