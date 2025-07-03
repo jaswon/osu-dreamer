@@ -22,10 +22,11 @@ class WaveNetLayer(nn.Module):
             MP.Conv1d(h_dim, h_dim, 3, dilation=d, padding=d, groups=h_dim),
         )
         self.res = MP.Conv1d(h_dim, dim, 1)
+        self.skip = MP.Conv1d(h_dim, dim, 1)
 
-    def forward(self, x: X) -> X:
-        res = self.res(self.filter(x) * MP.sigmoid(self.gate(x)))
-        return MP.add(x, res, t=.3)
+    def forward(self, x: X) -> tuple[X,X]:
+        h = self.filter(x) * MP.sigmoid(self.gate(x))
+        return self.res(h), self.skip(h)
     
 @dataclass
 class WaveNetArgs:
@@ -33,14 +34,28 @@ class WaveNetArgs:
     stack_depth: int
     expand: int = 1
 
-class WaveNet(nn.Sequential):
+class WaveNet(nn.Module):
     def __init__(
         self,
         dim: int,
         args: WaveNetArgs,
     ):
-        super().__init__(*[
+        super().__init__()
+        self.layers = nn.ModuleList([
             WaveNetLayer(dim, 2**d, args.expand)
             for _ in range(args.num_stacks)
             for d in range(args.stack_depth)
         ])
+        self.out = nn.Sequential(
+            MP.Sum(len(self.layers)),
+            MP.SiLU(),
+            MP.Conv1d(dim, dim, 1),
+        )
+
+    def forward(self, x: X) -> X:
+        skips = []
+        for layer in self.layers:
+            res, skip = layer(x)
+            x = MP.add(x,res,t=.3)
+            skips.append(skip)
+        return self.out(skips)
