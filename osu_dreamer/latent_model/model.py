@@ -124,7 +124,7 @@ class Model(pl.LightningModule):
     @th.no_grad
     def decode(
         self,
-        a: Float[Tensor, "B A L"],
+        a: Float[Tensor, "*B A L"],
         z: Float[Tensor, "B D l"],
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         return self.align_audio(a, self.decoder(z)).clamp(min=-1, max=1)

@@ -60,7 +60,7 @@ class Model(pl.LightningModule):
         # model
         self.latent = LatentModel.load_from_checkpoint(latent_model_ckpt)
         self.latent.freeze()
-        self.audio_encoder = Encoder(A_DIM, a_h_dim, encoder_args)
+        self.audio_encoder = Encoder(a_h_dim, encoder_args)
         self.denoiser = Denoiser(self.latent.emb_dim, a_h_dim, denoiser_args)
     
     def preprocess_labels(
