@@ -69,6 +69,17 @@ class Gain(nn.Module):
     def forward(self, x: Float[Tensor, "..."]) -> Float[Tensor, "..."]:
         return x * self.g
 
+class Dropout(nn.Module):
+    def __init__(self, p: float):
+        super().__init__()
+        self.p = p
+
+    def forward(self, x: Float[Tensor, "*B"]) -> Float[Tensor, "*B"]:
+        if self.training and self.p > 0:
+            mask = (th.rand_like(x) > self.p).float()
+            return x * mask / (1 - self.p)
+        return x
+
 
 ### Magnitude-preserving learned layers
 
