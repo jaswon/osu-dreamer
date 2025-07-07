@@ -77,6 +77,7 @@ model:
     critic_args:
         spec_features: 32
         scales: 3
+        dropout: .1
         convs:
             - [  16, 3, 1,  1]
             - [  64, 5, 3,  4]

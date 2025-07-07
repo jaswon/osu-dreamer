@@ -18,6 +18,7 @@ class MultiScaleCriticArgs:
     spec_features: int
     scales: int
     convs: CriticArgs
+    dropout: float = 0.
 
 class MultiScaleCritic(nn.Module):
     def __init__(
@@ -29,7 +30,7 @@ class MultiScaleCritic(nn.Module):
         self.encoder = SpecFeatures(args.spec_features)
         self.film = FiLM(dim, args.spec_features)
         self.critics = nn.ModuleList([
-            Critic(dim, args.convs) 
+            Critic(dim, args.convs, args.dropout) 
             for _ in range(args.scales)
         ])
 
@@ -52,6 +53,7 @@ class Critic(nn.Module):
         self,
         dim: int,
         config: CriticArgs, 
+        dropout: float,
     ):
         super().__init__()
         self.convs = nn.ModuleList()
@@ -60,6 +62,7 @@ class Critic(nn.Module):
             self.convs.append(nn.Sequential(
                 MP.Conv1d(i, o, k, s, groups=g),
                 MP.SiLU(),
+                MP.Dropout(dropout),
             ))
             i = o
         self.convs.append(MP.Conv1d(i, 1, 1))
