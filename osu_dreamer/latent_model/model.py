@@ -181,22 +181,22 @@ class Model(pl.LightningModule):
 
         # gradient penalty
         gradient_penalty = th.tensor(0., device=self.device)
-        alpha = ((th.arange(B) + th.rand(1)) / B)[:,None,None].to(self.device)
-        lerp_chart = ( alpha * true_chart + (1-alpha) * pred_chart ).requires_grad_(True)
-        for lerp_fmaps in self.critic(audio, lerp_chart):
-            lerp_score = lerp_fmaps[-1]
+        true_chart_r1 = true_chart.detach().requires_grad_(True)
+        for true_fmaps in self.critic(audio, true_chart_r1):
+            true_score = true_fmaps[-1]
             gradients = th.autograd.grad(
-                outputs=lerp_score,
-                inputs=lerp_chart,
-                grad_outputs=th.ones_like(lerp_score),
+                outputs=true_score,
+                inputs=true_chart_r1,
+                grad_outputs=th.ones_like(true_score),
                 create_graph=True,
                 retain_graph=True,
             )[0].view(B, -1)
-            gradient_penalty.add_( ((gradients.norm(2, dim=1) - 1) ** 2).mean() )
+            gradient_penalty.add_( (gradients.norm(2, dim=1) ** 2).mean() )
+        gradient_penalty.mul_(self.gp_factor / 2)
 
         self.manual_backward((
             + critic_adv_loss
-            + self.gp_factor * gradient_penalty
+            + gradient_penalty
         ) / self.grad_accum_steps)
 
         if (batch_idx*self.critic_steps_per_gen + critic_step + 1) % self.grad_accum_steps == 0:
