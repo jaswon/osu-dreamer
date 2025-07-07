@@ -172,8 +172,8 @@ class Model(pl.LightningModule):
             pred_chart = self(audio, true_chart)[0]
 
         critic_adv_loss = th.tensor(0., device=self.device)
-        pred_all_fmaps = self.critic(pred_chart)
-        true_all_fmaps = self.critic(true_chart)
+        pred_all_fmaps = self.critic(audio, pred_chart)
+        true_all_fmaps = self.critic(audio, true_chart)
         for pred_fmaps, true_fmaps in zip(pred_all_fmaps, true_all_fmaps):
             *_, pred_score = pred_fmaps
             *_, true_score = true_fmaps
@@ -183,7 +183,7 @@ class Model(pl.LightningModule):
         gradient_penalty = th.tensor(0., device=self.device)
         alpha = ((th.arange(B) + th.rand(1)) / B)[:,None,None].to(self.device)
         lerp_chart = ( alpha * true_chart + (1-alpha) * pred_chart ).requires_grad_(True)
-        for lerp_fmaps in self.critic(lerp_chart):
+        for lerp_fmaps in self.critic(audio, lerp_chart):
             lerp_score = lerp_fmaps[-1]
             gradients = th.autograd.grad(
                 outputs=lerp_score,
@@ -217,9 +217,9 @@ class Model(pl.LightningModule):
 
         gen_adv_loss = th.tensor(0., device=self.device)
         fm_loss = th.tensor(0., device=self.device)
-        pred_all_fmaps = self.critic(pred_chart)
+        pred_all_fmaps = self.critic(audio, pred_chart)
         with th.no_grad():
-            true_all_fmaps = self.critic(true_chart)
+            true_all_fmaps = self.critic(audio, true_chart)
         for pred_fmaps, true_fmaps in zip(pred_all_fmaps, true_all_fmaps):
             *pred_fmaps, pred_score = pred_fmaps
             *true_fmaps, _          = true_fmaps

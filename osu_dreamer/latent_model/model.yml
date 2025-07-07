@@ -62,11 +62,11 @@ model:
     gan_factor: 5e-3
     fm_factor: 1.
     pixel_factor: 0.
-    kl_factor: .001
+    kl_factor: .0001
 
     # model hyperparameters
     emb_dim: 32
-    h_dim: 320
+    h_dim: 360
     audio_h_dim: 32
     ae_args:
         strides: [2, 3, 3]
@@ -75,6 +75,7 @@ model:
             stack_depth: 4
 
     critic_args:
+        spec_features: 32
         scales: 3
         convs:
             - [  16, 3, 1,  1]

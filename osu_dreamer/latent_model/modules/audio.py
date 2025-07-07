@@ -14,10 +14,10 @@ class FiLM(nn.Module):
 
     def forward(
         self,
-        x: Float[Tensor, "B X L"],
-        m: Float[Tensor, "B H L"],
+        a: Float[Tensor, "*B H L"],
+        x: Float[Tensor, "B X pL"],
     ) -> Float[Tensor, "B X L"]:
-        return self.beta(m) + (1+self.gamma(m)) * x
+        return self.beta(a) + (1+self.gamma(a)) * x[:,:,:a.size(-1)]
 
 class AudioEncoder(nn.Module):
     def __init__(self, out_dim: int, in_dim: int, h_dim: int):
@@ -35,7 +35,5 @@ class AudioEncoder(nn.Module):
         a: Float[Tensor, "*B A L"],
         x: Float[Tensor, "B H pL"],
     ) -> Float[Tensor, "B X L"]:
-        x = x[:,:,:a.size(-1)]
-        h = self.encoder(a).expand(x.size(0),-1,-1)
-        x = self.film(x, h)
+        x = self.film(self.encoder(a), x)
         return self.decoder(x)

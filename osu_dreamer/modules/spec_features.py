@@ -28,8 +28,8 @@ class SpecFeatures(nn.Sequential):
             *(
                 layer for t,f in [
                     (3,3),
-                    (5,3),
-                    (9,8),
+                    (5,4),
+                    (9,6),
                 ]
                 for conv in [
                     sepConv('(b f) h l', h_dim, t,1,t//2), 
