@@ -34,12 +34,12 @@ trainer:
             save_dir: runs
             name: denoiser
 
-    accumulate_grad_batches: 4
+    accumulate_grad_batches: 3
     enable_progress_bar: true
     log_every_n_steps: 1
     enable_model_summary: true
 
-    val_check_interval: 500
+    val_check_interval: 1000
     check_val_every_n_epoch: null
     
 data:
@@ -64,18 +64,18 @@ model:
 
     # training parameters
     opt_args:
-        lr: .01
-        weight_decay: 0.
+        lr: .003
+        weight_decay: 0.001
 
     # model hyperparameters
     latent_model_ckpt: latent.ckpt
     a_h_dim: 256
     encoder_args:
-        h_dim: 128
+        h_dim: 96
 
     denoiser_args:
-        h_dim: 1024
+        h_dim: 512
         f_dim: 256
         noise_level_features: 256
-        depth: 8
-        expand: 1
+        depth: 24
+        expand: 2
