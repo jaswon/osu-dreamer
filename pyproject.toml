@@ -9,10 +9,11 @@ dependencies = [
     "einops>=0.8.0",
     "jsonargparse[signatures]>=4.36.0",
     "nnaudio>=0.3.3",
-    "pytorch-lightning==2.2.2",
+    "pytorch-lightning>=2.4",
     "rosu-pp-py>=2.0.1",
     "scipy>=1.15.1",
     "tinytag>=2.0.0",
+    "torch>=2.5.1",
 ]
 
 [dependency-groups]
