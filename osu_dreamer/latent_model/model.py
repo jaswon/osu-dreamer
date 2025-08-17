@@ -206,7 +206,7 @@ class Model(pl.LightningModule):
 
         if critic_step == 0:
             self.log_dict({
-                "train/critic/adversarial": critic_adv_loss.detach(),
+                "train/critic/adversarial": critic_adv_loss.detach() / len(pred_all_fmaps),
                 "train/critic/gradient_penalty": gradient_penalty.detach(),
             })
 
@@ -244,7 +244,7 @@ class Model(pl.LightningModule):
 
         self.log_dict({
             "train/gen/kl": kl_loss.detach(),
-            "train/gen/adversarial": gen_adv_loss.detach(),
+            "train/gen/adversarial": gen_adv_loss.detach() / len(pred_all_fmaps),
             "train/gen/reconstruction": fm_loss.detach(),
             "train/gen/l2": pixel_loss.detach(),
         })
