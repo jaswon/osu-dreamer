@@ -59,11 +59,14 @@ def to_intermediate(bm: Iterable[str]) -> IntermediateBeatmap:
             # .1 <= slider_mult <= 10
             slider_mult = min(10., max(.1, round(-100/x, 3)))
 
-            # check if previous is redundant
             if len(inherited) > 0:
                 last_t, last_sm = inherited[-1]
-                if last_t == t or last_sm.mult == slider_mult:
+                if last_t == t:
+                    # override previous inherited point at same time
                     inherited.pop()
+                if last_sm.mult == slider_mult:
+                    # skip emitting "same" inherited point
+                    continue
                 
             inherited.append((int(t), SliderMult(mult=slider_mult)))
         else:
