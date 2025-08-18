@@ -106,17 +106,26 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
     timed = sorted([ *uninherited, *inherited, *objects ], key=lambda t: t[0])
 
     # post-hoc computation of duration from slider length, beat length, and slider mult
+    used_inherited = {}
     cur_beat_len = uninherited[0][1].ms
     cur_slider_mult = 1.
-    for t, v in timed:
+    cur_inherited_idx = None
+    for i, (t, v) in enumerate(timed):
         if isinstance(v, BeatLen):
             cur_beat_len = v.ms
         elif isinstance(v, SliderMult):
             cur_slider_mult = v.mult
+            cur_inherited_idx = i
         elif isinstance(v, (PerfectSlider, BezierSlider)):
+            used_inherited[cur_inherited_idx] = True
             slider_length = v.duration
             slide_duration = slider_length / (cur_slider_mult * 100) * cur_beat_len
             v.duration = round(v.slides * slide_duration)
+
+    # remove unused inherited timing points
+    for i, (t, v) in reversed(list(enumerate(timed))):
+        if isinstance(v, SliderMult) and i not in used_inherited:
+            timed.pop(i)
 
     return IntermediateBeatmap(
         hp_drain_rate = float(diff.get('HPDrainRate', 5)),
