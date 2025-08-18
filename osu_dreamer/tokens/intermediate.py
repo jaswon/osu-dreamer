@@ -178,7 +178,7 @@ def to_beatmap(
                         curve = f"L|{qx}:{qy}"
                     else:
                         cx, cy = get_perfect_control_point(v.p, v.q, v.deviation)
-                        curve = f"P|{qx}:{qy}|{cx}:{cy}"
+                        curve = f"P|{cx}:{cy}|{qx}:{qy}"
                 elif isinstance(v, BezierSlider):
                     # first point is encoded separately as x0,y0
                     x, y = v.shape[0]

@@ -20,7 +20,7 @@ def get_perfect_control_point(
     AB_R = np.array([ -AB[1], AB[0] ]) # rotated +pi/2
 
     AC = r * (np.cos(CAB)*AB + np.sin(CAB)*AB_R)
-    return A + AC
+    return tuple(np.round(A + AC).astype(int).tolist())
 
 def parse_slider(
     x: int, y: int,
