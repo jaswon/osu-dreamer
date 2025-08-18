@@ -3,7 +3,24 @@ from typing import Union
 
 import numpy as np
 
-from .timed import HitCircle, PerfectSlider, BezierSlider
+from .timed import HitCircle, PerfectSlider, BezierSlider, Coordinate
+
+def get_perfect_control_point(
+    a: Coordinate,
+    c: Coordinate,
+    deviation: float,
+    r: float = .5,
+) -> Coordinate:
+    """Get a point `B` on the perfect slider"""
+
+    CAB = deviation - np.arcsin(r * np.sin(deviation))
+
+    A = np.array(a)
+    AB = np.array(c) - A
+    AB_R = np.array([ -AB[1], AB[0] ]) # rotated +pi/2
+
+    AC = r * (np.cos(CAB)*AB + np.sin(CAB)*AB_R)
+    return A + AC
 
 def parse_slider(
     x: int, y: int,
@@ -13,7 +30,7 @@ def parse_slider(
     raw_length: str,
 ) -> Union[HitCircle, PerfectSlider, BezierSlider]:
     slider_args = *hit_object_args, int(float(raw_length)), int(raw_slides)
-    ctrl_pts: list[tuple[int, int]] = [(x,y)] + [
+    ctrl_pts: list[Coordinate] = [(x,y)] + [
         (x,y)
         for p in raw_curve_points.split("|")[1:]
         for x,y,*_ in [ map(int, p.split(":")) ] 
