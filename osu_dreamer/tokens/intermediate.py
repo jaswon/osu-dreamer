@@ -1,10 +1,12 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Iterable
 
-from .timed import HitCircle, Timed, Break, SliderMult, BeatLen, Spinner, PerfectSlider, BezierSlider
+
+from .timed import HitCircle, HitObject, Timed, Break, SliderMult, BeatLen, Spinner, PerfectSlider, BezierSlider
 from .parse_file import parse_map_file
-from .parse_slider import parse_slider
+from .parse_slider import get_perfect_control_point, parse_slider
+from .template import map_template, Metadata
 
 @dataclass
 class IntermediateBeatmap:
@@ -125,5 +127,93 @@ def to_intermediate(bm: Iterable[str]) -> IntermediateBeatmap:
     )
 
 
-def to_beatmap(ib: IntermediateBeatmap, *args, **kwargs) -> str:
-    ...
+def to_beatmap(
+    ib: IntermediateBeatmap,
+    metadata: Metadata,
+) -> str:
+
+    breaks = []
+    timing_points = []
+    hit_objects = []
+
+    # running timing context for reconstructing slider length
+    cur_beat_len: float = 600.
+    cur_slider_mult: float = 1.
+
+    for t, v in ib.timed:
+        if isinstance(v, Break):
+            end_time = t + v.duration
+            breaks.append(f"2,{t},{end_time}")
+        elif isinstance(v, BeatLen):
+            cur_beat_len = v.ms
+            cur_slider_mult = 1.
+            # offset,msPerBeat,meter,sampleSet,sampleIndex,volume,uninherited,effects
+            timing_points.append(f"{t},{v.ms},{v.meter},1,0,100,1,0")
+        elif isinstance(v, SliderMult):
+            if cur_slider_mult == v.mult:
+                # no change, don't emit
+                continue
+            cur_slider_mult = v.mult
+            # inherited timing point uses negative msPerBeat: -100/mult
+            timing_points.append(f"{t},{-100 / v.mult},4,1,0,100,0,0")
+        elif isinstance(v, HitObject):
+
+            if isinstance(v, HitCircle):
+                typ = 1 << 0
+                x, y = v.p
+                params = []
+            elif isinstance(v, Spinner):
+                typ = 1 << 3
+                x,y = 256, 192
+                end_time = t + v.duration
+                params = [end_time]
+            elif isinstance(v, (PerfectSlider, BezierSlider)):
+                typ = 1 << 1
+
+                if isinstance(v, PerfectSlider):
+                    x, y = v.p
+                    qx, qy = v.q
+                    if v.deviation == 0:
+                        # straight line
+                        curve = f"L|{qx}:{qy}"
+                    else:
+                        cx, cy = get_perfect_control_point(v.p, v.q, v.deviation)
+                        curve = f"P|{qx}:{qy}|{cx}:{cy}"
+                elif isinstance(v, BezierSlider):
+                    # first point is encoded separately as x0,y0
+                    x, y = v.shape[0]
+                    rest = "|".join(f"{px}:{py}" for px, py in v.shape[1:])
+                    curve = f"B|{rest}"
+
+                # compute slider length from duration using current timing context
+                # duration = slides * (length / (slider_mult * 100)) * beat_len
+                # => length = (duration / slides) * (slider_mult * 100) / beat_len
+                slide_duration = v.duration / max(v.slides, 1)
+                length = slide_duration * (cur_slider_mult * 100.0) / cur_beat_len
+
+                params = [curve, v.slides, length]
+
+            hs = 0
+            if v.whistle:
+                hs |= 2
+            if v.finish:
+                hs |= 4
+            if v.clap:
+                hs |= 8
+            if v.new_combo:
+                typ |= (1 << 2)
+            hit_objects.append(",".join(map(str,[x,y,t,typ,hs,*params])))
+
+
+    return map_template.format(
+        **asdict(metadata), 
+        ar=ib.approach_rate,
+        od=ib.overall_difficulty,
+        cs=ib.circle_size,
+        hp=ib.hp_drain_rate,
+        sm=ib.base_slider_mult,
+        tr=ib.slider_tick_rate,
+        breaks="\n".join(breaks),
+        timing_points="\n".join(timing_points), 
+        hit_objects="\n".join(hit_objects),
+    )
