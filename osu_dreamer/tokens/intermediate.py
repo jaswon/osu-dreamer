@@ -31,8 +31,10 @@ class IntermediateBeatmap:
             *( f"{t:08}: {v}" for t, v in self.timed ),
         ])
 
-def to_intermediate(bm: Iterable[str]) -> IntermediateBeatmap:
+def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
     cfg = parse_map_file(bm)
+    general: dict[str, str] = cfg.get('General', {}) # type: ignore
+    metadata: dict[str, str] = cfg.get('Metadata', {}) # type: ignore
     diff: dict[str, str] = cfg.get('Difficulty', {}) # type: ignore
     raw_events: list[str] = cfg.get('Events', []) # type: ignore
     raw_timing_points: list[str] = cfg.get('TimingPoints', []) # type: ignore
@@ -124,6 +126,11 @@ def to_intermediate(bm: Iterable[str]) -> IntermediateBeatmap:
         base_slider_mult = float(diff.get('SliderMultiplier', 1.4)),
         slider_tick_rate = float(diff.get('SliderTickRate', 1)),
         timed = timed,
+    ), Metadata(
+        audio_filename = general.get('AudioFilename', 'audio.mp3'),
+        title = metadata.get('Title', 'title'),
+        artist = metadata.get('Artist', 'artist'),
+        version = metadata.get('Version', 'version'),
     )
 
 
