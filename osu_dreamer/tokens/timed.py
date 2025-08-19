@@ -14,12 +14,12 @@ class BeatLen:
         return f"BeatLen({self.ms}, meter={self.meter})"
 
 @dataclass
-class SliderMult:
+class SliderVel:
     """inherited timing point"""
-    mult: float
+    vel: float
     
     def __str__(self):
-        return f"SliderMult({self.mult}x)"
+        return f"SliderVel({self.vel})"
 
 @dataclass
 class Break:
@@ -120,7 +120,7 @@ class BezierSlider(_Slider):
 
 Timed = Union[
     BeatLen,
-    SliderMult,
+    SliderVel,
     Break,
     HitCircle,
     Spinner,

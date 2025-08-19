@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 from typing import Iterable
 
 
-from .timed import HitCircle, HitObject, Timed, Break, SliderMult, BeatLen, Spinner, PerfectSlider, BezierSlider
+from .timed import HitCircle, HitObject, Timed, Break, SliderVel, BeatLen, Spinner, PerfectSlider, BezierSlider
 from .parse_file import parse_map_file
 from .parse_slider import get_perfect_control_point, parse_slider
 from .template import map_template, Metadata
@@ -14,7 +14,6 @@ class IntermediateBeatmap:
     circle_size: float
     overall_difficulty: float
     approach_rate: float
-    base_slider_mult: float
     slider_tick_rate: float
 
     timed: list[tuple[int, Timed]]
@@ -25,7 +24,6 @@ class IntermediateBeatmap:
             f"CS: {self.circle_size}",
             f"OD: {self.overall_difficulty}",
             f"AR: {self.approach_rate}",
-            f"base slider mult: {self.base_slider_mult}",
             f"slider tick rate: {self.slider_tick_rate}",
             "",
             *( f"{t:08}: {v}" for t, v in self.timed ),
@@ -41,7 +39,7 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
     raw_hit_objects: list[str] = cfg.get('HitObjects', []) # type: ignore
 
     uninherited: list[tuple[int, BeatLen]] = []
-    inherited: list[tuple[int, SliderMult]] = []
+    inherited: list[tuple[int, SliderVel]] = []
     objects: list[tuple[int, Timed]] = []
 
     # parse breaks
@@ -53,6 +51,7 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
             objects.append((int(t), Break(duration=d)))
 
     # parse timing points
+    base_slider_vel = float(diff.get('SliderMultiplier', 1.4))
     for l in raw_timing_points:
         vals = [ float(x) for x in l.strip().split(",") ]
         t, x, meter = vals[:3]
@@ -61,22 +60,22 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
             # inherited timing point - controls slider multiplier 
 
             # .1 <= slider_mult <= 10
-            slider_mult = min(10., max(.1, round(-100/x, 3)))
+            slider_vel = round(base_slider_vel * min(10., max(.1, -100/x)), 3)
 
             if len(inherited) > 0:
                 last_t, last_sm = inherited[-1]
                 if last_t == t:
                     # override previous inherited point at same time
                     inherited.pop()
-                if last_sm.mult == slider_mult:
+                if last_sm.vel == slider_vel:
                     # skip emitting "same" inherited point
                     continue
                 
-            inherited.append((int(t), SliderMult(mult=slider_mult)))
+            inherited.append((int(t), SliderVel(vel=slider_vel)))
         else:
             # uninherited timing point - controls beat length and meter, resets slider multiplier
             uninherited.append((int(t), BeatLen(ms=x, meter=int(meter))))
-            inherited.append((int(t), SliderMult(mult=1)))
+            inherited.append((int(t), SliderVel(vel=base_slider_vel)))
 
     # parse hit objects
     for l in raw_hit_objects:
@@ -108,23 +107,23 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
     # post-hoc computation of duration from slider length, beat length, and slider mult
     used_inherited = {}
     cur_beat_len = uninherited[0][1].ms
-    cur_slider_mult = 1.
+    cur_slider_vel = base_slider_vel
     cur_inherited_idx = None
     for i, (t, v) in enumerate(timed):
         if isinstance(v, BeatLen):
             cur_beat_len = v.ms
-        elif isinstance(v, SliderMult):
-            cur_slider_mult = v.mult
+        elif isinstance(v, SliderVel):
+            cur_slider_vel = v.vel
             cur_inherited_idx = i
         elif isinstance(v, (PerfectSlider, BezierSlider)):
             used_inherited[cur_inherited_idx] = True
             slider_length = v.duration
-            slide_duration = slider_length / (cur_slider_mult * 100) * cur_beat_len
+            slide_duration = slider_length / (cur_slider_vel * 100) * cur_beat_len
             v.duration = round(v.slides * slide_duration)
 
     # remove unused inherited timing points
     for i, (t, v) in reversed(list(enumerate(timed))):
-        if isinstance(v, SliderMult) and i not in used_inherited:
+        if isinstance(v, SliderVel) and i not in used_inherited:
             timed.pop(i)
 
     return IntermediateBeatmap(
@@ -132,7 +131,6 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
         circle_size = float(diff.get('CircleSize', 5)),
         overall_difficulty = float(diff.get('OverallDifficulty', 5)),
         approach_rate = float(diff.get('ApproachRate', 5)),
-        base_slider_mult = float(diff.get('SliderMultiplier', 1.4)),
         slider_tick_rate = float(diff.get('SliderTickRate', 1)),
         timed = timed,
     ), Metadata(
@@ -148,13 +146,24 @@ def to_beatmap(
     metadata: Metadata,
 ) -> str:
 
+    # first loop over inherited timing points to compute base slider vel
+    min_slider_vel = float('inf')
+    max_slider_vel = float('-inf')
+    for _, v in ib.timed:
+        if isinstance(v, SliderVel):
+            if v.vel < min_slider_vel:
+                min_slider_vel = v.vel
+            if v.vel > max_slider_vel:
+                max_slider_vel = v.vel
+    base_slider_vel = (min_slider_vel * max_slider_vel)**.5
+
     breaks = []
     timing_points = []
     hit_objects = []
 
     # running timing context for reconstructing slider length
     cur_beat_len: float = 600.
-    cur_slider_mult: float = 1.
+    cur_slider_vel: float = base_slider_vel
 
     for t, v in ib.timed:
         if isinstance(v, Break):
@@ -162,16 +171,17 @@ def to_beatmap(
             breaks.append(f"2,{t},{end_time}")
         elif isinstance(v, BeatLen):
             cur_beat_len = v.ms
-            cur_slider_mult = 1.
+            cur_slider_vel = base_slider_vel
             # offset,msPerBeat,meter,sampleSet,sampleIndex,volume,uninherited,effects
             timing_points.append(f"{t},{v.ms},{v.meter},1,0,100,1,0")
-        elif isinstance(v, SliderMult):
-            if cur_slider_mult == v.mult:
+        elif isinstance(v, SliderVel):
+            if cur_slider_vel == v.vel:
                 # no change, don't emit
                 continue
-            cur_slider_mult = v.mult
+            cur_slider_vel = v.vel
+            cur_slider_mult = v.vel / base_slider_vel
             # inherited timing point uses negative msPerBeat: -100/mult
-            timing_points.append(f"{t},{-100 / v.mult},4,1,0,100,0,0")
+            timing_points.append(f"{t},{-100 / cur_slider_mult},4,1,0,100,0,0")
         elif isinstance(v, HitObject):
 
             if isinstance(v, HitCircle):
@@ -205,7 +215,7 @@ def to_beatmap(
                 # duration = slides * (length / (slider_mult * 100)) * beat_len
                 # => length = (duration / slides) * (slider_mult * 100) / beat_len
                 slide_duration = v.duration / max(v.slides, 1)
-                length = slide_duration * (cur_slider_mult * 100.0) / cur_beat_len
+                length = slide_duration * (cur_slider_vel * 100.0) / cur_beat_len
 
                 params = [curve, v.slides, length]
 
@@ -227,7 +237,7 @@ def to_beatmap(
         od=ib.overall_difficulty,
         cs=ib.circle_size,
         hp=ib.hp_drain_rate,
-        sm=ib.base_slider_mult,
+        sm=base_slider_vel,
         tr=ib.slider_tick_rate,
         breaks="\n".join(breaks),
         timing_points="\n".join(timing_points), 
