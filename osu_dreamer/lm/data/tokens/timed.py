@@ -8,10 +8,9 @@ Coordinate = tuple[int, int]
 class BeatLen:
     """uninherited timing point"""
     ms: float
-    meter: int
     
     def __str__(self):
-        return f"BeatLen({self.ms}, meter={self.meter})"
+        return f"BeatLen({self.ms})"
 
 @dataclass
 class SliderVel:
