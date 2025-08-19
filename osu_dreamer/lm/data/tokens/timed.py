@@ -64,7 +64,7 @@ class HitCircle(HitObject):
         return f" ({self.p[0]},{self.p[1]})"
 
 @dataclass
-class _Hold(HitObject):
+class Hold(HitObject):
     duration: int
 
     def _hold_str(self) -> str:
@@ -74,12 +74,12 @@ class _Hold(HitObject):
         return f"[duration={self.duration}]{self._hold_str()}"
 
 @dataclass
-class Spinner(_Hold):
+class Spinner(Hold):
     def _cls_str(self) -> str:
         return "S"
 
 @dataclass
-class _Slider(_Hold):
+class Slider(Hold):
     slides: int
 
     def _slider_str(self) -> str:
@@ -89,7 +89,7 @@ class _Slider(_Hold):
         return f"[slides={self.slides}]{self._slider_str()}"
 
 @dataclass
-class PerfectSlider(_Slider):
+class PerfectSlider(Slider):
     p: Coordinate
     q: Coordinate
 
@@ -108,7 +108,7 @@ class PerfectSlider(_Slider):
         return s + f" ({self.p[0]},{self.p[1]}) ({self.q[0]},{self.q[1]})"
     
 @dataclass
-class BezierSlider(_Slider):
+class BezierSlider(Slider):
     shape: list[Coordinate]
 
     def _cls_str(self) -> str:
