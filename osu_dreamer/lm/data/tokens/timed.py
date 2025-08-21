@@ -60,7 +60,7 @@ class HitCircle(HitObject):
         return "C"
 
     def _object_str(self) -> str:
-        return f" ({self.p[0]},{self.p[1]})"
+        return f" {self.p}"
 
 @dataclass
 class Hold(HitObject):
@@ -80,6 +80,7 @@ class Spinner(Hold):
 @dataclass
 class Slider(Hold):
     slides: int
+    head: Coordinate
 
     def _slider_str(self) -> str:
         return ""
@@ -89,12 +90,12 @@ class Slider(Hold):
 
 @dataclass
 class PerfectSlider(Slider):
-    p: Coordinate
-    q: Coordinate
+    tail: Coordinate
 
-    # angular deviation from straight line to end point (-pi, pi)
+    # angular deviation from straight line to end point (-pi, pi)\{0}
     # `deviation` > 0 => arc deviates to the left
-    # `deviation` = 0 => line slider
+    # `deviation` = 0 => technically corresponds to line slider,
+    #   but lines are actually parsed as a bezier slider with a single line segment
     deviation: float
 
     def _cls_str(self) -> str:
@@ -104,17 +105,35 @@ class PerfectSlider(Slider):
         s = ""
         if self.deviation != 0:
             s = f"[deviation={self.deviation:.2f}]"
-        return s + f" ({self.p[0]},{self.p[1]}) ({self.q[0]},{self.q[1]})"
+        return s + f" {self.head} {self.tail}"
+    
+@dataclass
+class LineSegment:
+    q: Coordinate
+
+    def __str__(self) -> str:
+        return f"Line({self.q})"
+
+@dataclass
+class CubicSegment:
+    pc: Coordinate
+    qc: Coordinate
+    q: Coordinate
+
+    def __str__(self) -> str:
+        return f"Cubic({self.pc}, {self.qc}, {self.q})"
+    
+BezierSegment = LineSegment | CubicSegment
     
 @dataclass
 class BezierSlider(Slider):
-    shape: list[Coordinate]
+    segments: list[BezierSegment]
 
     def _cls_str(self) -> str:
         return "B"
     
     def _slider_str(self):
-        return " " + " ".join([ f"({x},{y})" for x,y in self.shape ])
+        return " " + " ".join(map(str, self.segments))
 
 
 Timed = Union[

@@ -60,7 +60,7 @@ class BezierCurve:
         p, left, right = self.p, [], []
         while True:
             left.append(p[:,0])
-            right.append(p[:,-1])
+            right.insert(0, p[:,-1])
             if p.shape[1] == 1:
                 break
             p = (1-t) * p[:,:-1] + t * p[:,1:]

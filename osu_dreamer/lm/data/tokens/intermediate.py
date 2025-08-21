@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 from typing import Iterable
 
 
-from .timed import HitCircle, HitObject, Timed, Break, SliderVel, BeatLen, Spinner, PerfectSlider, BezierSlider
+from .timed import CubicSegment, HitCircle, HitObject, LineSegment, Timed, Break, SliderVel, BeatLen, Spinner, PerfectSlider, BezierSlider
 from .parse_file import parse_map_file
 from .parse_slider import get_perfect_control_point, parse_slider
 from .template import map_template, Metadata
@@ -93,8 +93,8 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
             objects.append((t, HitCircle(*hit_object_args, p=(x,y))))
             continue
         elif typ & (1 << 1):  # slider
-            curve_points, slides, length = spl[5:8]
-            objects.append((t, parse_slider(x,y,hit_object_args, curve_points, slides, length)))
+            curve_spec, slides, length = spl[5:8]
+            objects.append((t, parse_slider(x,y,hit_object_args, curve_spec, slides, length)))
             continue
         elif typ & (1 << 3):  # spinner
             d = int(float(spl[5]) - t)
@@ -197,18 +197,29 @@ def to_beatmap(
                 typ = 1 << 1
 
                 if isinstance(v, PerfectSlider):
-                    x, y = v.p
-                    qx, qy = v.q
+                    x, y = v.head
+                    qx, qy = v.tail
                     if v.deviation == 0:
                         # straight line
                         curve = f"L|{qx}:{qy}"
                     else:
-                        cx, cy = get_perfect_control_point(v.p, v.q, v.deviation)
+                        cx, cy = get_perfect_control_point(v.head, v.tail, v.deviation)
                         curve = f"P|{cx}:{cy}|{qx}:{qy}"
                 elif isinstance(v, BezierSlider):
                     # first point is encoded separately as x0,y0
-                    x, y = v.shape[0]
-                    rest = "|".join(f"{px}:{py}" for px, py in v.shape[1:])
+                    x, y = v.head
+                    pts = []
+                    for seg in v.segments:
+                        if isinstance(seg, LineSegment):
+                            pts.append(seg.q)
+                        elif isinstance(seg, CubicSegment):
+                            pts.append(seg.pc)
+                            pts.append(seg.qc)
+                            pts.append(seg.q)
+                        pts.append(seg.q)
+                    pts.pop()
+
+                    rest = "|".join(f"{px}:{py}" for px, py in pts)
                     curve = f"B|{rest}"
 
                 # compute slider length from duration using current timing context
