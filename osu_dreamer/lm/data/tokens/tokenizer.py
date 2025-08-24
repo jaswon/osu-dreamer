@@ -1,146 +1,93 @@
 
-from itertools import chain
 from typing import Generator
+
 import numpy as np
 
 from .intermediate import IntermediateBeatmap
 from .timed import *
-
-# Vocabulary Definition
-
-SPECIAL_TOKENS = [
-    '<pad>',
-    '<bos>',
-    '<eos>',
-]
-
-TIME_SHIFT_BINS = 1000
-X_BINS = 512
-Y_BINS = 384
-DIFFICULTY_BINS = 101 # 0-100 for 0.0-10.0
-SLIDER_TICK_RATE_BINS = 8 # 1-8
-VELOCITY_BINS = 100 # 0.1-10.0 -> 1-100
-DURATION_BINS = 5000 # 0-5000ms
-SLIDES_BINS = 16 # 0-15
-DEVIATION_BINS = 64 # -pi to pi
-
-EVENT_TOKENS = [
-    'BREAK',
-    'HIT_CIRCLE',
-    'SPINNER',
-    'SLIDER', 
-    'PERFECT',
-    'BEZIER',
-    'LINE',
-    'CUBIC',
-]
-
-FLAG_TOKENS = [
-    'NEW_COMBO',
-    'WHISTLE',
-    'FINISH',
-    'CLAP',
-]
-
-ID_TO_TOKEN = list(chain(
-    SPECIAL_TOKENS,
-    EVENT_TOKENS,
-    FLAG_TOKENS,
-    [f'TIME_SHIFT_{i}' for i in range(TIME_SHIFT_BINS)],
-    [f'X_{i}' for i in range(X_BINS)],
-    [f'Y_{i}' for i in range(Y_BINS)],
-    # Map-level features
-    [f'HP_DRAIN_RATE_{i}' for i in range(DIFFICULTY_BINS)],
-    [f'CIRCLE_SIZE_{i}' for i in range(DIFFICULTY_BINS)],
-    [f'OVERALL_DIFFICULTY_{i}' for i in range(DIFFICULTY_BINS)],
-    [f'APPROACH_RATE_{i}' for i in range(DIFFICULTY_BINS)],
-    [f'SLIDER_TICK_RATE_{i}' for i in range(1, SLIDER_TICK_RATE_BINS + 1)],
-    # Event-level values
-    [f'BEAT_LEN_{i}' for i in range(40, 1001)], # ms_per_beat
-    [f'SLIDER_VEL_{i}' for i in range(1, VELOCITY_BINS + 1)],
-    [f'DURATION_{i}' for i in range(DURATION_BINS)],
-    [f'SLIDES_{i}' for i in range(SLIDES_BINS)],
-    [f'DEVIATION_{i}' for i in range(DEVIATION_BINS)],
-))
-TOKEN_TO_ID = {tok: i for i, tok in enumerate(ID_TO_TOKEN)}
-
-def quantize(value, min_val, max_val, bins):
-    return int(np.clip(((value - min_val) / (max_val - min_val)), 0, 1) * (bins - 1))
+from .tokens import Token, TokenType, VocabConfig, make_vocab
 
 class Tokenizer:
-    def __init__(self):
-        self.token_to_id = TOKEN_TO_ID
-        self.id_to_token = ID_TO_TOKEN
+    def __init__(self, config: VocabConfig):
+        self.config = config
+        self.id_to_token = make_vocab(config)
+        self.token_to_id = { token: i for i, token in enumerate(self.id_to_token) }
 
-    def _tokenize_map_features(self, bm: IntermediateBeatmap) -> Generator[str]:
-        yield f'HP_DRAIN_RATE_{int(round(bm.hp_drain_rate * 10))}'
-        yield f'CIRCLE_SIZE_{int(round(bm.circle_size * 10))}'
-        yield f'OVERALL_DIFFICULTY_{int(round(bm.overall_difficulty * 10))}'
-        yield f'APPROACH_RATE_{int(round(bm.approach_rate * 10))}'
-        yield f'SLIDER_TICK_RATE_{int(bm.slider_tick_rate)}'
+    def _tokenize_map_features(self, bm: IntermediateBeatmap) -> Generator[Token]:
+        yield Token(TokenType.HP_DRAIN_RATE, round(bm.hp_drain_rate, 1))
+        yield Token(TokenType.CIRCLE_SIZE, round(bm.circle_size, 1))
+        yield Token(TokenType.OVERALL_DIFFICULTY, round(bm.overall_difficulty, 1))
+        yield Token(TokenType.APPROACH_RATE, round(bm.approach_rate, 1))
+        yield Token(TokenType.SLIDER_TICK_RATE, bm.slider_tick_rate)
     
-    def _tokenize_coordinate(self, p: tuple[int, int]) -> Generator[str]:
-        yield f'X_{p[0]}'
-        yield f'Y_{p[1]}'
+    def _tokenize_coordinate(self, p: tuple[int, int]) -> Generator[Token]:
+        yield Token(TokenType.X, p[0])
+        yield Token(TokenType.Y, p[1])
 
-    def _tokenize_duration(self, d: int) -> Generator[str]:
-        yield f'DURATION_{min(d, DURATION_BINS - 1)}'
+    def _tokenize_time_shift(self, ms: int) -> Generator[Token]:
+        if ms >= 1000:
+            s, ms = divmod(ms, 1000)
+            yield Token(TokenType.TIME_SHIFT_S, s)
+        if ms > 0:
+            yield Token(TokenType.TIME_SHIFT_MS, ms)
+
+    def _tokenize_duration(self, ms: int) -> Generator[Token]:
+        yield from self._tokenize_time_shift(ms)
+        yield Token(TokenType.RELEASE)
     
-    def _tokenize_hit_object(self, event: HitObject) -> Generator[str]:
-        if event.new_combo: yield 'NEW_COMBO'
-        if event.whistle: yield 'WHISTLE'
-        if event.finish: yield 'FINISH'
-        if event.clap: yield 'CLAP'
+    def _tokenize_hit_object(self, event: HitObject) -> Generator[Token]:
+        if event.new_combo: yield Token(TokenType.NEW_COMBO)
+        if event.whistle: yield Token(TokenType.WHISTLE)
+        if event.finish: yield Token(TokenType.FINISH)
+        if event.clap: yield Token(TokenType.CLAP)
 
         match event:
             case Spinner():
-                yield 'SPINNER'
+                yield Token(TokenType.SPINNER)
                 yield from self._tokenize_duration(event.duration)
 
             case HitCircle():
-                yield 'HIT_CIRCLE'
+                yield Token(TokenType.HIT_CIRCLE)
                 yield from self._tokenize_coordinate(event.p)
 
             case Slider():
-                yield 'SLIDER'
+                yield Token(TokenType.SLIDER)
                 yield from self._tokenize_coordinate(event.head)
                 yield from self._tokenize_duration(event.duration)
-                yield f'SLIDES_{min(event.slides, SLIDES_BINS - 1)}'
+                yield Token(TokenType.SLIDES, min(event.slides, self.config.SLIDES_BINS - 1))
                 match event:
                     case PerfectSlider():
-                        yield 'PERFECT'
+                        yield Token(TokenType.PERFECT)
                         yield from self._tokenize_coordinate(event.tail)
-                        yield f'DEVIATION_{quantize(event.deviation, -np.pi, np.pi, DEVIATION_BINS)}'
+                        deviation_bin = 1+int(abs(event.deviation)*self.config.DEVIATION_BINS/np.pi)
+                        yield Token(TokenType.DEVIATION, deviation_bin if event.deviation > 0 else -deviation_bin)
 
                     case BezierSlider():
-                        yield 'BEZIER'
+                        yield Token(TokenType.BEZIER)
                         for seg in event.segments:
                             if isinstance(seg, LineSegment):
-                                yield 'LINE'
+                                yield Token(TokenType.LINE)
                                 yield from self._tokenize_coordinate(seg.q)
                             else:
-                                yield 'CUBIC'
+                                yield Token(TokenType.CUBIC)
                                 yield from self._tokenize_coordinate(seg.pc)
                                 yield from self._tokenize_coordinate(seg.qc)
                                 yield from self._tokenize_coordinate(seg.q)
     
-    def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Generator[str]:
+    def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Generator[Token]:
         last_time = 0
         for t, event in bm.timed:
             time_shift = t - last_time
             if time_shift > 0:
-                yield f'TIME_SHIFT_{min(time_shift, TIME_SHIFT_BINS - 1)}'
+                yield from self._tokenize_time_shift(time_shift)
                 last_time = t
 
             match event:
                 case BeatLen():
-                    yield f'BEAT_LEN_{int(np.clip(event.ms, 40, 1000))}'
-
-                case SliderVel():
-                    yield f'SLIDER_VEL_{int(np.clip(event.vel * 10, 1, VELOCITY_BINS))}'
+                    yield Token(TokenType.BEAT_LEN, round(60_000/round(60_000/event.ms),2))
 
                 case Break():
-                    yield 'BREAK'
+                    yield Token(TokenType.BREAK)
                     yield from self._tokenize_duration(event.duration)
                     
                 case HitObject():
