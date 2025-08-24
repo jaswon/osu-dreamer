@@ -3,6 +3,7 @@ from typing import Generator
 
 import numpy as np
 
+from .decoder import Decoder
 from .intermediate import IntermediateBeatmap
 from .timed import *
 from .tokens import Token, TokenType, VocabConfig, make_vocab
@@ -108,5 +109,10 @@ class Tokenizer:
         context_prelude_token_ids: list[int],
         beatmap_token_ids: list[int],
     ) -> IntermediateBeatmap:
-        # TODO: Implement decoding logic
-        ...
+        return Decoder(
+            self.config,
+            [
+                self.id_to_token[tid]
+                for tid in (*context_prelude_token_ids, *beatmap_token_ids)
+            ]
+        ).parse_intermediate_beatmap()
