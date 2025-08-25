@@ -209,15 +209,18 @@ def to_beatmap(
                     # first point is encoded separately as x0,y0
                     x, y = v.head
                     pts = []
+                    last_q = None
                     for seg in v.segments:
+                        if last_q is not None:
+                            pts.append(last_q)
+                        last_q = seg.q
+
                         if isinstance(seg, LineSegment):
                             pts.append(seg.q)
                         elif isinstance(seg, CubicSegment):
                             pts.append(seg.pc)
                             pts.append(seg.qc)
                             pts.append(seg.q)
-                        pts.append(seg.q)
-                    pts.pop()
 
                     rest = "|".join(f"{px}:{py}" for px, py in pts)
                     curve = f"B|{rest}"
