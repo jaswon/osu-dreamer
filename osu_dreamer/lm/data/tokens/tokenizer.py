@@ -1,5 +1,5 @@
 
-from typing import Generator
+from typing import Iterator
 
 import numpy as np
 
@@ -38,33 +38,33 @@ class Tokenizer:
             ]
         ).parse_intermediate_beatmap()
 
-    def _tokenize_map_features(self, bm: IntermediateBeatmap) -> Generator[Token]:
+    def _tokenize_map_features(self, bm: IntermediateBeatmap) -> Iterator[Token]:
         yield Token(TokenType.HP_DRAIN_RATE, round(bm.hp_drain_rate, 1))
         yield Token(TokenType.CIRCLE_SIZE, round(bm.circle_size, 1))
         yield Token(TokenType.OVERALL_DIFFICULTY, round(bm.overall_difficulty, 1))
         yield Token(TokenType.APPROACH_RATE, round(bm.approach_rate, 1))
         yield Token(TokenType.SLIDER_TICK_RATE, bm.slider_tick_rate)
     
-    def _tokenize_coordinate(self, p: tuple[int, int]) -> Generator[Token]:
+    def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
         yield Token(TokenType.X, p[0])
         yield Token(TokenType.Y, p[1])
 
-    def _tokenize_time_shift(self, ms: int) -> Generator[Token]:
+    def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
         if ms >= 1000:
             s, ms = divmod(ms, 1000)
             yield Token(TokenType.TIME_SHIFT_S, s)
         if ms > 0:
             yield Token(TokenType.TIME_SHIFT_MS, ms)
 
-    def _tokenize_duration(self, ms: int) -> Generator[Token]:
+    def _tokenize_duration(self, ms: int) -> Iterator[Token]:
         yield from self._tokenize_time_shift(ms)
         yield Token(TokenType.RELEASE)
 
-    def _tokenize_deviation(self, d: float) -> Generator[Token]:
+    def _tokenize_deviation(self, d: float) -> Iterator[Token]:
         b = 1+int(abs(d)*self.config.DEVIATION_BINS/np.pi)
         yield Token(TokenType.DEVIATION, b if d > 0 else -b)
     
-    def _tokenize_hit_object(self, event: HitObject) -> Generator[Token]:
+    def _tokenize_hit_object(self, event: HitObject) -> Iterator[Token]:
         if event.new_combo: yield Token(TokenType.NEW_COMBO)
         if event.whistle: yield Token(TokenType.WHISTLE)
         if event.finish: yield Token(TokenType.FINISH)
@@ -99,7 +99,7 @@ class Tokenizer:
                             else:
                                 yield from self._tokenize_cubic_segment(event.head, seg)
 
-    def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Generator[Token]:
+    def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Iterator[Token]:
         p, q = np.array(head), np.array(seg.q)
         v0, v1 = q - p
         v_len = (v0*v0 + v1*v1) ** .5
@@ -119,13 +119,13 @@ class Tokenizer:
         yield from self._tokenize_magnitude(pc_scale)
         yield from self._tokenize_magnitude(qc_scale)
 
-    def _tokenize_magnitude(self, d: float) -> Generator[Token]:
+    def _tokenize_magnitude(self, d: float) -> Iterator[Token]:
         # TODO: move constants to config
         t = (np.log(d) - np.log(.1)) / (np.log(10) - np.log(.1)) # [0,1]
         b = int(t * self.config.MAGNITUDE_BINS)
         yield Token(TokenType.MAGNITUDE, b)
     
-    def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Generator[Token]:
+    def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Iterator[Token]:
         last_time = 0
         for t, event in bm.timed:
             time_shift = t - last_time
