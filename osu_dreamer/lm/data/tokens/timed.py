@@ -133,7 +133,7 @@ class BezierSlider(Slider):
         return "B"
     
     def _slider_str(self):
-        return " " + " ".join(map(str, self.segments))
+        return f" {self.head} {" ".join(map(str, self.segments))}"
 
 
 Timed = Union[

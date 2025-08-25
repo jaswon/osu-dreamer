@@ -50,7 +50,7 @@ def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
 
 def parse_bezier(ctrl_pts: list[Coordinate]) -> tuple[Coordinate, list[BezierSegment]]:
     """
-    approximates arbitrary poly-beziers as poly-beziers of order 0 (line) or order 3 (cubic)
+    approximates arbitrary poly-beziers as poly-beziers of order 1 (line) or order 3 (cubic)
     """
     assert len(ctrl_pts) >= 2
 

@@ -138,7 +138,7 @@ class Decoder:
 
         p, q = np.array(head), np.array(tail)
         v = q - p
-        u = -v[1], v[0]
+        u = np.array([-v[1], v[0]])
 
         pc = p + pc_scale * (v*np.cos(pc_dev) + u*np.sin(pc_dev))
         qc = q - qc_scale * (v*np.cos(qc_dev) + u*np.sin(qc_dev))
