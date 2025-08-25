@@ -149,7 +149,7 @@ class Decoder:
     def parse_magnitude(self) -> float:
         b = self.parse_token_value(TokenType.MAGNITUDE)
         t = b / self.config.MAGNITUDE_BINS # [0,1)
-        return .1 * (10 / .1) ** t
+        return self.config.MIN_MAGNITUDE * (self.config.MAX_MAGNITUDE / self.config.MIN_MAGNITUDE) ** t
 
     def parse_timed_objects(self) -> list[tuple[int, Timed]]:
         events: list[tuple[int, Timed]] = []

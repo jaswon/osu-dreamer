@@ -120,9 +120,9 @@ class Tokenizer:
         yield from self._tokenize_magnitude(qc_scale)
 
     def _tokenize_magnitude(self, d: float) -> Iterator[Token]:
-        # TODO: move constants to config
-        t = (np.log(d) - np.log(.1)) / (np.log(10) - np.log(.1)) # [0,1]
-        b = int(t * self.config.MAGNITUDE_BINS)
+        assert self.config.MIN_MAGNITUDE <= d <= self.config.MAX_MAGNITUDE, d
+        t = np.log(d/self.config.MIN_MAGNITUDE) / np.log(self.config.MAX_MAGNITUDE/self.config.MIN_MAGNITUDE) # [0,1]
+        b = min(self.config.MAGNITUDE_BINS-1, int(t * self.config.MAGNITUDE_BINS))
         yield Token(TokenType.MAGNITUDE, b)
     
     def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Iterator[Token]:

@@ -66,6 +66,8 @@ class VocabConfig:
     SLIDES_BINS: int = 16
     DEVIATION_BINS: int = 64
     MAGNITUDE_BINS: int = 64
+    MIN_MAGNITUDE: float = .05
+    MAX_MAGNITUDE: float = 50
     DIFFICULTY_BINS: int = 101 # 0-100 for 0.0-10.0
     SLIDER_TICK_RATE_BINS: int = 8 # 1-8
 
