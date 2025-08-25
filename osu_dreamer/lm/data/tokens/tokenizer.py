@@ -46,8 +46,12 @@ class Tokenizer:
         yield Token(TokenType.SLIDER_TICK_RATE, bm.slider_tick_rate)
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
-        yield Token(TokenType.X, p[0])
-        yield Token(TokenType.Y, p[1])
+        assert self.config.x_min <= p[0] <= self.config.x_max, p[0]
+        assert self.config.y_min <= p[1] <= self.config.y_max, p[1]
+        x_bin = int(self.config.x_bins * (p[0] - self.config.x_min) / (self.config.x_max + 1 - self.config.x_min))
+        y_bin = int(self.config.y_bins * (p[1] - self.config.y_min) / (self.config.y_max + 1 - self.config.y_min))
+        yield Token(TokenType.X, x_bin)
+        yield Token(TokenType.Y, y_bin)
 
     def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
         if ms >= 1000:

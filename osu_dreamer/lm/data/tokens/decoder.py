@@ -45,9 +45,12 @@ class Decoder:
         return IntermediateBeatmap(hp, cs, od, ar, tr, timed)
     
     def parse_coordinate(self) -> tuple[int, int]:
-        x = self.parse_token_value(TokenType.X)
-        y = self.parse_token_value(TokenType.Y)
-        return x,y
+        x_bin = self.parse_token_value(TokenType.X)
+        y_bin = self.parse_token_value(TokenType.Y)
+
+        x = self.config.x_min + (x_bin + .5) / self.config.x_bins * (self.config.x_max + 1 - self.config.x_min)
+        y = self.config.y_min + (y_bin + .5) / self.config.y_bins * (self.config.y_max + 1 - self.config.y_min)
+        return round(x),round(y)
 
     def parse_time_shift(self) -> int:
         time_shift = 0
