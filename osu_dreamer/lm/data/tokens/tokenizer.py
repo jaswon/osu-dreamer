@@ -8,11 +8,35 @@ from .intermediate import IntermediateBeatmap
 from .timed import *
 from .tokens import Token, TokenType, VocabConfig, make_vocab
 
+cross = lambda a,b: a[0]*b[1] - a[1]*b[0]
+
 class Tokenizer:
     def __init__(self, config: VocabConfig):
         self.config = config
         self.id_to_token = make_vocab(config)
         self.token_to_id = { token: i for i, token in enumerate(self.id_to_token) }
+                            
+    def encode(self, bm: IntermediateBeatmap) -> tuple[
+        list[int], # context prelude
+        list[int], # beatmap tokens
+    ]:
+        return (
+            [ self.token_to_id[tok] for tok in self._tokenize_map_features(bm) ],
+            [ self.token_to_id[tok] for tok in self._tokenize_timed_objects(bm) ],
+        )
+
+    def decode(
+        self, 
+        context_prelude_token_ids: list[int],
+        beatmap_token_ids: list[int],
+    ) -> IntermediateBeatmap:
+        return Decoder(
+            self.config,
+            [
+                self.id_to_token[tid]
+                for tid in (*context_prelude_token_ids, *beatmap_token_ids)
+            ]
+        ).parse_intermediate_beatmap()
 
     def _tokenize_map_features(self, bm: IntermediateBeatmap) -> Generator[Token]:
         yield Token(TokenType.HP_DRAIN_RATE, round(bm.hp_drain_rate, 1))
@@ -35,6 +59,10 @@ class Tokenizer:
     def _tokenize_duration(self, ms: int) -> Generator[Token]:
         yield from self._tokenize_time_shift(ms)
         yield Token(TokenType.RELEASE)
+
+    def _tokenize_deviation(self, d: float) -> Generator[Token]:
+        b = 1+int(abs(d)*self.config.DEVIATION_BINS/np.pi)
+        yield Token(TokenType.DEVIATION, b if d > 0 else -b)
     
     def _tokenize_hit_object(self, event: HitObject) -> Generator[Token]:
         if event.new_combo: yield Token(TokenType.NEW_COMBO)
@@ -60,8 +88,7 @@ class Tokenizer:
                     case PerfectSlider():
                         yield Token(TokenType.PERFECT)
                         yield from self._tokenize_coordinate(event.tail)
-                        deviation_bin = 1+int(abs(event.deviation)*self.config.DEVIATION_BINS/np.pi)
-                        yield Token(TokenType.DEVIATION, deviation_bin if event.deviation > 0 else -deviation_bin)
+                        yield from self._tokenize_deviation(event.deviation)
 
                     case BezierSlider():
                         yield Token(TokenType.BEZIER)
@@ -70,10 +97,33 @@ class Tokenizer:
                                 yield Token(TokenType.LINE)
                                 yield from self._tokenize_coordinate(seg.q)
                             else:
-                                yield Token(TokenType.CUBIC)
-                                yield from self._tokenize_coordinate(seg.pc)
-                                yield from self._tokenize_coordinate(seg.qc)
-                                yield from self._tokenize_coordinate(seg.q)
+                                yield from self._tokenize_cubic_segment(event.head, seg)
+
+    def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Generator[Token]:
+        p, q = np.array(head), np.array(seg.q)
+        v0, v1 = q - p
+        v_len = (v0*v0 + v1*v1) ** .5
+
+        pc0, pc1 = np.array(seg.pc) - p
+        pc_scale = (pc0*pc0 + pc1*pc1) ** .5 / v_len
+        pc_dev = float(np.arctan2(v0*pc1 - v1*pc0, v0*pc0 + v1*pc1))
+        
+        qc0, qc1 = q - np.array(seg.qc)
+        qc_scale = (qc0*qc0 + qc1*qc1) ** .5 / v_len
+        qc_dev = float(np.arctan2(v0*qc1 - v1*qc0, v0*qc0 + v1*qc1))
+
+        yield Token(TokenType.CUBIC)
+        yield from self._tokenize_coordinate(seg.q)
+        yield from self._tokenize_deviation(pc_dev)
+        yield from self._tokenize_deviation(qc_dev)
+        yield from self._tokenize_magnitude(pc_scale)
+        yield from self._tokenize_magnitude(qc_scale)
+
+    def _tokenize_magnitude(self, d: float) -> Generator[Token]:
+        # TODO: move constants to config
+        t = (np.log(d) - np.log(.1)) / (np.log(10) - np.log(.1)) # [0,1]
+        b = int(t * self.config.MAGNITUDE_BINS)
+        yield Token(TokenType.MAGNITUDE, b)
     
     def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Generator[Token]:
         last_time = 0
@@ -93,26 +143,3 @@ class Tokenizer:
                     
                 case HitObject():
                     yield from self._tokenize_hit_object(event)
-                            
-
-    def encode(self, bm: IntermediateBeatmap) -> tuple[
-        list[int], # context prelude
-        list[int], # beatmap tokens
-    ]:
-        return (
-            [ self.token_to_id[tok] for tok in self._tokenize_map_features(bm) ],
-            [ self.token_to_id[tok] for tok in self._tokenize_timed_objects(bm) ],
-        )
-
-    def decode(
-        self, 
-        context_prelude_token_ids: list[int],
-        beatmap_token_ids: list[int],
-    ) -> IntermediateBeatmap:
-        return Decoder(
-            self.config,
-            [
-                self.id_to_token[tid]
-                for tid in (*context_prelude_token_ids, *beatmap_token_ids)
-            ]
-        ).parse_intermediate_beatmap()

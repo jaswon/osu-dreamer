@@ -3,8 +3,6 @@ from typing import NamedTuple, Any
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
-
 class CustomReprEnum(Enum):
     def __repr__(self):
         return self.name
@@ -30,6 +28,7 @@ TokenType = CustomReprEnum('TokenType', [
     'CUBIC',
     'SLIDES',
     'DEVIATION',
+    'MAGNITUDE',
 
     # hit object flags
     'NEW_COMBO',
@@ -66,6 +65,7 @@ class VocabConfig:
     Y_BINS: int = 385
     SLIDES_BINS: int = 16
     DEVIATION_BINS: int = 64
+    MAGNITUDE_BINS: int = 64
     DIFFICULTY_BINS: int = 101 # 0-100 for 0.0-10.0
     SLIDER_TICK_RATE_BINS: int = 8 # 1-8
 
@@ -97,6 +97,10 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
             Token(TokenType.DEVIATION,sgn*(1+s))
             for sgn in [-1, 1]
             for s in range(config.DEVIATION_BINS)
+        ],
+        *[
+            Token(TokenType.MAGNITUDE,m)
+            for m in range(config.MAGNITUDE_BINS)
         ],
 
         # hit object flags
