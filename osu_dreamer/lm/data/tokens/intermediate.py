@@ -94,7 +94,7 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
             continue
         elif typ & (1 << 1):  # slider
             curve_spec, slides, length = spl[5:8]
-            objects.append((t, parse_slider(x,y,hit_object_args, curve_spec, slides, length)))
+            objects.append((t, parse_slider(x,y,hit_object_args, curve_spec, int(slides), float(length))))
             continue
         elif typ & (1 << 3):  # spinner
             d = int(float(spl[5]) - t)
@@ -105,25 +105,20 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
     timed = sorted([ *uninherited, *inherited, *objects ], key=lambda t: t[0])
 
     # post-hoc computation of duration from slider length, beat length, and slider mult
-    used_inherited = {}
     cur_beat_len = uninherited[0][1].ms
     cur_slider_vel = base_slider_vel
-    cur_inherited_idx = None
     for i, (t, v) in enumerate(timed):
         if isinstance(v, BeatLen):
             cur_beat_len = v.ms
         elif isinstance(v, SliderVel):
             cur_slider_vel = v.vel
-            cur_inherited_idx = i
         elif isinstance(v, (PerfectSlider, BezierSlider)):
-            used_inherited[cur_inherited_idx] = True
-            slider_length = v.duration
-            slide_duration = slider_length / (cur_slider_vel * 100) * cur_beat_len
+            slide_duration = v.length() / (cur_slider_vel * 100) * cur_beat_len
             v.duration = round(v.slides * slide_duration)
 
-    # remove unused inherited timing points
-    for i, (t, v) in reversed(list(enumerate(timed))):
-        if isinstance(v, SliderVel) and i not in used_inherited:
+    # remove inherited timing points
+    for i, (_, v) in reversed(list(enumerate(timed))):
+        if isinstance(v, SliderVel):
             timed.pop(i)
 
     return IntermediateBeatmap(
@@ -149,17 +144,18 @@ def to_beatmap(
     # first loop over inherited timing points to compute base slider vel
     min_slider_vel = float('inf')
     max_slider_vel = float('-inf')
-    for _, v in ib.timed:
-        if isinstance(v, SliderVel):
-            if v.vel < min_slider_vel:
-                min_slider_vel = v.vel
-            if v.vel > max_slider_vel:
-                max_slider_vel = v.vel
+    for _, obj in ib.timed:
+        if isinstance(obj, Slider):
+            vel = obj.vel()
+            min_slider_vel = min(min_slider_vel, vel)
+            max_slider_vel = max(max_slider_vel, vel)
     base_slider_vel = (min_slider_vel * max_slider_vel)**.5
 
     breaks = []
-    timing_points = []
     hit_objects = []
+
+    slider_ts = []
+    slider_vels = []
 
     # running timing context for reconstructing slider length
     cur_beat_len: float = 600.
@@ -169,19 +165,6 @@ def to_beatmap(
         if isinstance(v, Break):
             end_time = t + v.duration
             breaks.append(f"2,{t},{end_time}")
-        elif isinstance(v, BeatLen):
-            cur_beat_len = v.ms
-            cur_slider_vel = base_slider_vel
-            # offset,msPerBeat,meter,sampleSet,sampleIndex,volume,uninherited,effects
-            timing_points.append(f"{t},{v.ms},1,1,0,100,1,0")
-        elif isinstance(v, SliderVel):
-            if cur_slider_vel == v.vel:
-                # no change, don't emit
-                continue
-            cur_slider_vel = v.vel
-            cur_slider_mult = v.vel / base_slider_vel
-            # inherited timing point uses negative msPerBeat: -100/mult
-            timing_points.append(f"{t},{-100 / cur_slider_mult},1,1,0,100,0,0")
         elif isinstance(v, HitObject):
 
             if isinstance(v, HitCircle):
@@ -193,7 +176,10 @@ def to_beatmap(
                 x,y = 256, 192
                 end_time = t + v.duration
                 params = [end_time]
-            elif isinstance(v, (PerfectSlider, BezierSlider)):
+            elif isinstance(v, Slider):
+                slider_ts.append(t)
+                slider_vels.append(v.vel())
+
                 typ = 1 << 1
 
                 if isinstance(v, PerfectSlider):
@@ -208,30 +194,30 @@ def to_beatmap(
                 elif isinstance(v, BezierSlider):
                     # first point is encoded separately as x0,y0
                     x, y = v.head
-                    pts = []
-                    last_q = None
-                    for seg in v.segments:
-                        if last_q is not None:
-                            pts.append(last_q)
-                        last_q = seg.q
 
-                        if isinstance(seg, LineSegment):
-                            pts.append(seg.q)
-                        elif isinstance(seg, CubicSegment):
-                            pts.append(seg.pc)
-                            pts.append(seg.qc)
-                            pts.append(seg.q)
+                    # check if single line
+                    if len(v.segments) == 1 and isinstance(v.segments[0], LineSegment):
+                        qx, qy = v.segments[0].q
+                        curve = f"L|{qx}:{qy}"
+                    else:
+                        pts = []
+                        last_q = None
+                        for seg in v.segments:
+                            if last_q is not None:
+                                pts.append(last_q)
+                            last_q = seg.q
 
-                    rest = "|".join(f"{px}:{py}" for px, py in pts)
-                    curve = f"B|{rest}"
+                            if isinstance(seg, LineSegment):
+                                pts.append(seg.q)
+                            elif isinstance(seg, CubicSegment):
+                                pts.append(seg.pc)
+                                pts.append(seg.qc)
+                                pts.append(seg.q)
 
-                # compute slider length from duration using current timing context
-                # duration = slides * (length / (slider_mult * 100)) * beat_len
-                # => length = (duration / slides) * (slider_mult * 100) / beat_len
-                slide_duration = v.duration / max(v.slides, 1)
-                length = slide_duration * (cur_slider_vel * 100.0) / cur_beat_len
+                        rest = "|".join(f"{px}:{py}" for px, py in pts)
+                        curve = f"B|{rest}"
 
-                params = [curve, v.slides, length]
+                params = [curve, v.slides, v.length()]
 
             hs = 0
             if v.whistle:
@@ -244,6 +230,16 @@ def to_beatmap(
                 typ |= (1 << 2)
             hit_objects.append(",".join(map(str,[x,y,t,typ,hs,*params])))
 
+    base_slider_vel = 1 if len(slider_vels) == 0 else (min(slider_vels) * max(slider_vels)) ** .5 
+    beat_len = 100 / base_slider_vel # set `slider_mult` to 1 (.4 <= `slider_mult` <= 3.6)
+
+    timing_points = [f"0,{beat_len},4,0,0,50,1,0"]
+    for t, vel in zip(slider_ts, slider_vels):
+        SV = vel / base_slider_vel
+        if SV > 10 or SV < .1:
+            print('warning: SV > 10 or SV < .1 not supported, might result in bad sliders:', SV)
+        
+        timing_points.append(f"{t},{-100/SV},4,0,0,50,0,0")
 
     return map_template.format(
         **asdict(metadata), 
@@ -251,7 +247,6 @@ def to_beatmap(
         od=ib.overall_difficulty,
         cs=ib.circle_size,
         hp=ib.hp_drain_rate,
-        sm=base_slider_vel,
         tr=ib.slider_tick_rate,
         breaks="\n".join(breaks),
         timing_points="\n".join(timing_points), 

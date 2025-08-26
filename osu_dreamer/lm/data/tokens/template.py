@@ -30,7 +30,7 @@ HPDrainRate: {{hp}}
 CircleSize: {{cs}}
 OverallDifficulty: {{od}}
 ApproachRate: {{ar}}
-SliderMultiplier: {{sm}}
+SliderMultiplier: 1
 SliderTickRate: {{tr}}
 
 [Events]
