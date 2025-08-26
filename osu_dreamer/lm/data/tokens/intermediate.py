@@ -116,9 +116,9 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
             slide_duration = v.length() / (cur_slider_vel * 100) * cur_beat_len
             v.duration = round(v.slides * slide_duration)
 
-    # remove inherited timing points
+    # remove timing points
     for i, (_, v) in reversed(list(enumerate(timed))):
-        if isinstance(v, SliderVel):
+        if isinstance(v, (BeatLen, SliderVel)):
             timed.pop(i)
 
     return IntermediateBeatmap(
