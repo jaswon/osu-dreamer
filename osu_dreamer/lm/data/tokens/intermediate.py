@@ -158,9 +158,6 @@ def to_beatmap(
     slider_vels = []
 
     # running timing context for reconstructing slider length
-    cur_beat_len: float = 600.
-    cur_slider_vel: float = base_slider_vel
-
     for t, v in ib.timed:
         if isinstance(v, Break):
             end_time = t + v.duration
