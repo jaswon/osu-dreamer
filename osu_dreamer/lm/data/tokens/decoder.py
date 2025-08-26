@@ -112,16 +112,18 @@ class Decoder:
                         deviation = self.parse_deviation()
                         return PerfectSlider(*slider_args, tail, deviation)
                     case Token(TokenType.BEZIER):
-                        segments = []
+                        segments: list[BezierSegment] = []
+                        p = head
                         while True:
                             match self.next_token():
                                 case Token(TokenType.LINE):
                                     segments.append(LineSegment(self.parse_coordinate()))
                                 case Token(TokenType.CUBIC):
-                                    segments.append(self.parse_cubic_segment(head))
+                                    segments.append(self.parse_cubic_segment(p))
                                 case _ as tok:
                                     self.push_back(tok)
                                     break
+                            p = segments[-1].q
                         return BezierSlider(*slider_args, segments)
                     case _ as tok:
                         raise self.UnexpectedToken(tok)
