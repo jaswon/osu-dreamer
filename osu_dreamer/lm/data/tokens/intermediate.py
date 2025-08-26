@@ -3,9 +3,9 @@ from dataclasses import dataclass, asdict
 from typing import Iterable
 
 
-from .timed import CubicSegment, HitCircle, HitObject, LineSegment, Timed, Break, SliderVel, BeatLen, Spinner, PerfectSlider, BezierSlider
+from .timed import *
 from .parse_file import parse_map_file
-from .parse_slider import get_perfect_control_point, parse_slider
+from .parse_slider import parse_slider
 from .template import map_template, Metadata
 
 @dataclass
@@ -203,7 +203,7 @@ def to_beatmap(
                         # straight line
                         curve = f"L|{qx}:{qy}"
                     else:
-                        cx, cy = get_perfect_control_point(v.head, v.tail, v.deviation)
+                        cx, cy = v.get_control_point()
                         curve = f"P|{cx}:{cy}|{qx}:{qy}"
                 elif isinstance(v, BezierSlider):
                     # first point is encoded separately as x0,y0

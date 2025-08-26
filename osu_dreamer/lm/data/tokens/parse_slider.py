@@ -8,22 +8,6 @@ from osu_dreamer.osu.bezier import BezierCurve
 from .timed import BezierSegment, HitCircle, PerfectSlider, BezierSlider, Coordinate, LineSegment, CubicSegment
 from .fit_poly_cubic import fit_poly_cubic
 
-def get_perfect_control_point(
-    a: Coordinate,
-    c: Coordinate,
-    deviation: float,
-    r: float = .5,
-) -> Coordinate:
-    """Get a point `B` on the perfect slider"""
-
-    CAB = deviation - np.arcsin(r * np.sin(deviation))
-
-    A = np.array(a)
-    AB = np.array(c) - A
-    AB_R = np.array([ -AB[1], AB[0] ]) # rotated +pi/2
-
-    AC = r * (np.cos(CAB)*AB + np.sin(CAB)*AB_R)
-    return tuple(np.round(A + AC).astype(int).tolist())
     
 def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
     if len(cur_seg) == 2:

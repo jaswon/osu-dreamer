@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from typing import Union
 
+import numpy as np
+
 Coordinate = tuple[int, int]
 
 @dataclass
@@ -92,11 +94,12 @@ class Slider(Hold):
 class PerfectSlider(Slider):
     tail: Coordinate
 
-    # angular deviation from straight line to end point (-pi, pi)\{0}
+    # direction of the tangent at the start of the slider as the angle above the chord from start to end
     # `deviation` > 0 => arc deviates to the left
+    # `deviation` = pi/2 => arc is a semi-circle
     # `deviation` = 0 => technically corresponds to line slider,
     #   but lines are actually parsed as a bezier slider with a single line segment
-    deviation: float
+    deviation: float # (-pi, pi)\{0}
 
     def _cls_str(self) -> str:
         return "P"
@@ -106,6 +109,23 @@ class PerfectSlider(Slider):
         if self.deviation != 0:
             s = f"[deviation={self.deviation:.2f}]"
         return s + f" {self.head} {self.tail}"
+    
+    def get_control_point(self) -> Coordinate:
+        """Get a point `B` on the perfect slider"""
+
+        A = np.array(self.head)
+        C = np.array(self.tail)
+        AC = C - A
+
+        r = np.sin(self.deviation/2) / np.sin(self.deviation)
+        r = min(r, 100/np.linalg.norm(AC))
+
+        CAB = self.deviation - np.arcsin(r * np.sin(self.deviation))
+
+        AC_R = np.array([ -AC[1], AC[0] ]) # rotated +pi/2
+
+        AC = r * (np.cos(CAB)*AC + np.sin(CAB)*AC_R)
+        return tuple(np.round(A + AC).astype(int).tolist())
     
 @dataclass
 class LineSegment:
