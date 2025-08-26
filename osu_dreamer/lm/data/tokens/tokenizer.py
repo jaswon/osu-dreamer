@@ -85,9 +85,9 @@ class Tokenizer:
 
             case Slider():
                 yield Token(TokenType.SLIDER)
-                yield from self._tokenize_coordinate(event.head)
                 yield from self._tokenize_duration(event.duration)
                 yield Token(TokenType.SLIDES, min(event.slides, self.config.SLIDES_BINS - 1))
+                yield from self._tokenize_coordinate(event.head)
                 match event:
                     case PerfectSlider():
                         yield Token(TokenType.PERFECT)
@@ -140,9 +140,6 @@ class Tokenizer:
                 last_time = t
 
             match event:
-                case BeatLen():
-                    yield Token(TokenType.BEAT_LEN, round(60_000/round(60_000/event.ms),2))
-
                 case Break():
                     yield Token(TokenType.BREAK)
                     yield from self._tokenize_duration(event.duration)

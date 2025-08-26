@@ -102,9 +102,9 @@ class Decoder:
             case Token(TokenType.HIT_CIRCLE):
                 return HitCircle(*hit_object_args, self.parse_coordinate())
             case Token(TokenType.SLIDER):
-                head = self.parse_coordinate()
                 dur = self.parse_duration()
                 slides: int = self.parse_token_value(TokenType.SLIDES)
+                head = self.parse_coordinate()
                 slider_args = *hit_object_args, dur, slides, head
                 match self.next_token():
                     case Token(TokenType.PERFECT):
