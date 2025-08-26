@@ -96,12 +96,14 @@ class Tokenizer:
 
                     case BezierSlider():
                         yield Token(TokenType.BEZIER)
+                        head = event.head
                         for seg in event.segments:
                             if isinstance(seg, LineSegment):
                                 yield Token(TokenType.LINE)
                                 yield from self._tokenize_coordinate(seg.q)
                             else:
-                                yield from self._tokenize_cubic_segment(event.head, seg)
+                                yield from self._tokenize_cubic_segment(head, seg)
+                            head = seg.q
 
     def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Iterator[Token]:
         p, q = np.array(head), np.array(seg.q)
