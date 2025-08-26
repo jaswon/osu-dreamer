@@ -148,4 +148,7 @@ class Tokenizer:
                     yield from self._tokenize_duration(event.duration)
                     
                 case HitObject():
-                    yield from self._tokenize_hit_object(event)
+                    try:
+                        yield from self._tokenize_hit_object(event)
+                    except AssertionError as e:
+                        raise AssertionError(t) from e
