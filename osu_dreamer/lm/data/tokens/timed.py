@@ -4,6 +4,8 @@ from typing import Union
 
 import numpy as np
 
+from osu_dreamer.osu.bezier import BezierCurve
+
 Coordinate = tuple[int, int]
 
 @dataclass
@@ -84,6 +86,12 @@ class Slider(Hold):
     slides: int
     head: Coordinate
 
+    def length(self) -> float:
+        raise NotImplementedError
+
+    def vel(self) -> float:
+        return self.length() * self.slides / self.duration
+
     def _slider_str(self) -> str:
         return ""
 
@@ -127,12 +135,26 @@ class PerfectSlider(Slider):
         AC = r * (np.cos(CAB)*AC + np.sin(CAB)*AC_R)
         return tuple(np.round(A + AC).astype(int).tolist())
     
+    def length(self) -> float:
+        a = np.array(self.head)
+        c = np.array(self.tail)
+        ac_dist = np.linalg.norm(c - a).item()
+
+        if abs(self.deviation) < 1e-8:
+            return ac_dist
+        
+        # ref: alternate segment theorem
+        return ac_dist * self.deviation / np.sin(self.deviation)
+    
 @dataclass
 class LineSegment:
     q: Coordinate
 
     def __str__(self) -> str:
         return f"Line({self.q})"
+    
+    def length(self, p: Coordinate) -> float:
+        return np.linalg.norm(np.array(p) - np.array(self.q)).item()
 
 @dataclass
 class CubicSegment:
@@ -142,6 +164,9 @@ class CubicSegment:
 
     def __str__(self) -> str:
         return f"Cubic({self.pc}, {self.qc}, {self.q})"
+    
+    def length(self, p: Coordinate) -> float:
+        return BezierCurve(np.array([p,self.pc,self.qc,self.q]).T).length
     
 BezierSegment = LineSegment | CubicSegment
     
@@ -154,7 +179,14 @@ class BezierSlider(Slider):
     
     def _slider_str(self):
         return f" {self.head} {" ".join(map(str, self.segments))}"
-
+    
+    def length(self) -> float:
+        length = 0
+        p = self.head
+        for seg in self.segments:
+            length += seg.length(p)
+            p = seg.q
+        return length
 
 Timed = Union[
     BeatLen,
