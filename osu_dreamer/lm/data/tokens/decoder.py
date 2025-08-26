@@ -18,6 +18,7 @@ class Decoder:
         self.config = config
         self.tokens = iter(tokens)
         self.push_back_stack = []
+        self.t = 0
 
     def next_token(self) -> Token:
         if len(self.push_back_stack):
@@ -66,6 +67,7 @@ class Decoder:
                         self.push_back(tok)
             case _ as tok:
                 self.push_back(tok)
+        self.t += time_shift
         return time_shift
     
     def parse_duration(self) -> int:
@@ -158,14 +160,12 @@ class Decoder:
 
     def parse_timed_objects(self) -> list[tuple[int, Timed]]:
         events: list[tuple[int, Timed]] = []
-        cur_time = 0
+        self.t = 0
         try:
             while True:
-                cur_time += self.parse_time_shift()
-                obj_time = cur_time
+                self.parse_time_shift()
+                obj_time = self.t
                 match self.next_token():
-                    case Token(TokenType.BEAT_LEN, ms):
-                        timed = BeatLen(ms)
                     case Token(TokenType.BREAK):
                         timed = Break(self.parse_duration())
                     case _ as tok:

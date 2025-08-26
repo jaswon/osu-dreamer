@@ -15,6 +15,7 @@ class Tokenizer:
         self.config = config
         self.id_to_token = make_vocab(config)
         self.token_to_id = { token: i for i, token in enumerate(self.id_to_token) }
+        self.t = 0
                             
     def encode(self, bm: IntermediateBeatmap) -> tuple[
         list[int], # context prelude
@@ -54,6 +55,7 @@ class Tokenizer:
         yield Token(TokenType.Y, y_bin)
 
     def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
+        self.t += ms
         if ms >= 1000:
             s, ms = divmod(ms, 1000)
             yield Token(TokenType.TIME_SHIFT_S, s)
@@ -132,12 +134,11 @@ class Tokenizer:
         yield Token(TokenType.MAGNITUDE, b)
     
     def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Iterator[Token]:
-        last_time = 0
+        self.t = 0
         for t, event in bm.timed:
-            time_shift = t - last_time
+            time_shift = t - self.t
             if time_shift > 0:
                 yield from self._tokenize_time_shift(time_shift)
-                last_time = t
 
             match event:
                 case Break():
