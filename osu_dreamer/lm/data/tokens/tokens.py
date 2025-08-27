@@ -38,8 +38,8 @@ TokenType = CustomReprEnum('TokenType', [
     # numerals
     'TIME_SHIFT_MS',
     'TIME_SHIFT_S',
-    'X',
-    'Y',
+    'POS_COARSE',
+    'POS_FINE',
 
     # map-level features
     'HP_DRAIN_RATE',
@@ -61,12 +61,14 @@ class Token(NamedTuple):
 class VocabConfig:
     TIME_SHIFT_SECONDS: int = 60
 
-    x_min: int = 0-256
-    x_max: int = 512+256
-    x_bins: int = 256
-    y_min: int = 0-192
-    y_max: int = 384+192
-    y_bins: int = 192
+    x_min: int = 0-128
+    x_max: int = 512+128
+    y_min: int = 0-96
+    y_max: int = 384+96
+    coarse_x_bins: int = 16
+    coarse_y_bins: int = 16
+    fine_x_bins: int = 12
+    fine_y_bins: int = 9
 
     SLIDES_BINS: int = 16
     DEVIATION_BINS: int = 64
@@ -79,6 +81,15 @@ class VocabConfig:
     SLIDER_TICK_RATE_BINS: int = 8 # 1-8
 
 def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
+    
+    coarse_x_bin_size, rem = divmod(config.x_max - config.x_min, config.coarse_x_bins)
+    assert rem == 0
+    assert coarse_x_bin_size % config.fine_x_bins == 0
+
+    coarse_y_bin_size, rem = divmod(config.y_max - config.y_min, config.coarse_y_bins)
+    assert rem == 0
+    assert coarse_y_bin_size % config.fine_y_bins == 0
+
     return (
         # control
         Token(TokenType.PAD),
@@ -117,8 +128,16 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
         # numerals
         *[ Token(TokenType.TIME_SHIFT_MS,i) for i in range(1000) ],
         *[ Token(TokenType.TIME_SHIFT_S,i) for i in range(config.TIME_SHIFT_SECONDS) ],
-        *[ Token(TokenType.X,i) for i in range(config.x_bins) ],
-        *[ Token(TokenType.Y,i) for i in range(config.y_bins) ],
+        *[
+            Token(TokenType.POS_COARSE,(x,y)) 
+            for x in range(config.coarse_x_bins)
+            for y in range(config.coarse_y_bins)
+        ],
+        *[
+            Token(TokenType.POS_FINE,(x,y))
+            for x in range(config.fine_x_bins)
+            for y in range(config.fine_y_bins)
+        ],
 
         # map-level features
         *[ Token(TokenType.HP_DRAIN_RATE,i/10) for i in range(config.DIFFICULTY_BINS)],

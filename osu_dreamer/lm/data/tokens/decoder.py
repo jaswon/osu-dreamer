@@ -46,12 +46,18 @@ class Decoder:
         return IntermediateBeatmap(hp, cs, od, ar, tr, timed)
     
     def parse_coordinate(self) -> tuple[int, int]:
-        x_bin = self.parse_token_value(TokenType.X)
-        y_bin = self.parse_token_value(TokenType.Y)
+        coarse_x_bin, coarse_y_bin = self.parse_token_value(TokenType.POS_COARSE)
+        fine_x_bin, fine_y_bin = self.parse_token_value(TokenType.POS_FINE)
 
-        x = self.config.x_min + (x_bin + .5) / self.config.x_bins * (self.config.x_max + 1 - self.config.x_min)
-        y = self.config.y_min + (y_bin + .5) / self.config.y_bins * (self.config.y_max + 1 - self.config.y_min)
-        return round(x),round(y)
+        coarse_x_bin_size = (self.config.x_max - self.config.x_min) // self.config.coarse_x_bins
+        coarse_y_bin_size = (self.config.y_max - self.config.y_min) // self.config.coarse_y_bins
+        fine_x_bin_size = coarse_x_bin_size // self.config.fine_x_bins
+        fine_y_bin_size = coarse_y_bin_size // self.config.fine_y_bins
+
+        x = self.config.x_min + coarse_x_bin * coarse_x_bin_size + (fine_x_bin + .5) * fine_x_bin_size
+        y = self.config.y_min + coarse_y_bin * coarse_y_bin_size + (fine_y_bin + .5) * fine_y_bin_size
+        
+        return round(x), round(y)
 
     def parse_time_shift(self) -> int:
         time_shift = 0
