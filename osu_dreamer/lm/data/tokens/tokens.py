@@ -19,7 +19,6 @@ TokenType = CustomReprEnum('TokenType', [
     'SPINNER',
     'SLIDER',
     'RELEASE',
-    'BEAT_LEN',
 
     # slider tokens
     'PERFECT',
@@ -92,10 +91,6 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
         Token(TokenType.SPINNER),
         Token(TokenType.SLIDER),
         Token(TokenType.RELEASE),
-        *[
-            Token(TokenType.BEAT_LEN,round(60_000/(1+i), 2))
-            for i in range(500)
-        ],
 
         # slider tokens
         Token(TokenType.PERFECT),
