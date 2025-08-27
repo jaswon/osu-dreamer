@@ -20,11 +20,14 @@ class Tokenizer:
     def encode(self, bm: IntermediateBeatmap) -> tuple[
         list[int], # context prelude
         list[int], # beatmap tokens
+        list[int], # timestamp @ token
     ]:
-        return (
-            [ self.token_to_id[tok] for tok in self._tokenize_map_features(bm) ],
-            [ self.token_to_id[tok] for tok in self._tokenize_timed_objects(bm) ],
-        )
+        ctx = [ self.token_to_id[tok] for tok in self._tokenize_map_features(bm) ]
+        ts, toks = [0], []
+        for tok in self._tokenize_timed_objects(bm):
+            toks.append(self.token_to_id[tok])
+            ts.append(self.t)
+        return ctx, toks, ts
 
     def decode(
         self, 
