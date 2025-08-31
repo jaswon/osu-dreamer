@@ -12,30 +12,33 @@ import numpy as np
 import torch as th
 from torch.utils.data import IterableDataset
 
+import pytorch_lightning as pl
+
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
 from osu_dreamer.lm.data.parse.parse_beatmap import from_beatmap
+from osu_dreamer.lm.data.tokens.tokens import VocabConfig
 
 
 class Batch(NamedTuple):
-    audio: Float[Tensor, "B T"]  # Full audio per sample
-    map_features: Float[Tensor, "B M"]
-    tokens: Float[Tensor, "B L"]  # Subsampled token sequences
-    timestamps: Float[Tensor, "B L"]  # Token timestamps in ms
-    audio_lengths: Float[Tensor, "B"]  # Audio lengths for padding
+    audio: Float[Tensor, "A L"]         # Spectrogram
+    map_features: Float[Tensor, "M"]    # Map features
+    tokens: Float[Tensor, "B N"]        # token sequences
+    timestamps: Float[Tensor, "B N"]    # Token timestamps in ms
 
 
 class Dataset(IterableDataset):
     def __init__(self, **kwargs):
         super().__init__()
         self.dataset = kwargs.pop("dataset")
-        self.seq_len: int = kwargs.pop("seq_len")
+        self.context_size: int = kwargs.pop("context_size")
         self.tokenizer: Tokenizer = kwargs.pop("tokenizer")
+        self.batch_size: int = kwargs.pop("batch_size")
             
         if len(kwargs):
             raise ValueError(f"unexpected kwargs: {kwargs}")
         
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Batch]:
         worker_info = th.utils.data.get_worker_info() # type: ignore
         if worker_info is None:  
             # single-process data loading, return the full iterator
@@ -51,7 +54,7 @@ class Dataset(IterableDataset):
         random.seed(seed)
         
         dataset = sorted(self.dataset)
-        for i, map_file in random.sample(list(enumerate(dataset)), int(len(dataset))):
+        for i, map_file in random.sample(list(enumerate(dataset)), len(dataset)):
             if i % num_workers != worker_id:
                 continue
                 
@@ -61,32 +64,12 @@ class Dataset(IterableDataset):
                 reclaim_memory()
             
     def sample_map(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
-        audio = th.tensor(np.load(map_file.parent / "spec.pt")).float() # A L
-        audio_length = audio.size(1)
-        
-        # Load and tokenize beatmap
+
+        audio = th.from_numpy(np.load(map_file.parent / "spec.pt")).float()
         with open(map_file, 'rb') as f:
             bm = pickle.load(f)
         
         ibm, diff, _ = from_beatmap(bm)
-        beatmap_tokens, token_timestamps = self.tokenizer.encode(ibm)
-        
-        # Subsample tokens if sequence is too long
-        if len(beatmap_tokens) > self.seq_len:
-            # Random start position for subsampling
-            start_idx = random.randint(0, len(beatmap_tokens) - self.seq_len)
-            end_idx = start_idx + self.seq_len
-            
-            # Subsample tokens and corresponding timestamps
-            subsampled_tokens = beatmap_tokens[start_idx:end_idx]
-            subsampled_timestamps = token_timestamps[start_idx:end_idx]
-        else:
-            # Pad if sequence is too short
-            subsampled_tokens = beatmap_tokens + [0] * (self.seq_len - len(beatmap_tokens))  # 0 = PAD token
-            subsampled_timestamps = token_timestamps + [0] * (self.seq_len - len(token_timestamps))
-        
-        # Convert to tensors
-        audio_tensor = th.tensor(audio).float()
         map_features = th.tensor([
             diff.hp_drain_rate,
             diff.circle_size,
@@ -94,34 +77,37 @@ class Dataset(IterableDataset):
             diff.approach_rate,
             diff.slider_tick_rate,
         ]).float()
-        tokens_tensor = th.tensor(subsampled_tokens).long()
-        timestamps_tensor = th.tensor(subsampled_timestamps).float()
-        audio_length_tensor = th.tensor([audio_length]).long()
-        
-        yield Batch(audio_tensor, map_features, tokens_tensor, timestamps_tensor, audio_length_tensor)
+        beatmap_tokens, token_timestamps = self.tokenizer.encode(ibm)
+
+        if len(beatmap_tokens) < self.context_size:
+            return
+
+        tokens_list, timestamps_list = [], []
+        for start_idx in th.randperm(len(beatmap_tokens) - self.context_size)[:self.batch_size]:
+            end_idx = start_idx + self.context_size
+            
+            tokens_list.append(th.tensor(beatmap_tokens[start_idx:end_idx]).long())
+            timestamps_list.append(th.tensor(token_timestamps[start_idx:end_idx]).long())
+
+        yield Batch(audio, map_features, th.stack(tokens_list), th.stack(timestamps_list))
 
 
-class DataModule:
+class Data(pl.LightningDataModule):
     def __init__(
         self,
-        seq_len: int,
+        vocab_config: VocabConfig,
+        context_size: int,
         batch_size: int,
         num_workers: int,
         val_size: float | int,
         data_path: str = "./data",
-        vocab_config = None,  # VocabConfig instance
     ):
-        self.seq_len = seq_len
+        self.tokenizer = Tokenizer(vocab_config)
+        self.context_size = context_size
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.val_size = val_size
         self.data_path = Path(data_path)
-        
-        # Initialize tokenizer
-        if vocab_config is None:
-            from osu_dreamer.lm.data.tokens.tokens import VocabConfig
-            vocab_config = VocabConfig()
-        self.tokenizer = Tokenizer(vocab_config)
         
         # Check if data dir exists
         if not self.data_path.exists():
@@ -159,50 +145,27 @@ class DataModule:
         # Create datasets
         self.train_dataset = Dataset(
             dataset=self.train_set,
-            seq_len=self.seq_len,
+            context_size=self.context_size,
             tokenizer=self.tokenizer,
+            batch_size=self.batch_size,
         )
         self.val_dataset = Dataset(
             dataset=self.val_set,
-            seq_len=self.seq_len,
+            context_size=self.context_size,
             tokenizer=self.tokenizer,
+            batch_size=1,
         )
     
     def train_dataloader(self):
         return th.utils.data.DataLoader(
             self.train_dataset,
-            batch_size=self.batch_size,
+            batch_size=None,
             num_workers=self.num_workers,
-            collate_fn=self.collate_fn,
         )
     
     def val_dataloader(self):
         return th.utils.data.DataLoader(
             self.val_dataset,
-            batch_size=1,  # Validation with batch size 1 for simplicity
+            batch_size=None,
             num_workers=self.num_workers,
-            collate_fn=self.collate_fn,
         )
-    
-    def collate_fn(self, batch):
-        """Custom collate function to handle variable audio lengths"""
-        audios, map_features, tokens, timestamps, audio_lengths = zip(*batch)
-        
-        # Pad audio to max length in batch
-        max_audio_len = max(len(audio) for audio in audios)
-        padded_audios = []
-        for audio in audios:
-            if len(audio) < max_audio_len:
-                padded_audio = th.cat([audio, th.zeros(max_audio_len - len(audio))])
-            else:
-                padded_audio = audio
-            padded_audios.append(padded_audio)
-        
-        # Stack tensors
-        audio_batch = th.stack(padded_audios)
-        map_feature_batch = th.stack(map_features)
-        tokens_batch = th.stack(tokens)
-        timestamps_batch = th.stack(timestamps)
-        audio_lengths_batch = th.stack(audio_lengths)
-        
-        return Batch(audio_batch, map_feature_batch, tokens_batch, timestamps_batch, audio_lengths_batch) 
