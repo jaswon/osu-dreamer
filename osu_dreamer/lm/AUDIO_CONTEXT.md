@@ -34,8 +34,8 @@ Strong forward bias (r_past=1, r_future=4):
 ### Layout at Decode Time t
 For each scale s:
 - Center at audio time t.
-- Scale 0 (finest): indices $\{t - R, \dots, t, \dots, t + R\}$ (stride 1 frame).
-- Scales $s \ge 1$: place $2R$ vectors symmetrically around the finest window, each summarizing a block of $W_{s-1} = 1 + 2R$ frames. Block centers are offset by multiples of $W_{s-1}$.
+- Scale 0 (finest): index $t$.
+- Scales $s \ge 1$: place $r_{\text{past}} + r_{\text{future}}$ vectors around the previous window. Block centers are offset by multiples of $W_{s-1}$.
 
 ### Feature Construction
 - Frame-level embeddings at hop H (e.g., 10 ms) form the base per-scale features.
