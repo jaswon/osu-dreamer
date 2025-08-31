@@ -4,7 +4,7 @@ from jaxtyping import Float, Int
 import torch as th
 from torch import nn, Tensor
 
-class HierarchicalEncoder(nn.Module):
+class MultiScaleEncoder(nn.Module):
 
     def __init__(self, in_dim: int, out_dim: int, r: list[tuple[int, int]]):
         super().__init__()
