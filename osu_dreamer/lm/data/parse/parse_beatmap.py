@@ -3,33 +3,27 @@ from dataclasses import dataclass, asdict
 from typing import Iterable
 
 
-from .timed import *
+from ..timed import *
 from .parse_file import parse_map_file
 from .parse_slider import parse_slider
 from .template import map_template, Metadata
 
 @dataclass
-class IntermediateBeatmap:
+class BeatmapDifficulty:
     hp_drain_rate: float
     circle_size: float
     overall_difficulty: float
     approach_rate: float
     slider_tick_rate: float
 
+@dataclass
+class BeatmapEvents:
     timed: list[tuple[int, Timed]]
 
     def __str__(self):
-        return "\n".join([
-            f"HP: {self.hp_drain_rate}",
-            f"CS: {self.circle_size}",
-            f"OD: {self.overall_difficulty}",
-            f"AR: {self.approach_rate}",
-            f"slider tick rate: {self.slider_tick_rate}",
-            "",
-            *( f"{t:08}: {v}" for t, v in self.timed ),
-        ])
+        return "\n".join([ f"{t:08}: {v}" for t, v in self.timed ])
 
-def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
+def from_beatmap(bm: Iterable[str]) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]:
     cfg = parse_map_file(bm)
     general: dict[str, str] = cfg.get('General', {}) # type: ignore
     metadata: dict[str, str] = cfg.get('Metadata', {}) # type: ignore
@@ -121,13 +115,12 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
         if isinstance(v, (BeatLen, SliderVel)):
             timed.pop(i)
 
-    return IntermediateBeatmap(
+    return BeatmapEvents(timed), BeatmapDifficulty(
         hp_drain_rate = float(diff.get('HPDrainRate', 5)),
         circle_size = float(diff.get('CircleSize', 5)),
         overall_difficulty = float(diff.get('OverallDifficulty', 5)),
         approach_rate = float(diff.get('ApproachRate', 5)),
         slider_tick_rate = float(diff.get('SliderTickRate', 1)),
-        timed = timed,
     ), Metadata(
         audio_filename = general.get('AudioFilename', 'audio.mp3'),
         title = metadata.get('Title', 'title'),
@@ -137,7 +130,8 @@ def to_intermediate(bm: Iterable[str]) -> tuple[IntermediateBeatmap, Metadata]:
 
 
 def to_beatmap(
-    ib: IntermediateBeatmap,
+    ib: BeatmapEvents,
+    diff: BeatmapDifficulty,
     metadata: Metadata,
 ) -> str:
 
@@ -240,11 +234,11 @@ def to_beatmap(
 
     return map_template.format(
         **asdict(metadata), 
-        ar=ib.approach_rate,
-        od=ib.overall_difficulty,
-        cs=ib.circle_size,
-        hp=ib.hp_drain_rate,
-        tr=ib.slider_tick_rate,
+        ar=diff.approach_rate,
+        od=diff.overall_difficulty,
+        cs=diff.circle_size,
+        hp=diff.hp_drain_rate,
+        tr=diff.slider_tick_rate,
         breaks="\n".join(breaks),
         timing_points="\n".join(timing_points), 
         hit_objects="\n".join(hit_objects),

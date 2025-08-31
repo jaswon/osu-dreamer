@@ -1,9 +1,9 @@
 
 import numpy as np
 
-from .intermediate import IntermediateBeatmap
+from ..parse.parse_beatmap import BeatmapEvents
 
-from .timed import *
+from ..timed import *
 from .tokens import Token, TokenType, VocabConfig
 
 class Decoder:
@@ -35,15 +35,22 @@ class Decoder:
             case _ as tok:
                 raise self.UnexpectedToken(tok)
 
-    def parse_intermediate_beatmap(self) -> IntermediateBeatmap:
-        hp = self.parse_token_value(TokenType.HP_DRAIN_RATE)
-        cs = self.parse_token_value(TokenType.CIRCLE_SIZE)
-        od = self.parse_token_value(TokenType.OVERALL_DIFFICULTY)
-        ar = self.parse_token_value(TokenType.APPROACH_RATE)
-        tr = self.parse_token_value(TokenType.SLIDER_TICK_RATE)
-
-        timed = self.parse_timed_objects()
-        return IntermediateBeatmap(hp, cs, od, ar, tr, timed)
+    def parse_beatmap_events(self) -> BeatmapEvents:
+        events: list[tuple[int, Timed]] = []
+        self.t = 0
+        try:
+            while True:
+                self.parse_time_shift()
+                obj_time = self.t
+                match self.next_token():
+                    case Token(TokenType.BREAK):
+                        timed = Break(self.parse_duration())
+                    case _ as tok:
+                        self.push_back(tok)
+                        timed = self.parse_hit_object()
+                events.append((obj_time, timed))
+        except StopIteration:
+            return BeatmapEvents(events)
     
     def parse_coordinate(self) -> tuple[int, int]:
         coarse_x_bin, coarse_y_bin = self.parse_token_value(TokenType.POS_COARSE)
@@ -163,20 +170,3 @@ class Decoder:
         b = self.parse_token_value(TokenType.MAGNITUDE)
         t = b / self.config.MAGNITUDE_BINS # [0,1)
         return self.config.MIN_MAGNITUDE * (self.config.MAX_MAGNITUDE / self.config.MIN_MAGNITUDE) ** t
-
-    def parse_timed_objects(self) -> list[tuple[int, Timed]]:
-        events: list[tuple[int, Timed]] = []
-        self.t = 0
-        try:
-            while True:
-                self.parse_time_shift()
-                obj_time = self.t
-                match self.next_token():
-                    case Token(TokenType.BREAK):
-                        timed = Break(self.parse_duration())
-                    case _ as tok:
-                        self.push_back(tok)
-                        timed = self.parse_hit_object()
-                events.append((obj_time, timed))
-        except StopIteration:
-            return events

@@ -14,12 +14,12 @@ from torch.utils.data import IterableDataset
 
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
-from osu_dreamer.lm.data.tokens.intermediate import to_intermediate
+from osu_dreamer.lm.data.parse.parse_beatmap import from_beatmap
 
 
 class Batch(NamedTuple):
     audio: Float[Tensor, "B T"]  # Full audio per sample
-    context_prelude: Float[Tensor, "B P"]  # Context prelude tokens per sample
+    map_features: Float[Tensor, "B M"]
     tokens: Float[Tensor, "B L"]  # Subsampled token sequences
     timestamps: Float[Tensor, "B L"]  # Token timestamps in ms
     audio_lengths: Float[Tensor, "B"]  # Audio lengths for padding
@@ -68,8 +68,8 @@ class Dataset(IterableDataset):
         with open(map_file, 'rb') as f:
             bm = pickle.load(f)
         
-        ibm, _ = to_intermediate(bm)
-        context_prelude, beatmap_tokens, token_timestamps = self.tokenizer.encode(ibm)
+        ibm, diff, _ = from_beatmap(bm)
+        beatmap_tokens, token_timestamps = self.tokenizer.encode(ibm)
         
         # Subsample tokens if sequence is too long
         if len(beatmap_tokens) > self.seq_len:
@@ -87,12 +87,18 @@ class Dataset(IterableDataset):
         
         # Convert to tensors
         audio_tensor = th.tensor(audio).float()
-        context_prelude_tensor = th.tensor(context_prelude).long()
+        map_features = th.tensor([
+            diff.hp_drain_rate,
+            diff.circle_size,
+            diff.overall_difficulty,
+            diff.approach_rate,
+            diff.slider_tick_rate,
+        ]).float()
         tokens_tensor = th.tensor(subsampled_tokens).long()
         timestamps_tensor = th.tensor(subsampled_timestamps).float()
         audio_length_tensor = th.tensor([audio_length]).long()
         
-        yield Batch(audio_tensor, context_prelude_tensor, tokens_tensor, timestamps_tensor, audio_length_tensor)
+        yield Batch(audio_tensor, map_features, tokens_tensor, timestamps_tensor, audio_length_tensor)
 
 
 class DataModule:
@@ -180,7 +186,7 @@ class DataModule:
     
     def collate_fn(self, batch):
         """Custom collate function to handle variable audio lengths"""
-        audios, context_preludes, tokens, timestamps, audio_lengths = zip(*batch)
+        audios, map_features, tokens, timestamps, audio_lengths = zip(*batch)
         
         # Pad audio to max length in batch
         max_audio_len = max(len(audio) for audio in audios)
@@ -194,9 +200,9 @@ class DataModule:
         
         # Stack tensors
         audio_batch = th.stack(padded_audios)
-        context_prelude_batch = th.stack(context_preludes)
+        map_feature_batch = th.stack(map_features)
         tokens_batch = th.stack(tokens)
         timestamps_batch = th.stack(timestamps)
         audio_lengths_batch = th.stack(audio_lengths)
         
-        return Batch(audio_batch, context_prelude_batch, tokens_batch, timestamps_batch, audio_lengths_batch) 
+        return Batch(audio_batch, map_feature_batch, tokens_batch, timestamps_batch, audio_lengths_batch) 

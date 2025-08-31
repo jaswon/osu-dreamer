@@ -40,13 +40,6 @@ TokenType = CustomReprEnum('TokenType', [
     'TIME_SHIFT_S',
     'POS_COARSE',
     'POS_FINE',
-
-    # map-level features
-    'HP_DRAIN_RATE',
-    'CIRCLE_SIZE',
-    'OVERALL_DIFFICULTY',
-    'APPROACH_RATE',
-    'SLIDER_TICK_RATE',
 ])
 
 class Token(NamedTuple):
@@ -76,9 +69,7 @@ class VocabConfig:
     MAGNITUDE_BINS: int = 64
     MIN_MAGNITUDE: float = .05
     MAX_MAGNITUDE: float = 50
-
-    DIFFICULTY_BINS: int = 101 # 0-100 for 0.0-10.0
-    SLIDER_TICK_RATE_BINS: int = 8 # 1-8
+    
 
 def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
     
@@ -138,11 +129,4 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
             for x in range(config.fine_x_bins)
             for y in range(config.fine_y_bins)
         ],
-
-        # map-level features
-        *[ Token(TokenType.HP_DRAIN_RATE,i/10) for i in range(config.DIFFICULTY_BINS)],
-        *[ Token(TokenType.CIRCLE_SIZE,i/10) for i in range(config.DIFFICULTY_BINS)],
-        *[ Token(TokenType.OVERALL_DIFFICULTY,i/10) for i in range(config.DIFFICULTY_BINS)],
-        *[ Token(TokenType.APPROACH_RATE,i/10) for i in range(config.DIFFICULTY_BINS)],
-        *[ Token(TokenType.SLIDER_TICK_RATE,i+1) for i in range(config.SLIDER_TICK_RATE_BINS)],
     )

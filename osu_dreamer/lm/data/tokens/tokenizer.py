@@ -4,8 +4,8 @@ from typing import Iterator
 import numpy as np
 
 from .decoder import Decoder
-from .intermediate import IntermediateBeatmap
-from .timed import *
+from ..parse.parse_beatmap import BeatmapEvents
+from ..timed import *
 from .tokens import Token, TokenType, VocabConfig, make_vocab
 
 cross = lambda a,b: a[0]*b[1] - a[1]*b[0]
@@ -17,37 +17,21 @@ class Tokenizer:
         self.token_to_id = { token: i for i, token in enumerate(self.id_to_token) }
         self.t = 0
                             
-    def encode(self, bm: IntermediateBeatmap) -> tuple[
-        list[int], # context prelude
+    def encode(self, bm: BeatmapEvents) -> tuple[
         list[int], # beatmap tokens
         list[int], # timestamp @ token
     ]:
-        ctx = [ self.token_to_id[tok] for tok in self._tokenize_map_features(bm) ]
         ts, toks = [0], []
         for tok in self._tokenize_timed_objects(bm):
             toks.append(self.token_to_id[tok])
             ts.append(self.t)
-        return ctx, toks, ts
+        return toks, ts
 
-    def decode(
-        self, 
-        context_prelude_token_ids: list[int],
-        beatmap_token_ids: list[int],
-    ) -> IntermediateBeatmap:
+    def decode(self, beatmap_token_ids: list[int]) -> BeatmapEvents:
         return Decoder(
             self.config,
-            [
-                self.id_to_token[tid]
-                for tid in (*context_prelude_token_ids, *beatmap_token_ids)
-            ]
-        ).parse_intermediate_beatmap()
-
-    def _tokenize_map_features(self, bm: IntermediateBeatmap) -> Iterator[Token]:
-        yield Token(TokenType.HP_DRAIN_RATE, round(bm.hp_drain_rate, 1))
-        yield Token(TokenType.CIRCLE_SIZE, round(bm.circle_size, 1))
-        yield Token(TokenType.OVERALL_DIFFICULTY, round(bm.overall_difficulty, 1))
-        yield Token(TokenType.APPROACH_RATE, round(bm.approach_rate, 1))
-        yield Token(TokenType.SLIDER_TICK_RATE, bm.slider_tick_rate)
+            [ self.id_to_token[tid] for tid in beatmap_token_ids ]
+        ).parse_beatmap_events()
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
         assert self.config.x_min <= p[0] < self.config.x_max, p[0]
@@ -143,7 +127,7 @@ class Tokenizer:
         b = min(self.config.MAGNITUDE_BINS-1, int(t * self.config.MAGNITUDE_BINS))
         yield Token(TokenType.MAGNITUDE, b)
     
-    def _tokenize_timed_objects(self, bm: IntermediateBeatmap) -> Iterator[Token]:
+    def _tokenize_timed_objects(self, bm: BeatmapEvents) -> Iterator[Token]:
         self.t = 0
         for t, event in bm.timed:
             time_shift = t - self.t

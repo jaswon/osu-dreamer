@@ -5,7 +5,7 @@ import numpy as np
 
 from osu_dreamer.osu.bezier import BezierCurve
 
-from .timed import *
+from ..timed import *
 from .fit_poly_cubic import fit_poly_cubic
 
 def parse_slider(
