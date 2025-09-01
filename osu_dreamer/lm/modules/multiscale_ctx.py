@@ -37,11 +37,14 @@ class MultiScaleEncoder(nn.Module):
 
         ctx = [ features[0].transpose(1,2)[0, positions[:,:,None]] ] # B N 1 D
         stride = 1
+        L = features[0].shape[2]
         for i, (r_past, r_future) in enumerate(self.r):
             x_conv = features[i+1]
             w = th.cat([ -1-th.arange(r_past), 1+th.arange(r_future) ], dim=0)
             p = positions[:,:,None] + stride * w.to(positions.device)[None,None,:] # B N W
-            ctx.append(x_conv.transpose(1,2)[0, p]) # B N W D
+            ctx_p = x_conv.transpose(1,2)[0, th.clamp(p, 0, L - 1)]
+            ctx_p[(p<0) | (p>=L)] = 0
+            ctx.append(ctx_p) # B N W D
             stride *= 1+r_past+r_future
 
         return self.out(th.cat(ctx, dim=2))
