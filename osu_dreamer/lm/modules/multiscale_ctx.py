@@ -31,9 +31,9 @@ class MultiScaleEncoder(nn.Module):
 
     def forward(
         self, 
-        features: list[Float[Tensor, "1 D L"]], 
+        features: list[Float[Tensor, "1 iD L"]], 
         positions: Int[Tensor, "B N"],
-    ) -> Float[Tensor, "B N T D"]:
+    ) -> Float[Tensor, "B N T oD"]:
 
         ctx = [ features[0].transpose(1,2)[0, positions[:,:,None]] ] # B N 1 D
         stride = 1

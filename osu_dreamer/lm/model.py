@@ -70,14 +70,14 @@ class Model(pl.LightningModule):
         self,
         audio: Float[Tensor, "A L"],
         map_features: Float[Tensor, "M"],
-        tokens: Int[Tensor, "B N+1"],
+        tokens: Int[Tensor, "B Np1"],
         timestamps: Int[Tensor, "B N"],
     ) -> tuple[
         Float[Tensor, "B N V"], # pred logits
         Int[Tensor, "B N"]      # true targets
     ]:
     
-        audio_features = self.audio_encoder(audio)  # 1 D L
+        audio_features = self.audio_encoder(audio[None])  # 1 D L
         
         global_ctx = self.global_encoder(audio_features) # G C
         frame_times = th.tensor(get_frame_times(audio_features.size(-1)), device=audio.device)  # L
@@ -106,7 +106,7 @@ class Model(pl.LightningModule):
         loss = self.criterion(pred_logits.reshape(-1, pred_logits.size(-1)), target_tokens.reshape(-1))
         
         # Log metrics
-        self.log('train/loss', loss, prog_bar=True)
+        self.log('train/loss', loss, prog_bar=True, batch_size=batch.tokens.size(0))
         
         return loss
     
@@ -130,8 +130,8 @@ class Model(pl.LightningModule):
         accuracy = (pred_tokens == target_tokens).float().mean()
         
         # Log metrics
-        self.log('val/loss', loss, prog_bar=True)
-        self.log('val/accuracy', accuracy, prog_bar=True)
+        self.log('val/loss', loss, prog_bar=True, batch_size=batch.tokens.size(0))
+        self.log('val/accuracy', accuracy, prog_bar=True, batch_size=batch.tokens.size(0))
         
         return loss
     
@@ -163,7 +163,7 @@ class Model(pl.LightningModule):
         eos_id = token_to_id[Token(TokenType.EOS)]
 
         # precompute audio features
-        audio_features = self.audio_encoder(audio)
+        audio_features = self.audio_encoder(audio[None])
         global_ctx = self.global_encoder(audio_features)
         multiscale_features = self.ctx_encoder.precompute(audio_features)
         frame_times = th.tensor(get_frame_times(audio_features.size(-1)), device=audio.device)
