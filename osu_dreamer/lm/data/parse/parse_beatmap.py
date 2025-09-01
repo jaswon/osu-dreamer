@@ -88,9 +88,10 @@ def from_beatmap(cfg: dict) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]
         elif typ & (1 << 1):  # slider
             curve_spec, slides, length = spl[5:8]
             try:
-                objects.append((t, parse_slider(x,y,hit_object_args, curve_spec, int(slides), float(length))))
+                slider = parse_slider(x,y,hit_object_args, curve_spec, int(slides), float(length))
             except Exception as e:
                 raise Exception((x,y), curve_spec) from e
+            objects.append((t, slider))
             continue
         elif typ & (1 << 3):  # spinner
             d = int(float(spl[5]) - t)

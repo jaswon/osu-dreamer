@@ -146,6 +146,6 @@ class Tokenizer:
                 case HitObject():
                     try:
                         yield from self._tokenize_hit_object(event)
-                    except AssertionError as e:
-                        raise AssertionError(t) from e
+                    except Exception as e:
+                        raise Exception(t) from e
         yield Token(TokenType.EOS)
