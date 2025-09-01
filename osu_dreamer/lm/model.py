@@ -81,7 +81,7 @@ class Model(pl.LightningModule):
         global_ctx = self.global_encoder(audio_features) # G C
         frame_times = th.tensor(get_frame_times(audio_features.size(-1)), device=audio.device)  # L
         frame_idxs = th.searchsorted(frame_times, timestamps) # B N
-        multi_scale_ctx = self.ctx_encoder(audio_features, frame_idxs) # B N T C
+        multi_scale_ctx = self.ctx_encoder(self.ctx_encoder.precompute(audio_features), frame_idxs) # B N T C
 
         ctx = th.cat([ global_ctx[None, None], multi_scale_ctx ], dim=2) # B N T+G C
         

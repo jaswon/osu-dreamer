@@ -22,19 +22,26 @@ class MultiScaleEncoder(nn.Module):
             ))
             last_w *= w
 
+    def precompute(self, x: Float[Tensor, "1 D L"]) -> list[Float[Tensor, "1 D L"]]:
+        features = [x]
+        for conv in self.convs:
+            x = conv(x)
+            features.append(x)
+        return features
+
     def forward(
         self, 
-        x: Float[Tensor, "1 D L"], 
+        features: list[Float[Tensor, "1 D L"]], 
         positions: Int[Tensor, "B N"],
     ) -> Float[Tensor, "B N T D"]:
-        
-        ctx = [ x.transpose(1,2)[0, positions[:,:,None]] ] # B N 1 D
+
+        ctx = [ features[0].transpose(1,2)[0, positions[:,:,None]] ] # B N 1 D
         stride = 1
-        for (r_past, r_future), conv in zip(self.r, self.convs):
-            x = conv(x)
+        for i, (r_past, r_future) in enumerate(self.r):
+            x_conv = features[i+1]
             w = th.cat([ -1-th.arange(r_past), 1+th.arange(r_future) ], dim=0)
-            p = positions[:,:,None] + stride * w[None,None,:] # B N W
-            ctx.append(x.transpose(1,2)[0, p]) # B N W D
+            p = positions[:,:,None] + stride * w.to(positions.device)[None,None,:] # B N W
+            ctx.append(x_conv.transpose(1,2)[0, p]) # B N W D
             stride *= 1+r_past+r_future
 
         return self.out(th.cat(ctx, dim=2))
