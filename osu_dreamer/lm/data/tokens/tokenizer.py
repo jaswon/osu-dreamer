@@ -98,7 +98,10 @@ class Tokenizer:
                                 yield Token(TokenType.LINE)
                                 yield from self._tokenize_coordinate(seg.q)
                             else:
-                                yield from self._tokenize_cubic_segment(head, seg)
+                                try:
+                                    yield from self._tokenize_cubic_segment(head, seg)
+                                except Exception as e:
+                                    raise Exception((head, seg)) from e
                             head = seg.q
 
     def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Iterator[Token]:

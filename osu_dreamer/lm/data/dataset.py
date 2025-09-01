@@ -75,7 +75,11 @@ class Dataset(IterableDataset):
             diff.approach_rate,
             diff.slider_tick_rate,
         ]).float()
-        beatmap_tokens, token_timestamps = self.tokenizer.encode(ibm)
+
+        try:
+            beatmap_tokens, token_timestamps = self.tokenizer.encode(ibm)
+        except Exception as e:
+            raise Exception(map_file) from e
 
         if len(beatmap_tokens) < self.context_size:
             return
