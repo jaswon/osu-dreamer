@@ -100,7 +100,7 @@ class Model(pl.LightningModule):
         loss = self.criterion(pred_logits.reshape(-1, pred_logits.size(-1)), target_tokens.reshape(-1))
         
         # Log metrics
-        self.log('train/loss', loss, prog_bar=True, batch_size=batch.tokens.size(0))
+        self.log('train/loss', loss, batch_size=batch.tokens.size(0))
         
         return loss
     
@@ -121,8 +121,8 @@ class Model(pl.LightningModule):
         accuracy = (pred_tokens == target_tokens).float().mean()
         
         # Log metrics
-        self.log('val/loss', loss, prog_bar=True, batch_size=batch.tokens.size(0))
-        self.log('val/accuracy', accuracy, prog_bar=True, batch_size=batch.tokens.size(0))
+        self.log('val/loss', loss, batch_size=batch.tokens.size(0))
+        self.log('val/accuracy', accuracy, batch_size=batch.tokens.size(0))
         
         return loss
     
