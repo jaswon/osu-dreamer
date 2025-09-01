@@ -1,0 +1,173 @@
+from __future__ import annotations
+from jaxtyping import Float, Bool
+
+from dataclasses import dataclass
+
+import torch as th
+from torch import nn, Tensor
+import torch.nn.functional as F
+
+
+@dataclass
+class DecoderArgs:
+    n_heads: int
+    n_layers: int
+    dropout: float
+
+class RotaryEmbedding(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        inv_freq = 1.0 / (10000 ** (th.arange(0, dim, 2).float() / dim))
+        self.register_buffer("inv_freq", inv_freq); self.inv_freq: Tensor
+
+    def forward(self, x: Float[Tensor, "... N D"]) -> Float[Tensor, "... N D"]:
+        seq_len = x.shape[-2]
+        t = th.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype)
+        freqs = th.einsum("i,j->ij", t, self.inv_freq)
+        emb = th.cat((freqs, freqs), dim=-1)
+        
+        cos = emb.cos()
+        sin = emb.sin()
+
+        def rotate_half(x: Tensor) -> Tensor:
+            x1, x2 = x.chunk(2, dim=-1)
+            return th.cat((-x2, x1), dim=-1)
+
+        return (x * cos) + (rotate_half(x) * sin)
+
+class SelfAttention(nn.Module):
+    def __init__(self, d_model: int, n_heads: int, dropout: float):
+        super().__init__()
+        self.n_heads = n_heads
+        self.d_head = d_model // n_heads
+        
+        self.qkv_proj = nn.Linear(d_model, d_model * 3)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.rotary_emb = RotaryEmbedding(self.d_head)
+        self.dropout = dropout
+
+    def forward(self, x: Float[Tensor, "B N D"], mask: Bool[Tensor, "N N"] | None = None) -> Float[Tensor, "B N D"]:
+        B, N, _ = x.shape
+        
+        q, k, v = self.qkv_proj(x).chunk(3, dim=-1)
+        
+        q = q.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
+        k = k.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
+        v = v.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
+        
+        q = self.rotary_emb(q)
+        k = self.rotary_emb(k)
+        
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=self.dropout if self.training else 0.0)
+        
+        out = out.transpose(1, 2).contiguous().view(B, N, -1)
+        
+        return self.out_proj(out)
+
+class CrossAttention(nn.Module):
+    def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float):
+        super().__init__()
+        self.n_heads = n_heads
+        self.d_head = d_model // n_heads
+        
+        self.q_proj = nn.Linear(d_model, d_model)
+        self.kv_proj = nn.Linear(ctx_dim, d_model * 2)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.dropout = dropout
+
+    def forward(self, x: Float[Tensor, "B N D"], ctx: Float[Tensor, "B M C"]) -> Float[Tensor, "B N D"]:
+        B, N, _ = x.shape
+        M = ctx.shape[1]
+        
+        q = self.q_proj(x)
+        k, v = self.kv_proj(ctx).chunk(2, dim=-1)
+        
+        q = q.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
+        k = k.view(B, M, self.n_heads, self.d_head).transpose(1, 2)
+        v = v.view(B, M, self.n_heads, self.d_head).transpose(1, 2)
+        
+        out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout if self.training else 0.0)
+        
+        out = out.transpose(1, 2).contiguous().view(B, N, -1)
+        
+        return self.out_proj(out)
+
+class SwiGLU(nn.Module):
+    def __init__(self, d_model: int, h_dim: int | None = None):
+        super().__init__()
+        if h_dim is None:
+            h_dim = int(d_model * 8 / 3)
+            h_dim = (h_dim + 7) // 8 * 8
+            
+        self.w1 = nn.Linear(d_model, h_dim, bias=False)
+        self.w2 = nn.Linear(d_model, h_dim, bias=False)
+        self.w3 = nn.Linear(h_dim, d_model, bias=False)
+
+    def forward(self, x: Float[Tensor, "B N D"]) -> Float[Tensor, "B N D"]:
+        return self.w3(F.silu(self.w1(x)) * self.w2(x))
+
+class DecoderLayer(nn.Module):
+    def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
+        super().__init__()
+        self.self_attn = SelfAttention(d_model, n_heads, dropout)
+        self.cross_attn = CrossAttention(d_model, ctx_dim, n_heads, dropout)
+        self.ffn = SwiGLU(d_model)
+        
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+        
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: Float[Tensor, "B N D"], ctx: Float[Tensor, "B N M C"], mask: Bool[Tensor, "N N"] | None = None) -> Float[Tensor, "B N D"]:
+        x = x + self.dropout(self.self_attn(self.norm1(x), mask=mask))
+        
+        B, N, D = x.shape
+        M, C = ctx.shape[2], ctx.shape[3]
+        
+        q = self.norm2(x)
+        
+        q_reshaped = q.view(B * N, 1, D)
+        ctx_reshaped = ctx.view(B * N, M, C)
+        
+        cross_attn_out = self.cross_attn(q_reshaped, ctx_reshaped)
+        cross_attn_out = cross_attn_out.view(B, N, D)
+        
+        x = x + self.dropout(cross_attn_out)
+        
+        x = x + self.dropout(self.ffn(self.norm3(x)))
+        
+        return x
+
+class Decoder(nn.Module):
+    def __init__(
+        self,
+        emb_dim: int,
+        ctx_dim: int,
+        args: DecoderArgs,
+    ):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            DecoderLayer(emb_dim, args.n_heads, args.dropout, ctx_dim)
+            for _ in range(args.n_layers)
+        ])
+        self.register_buffer('causal_mask', None, persistent=False)
+
+    def get_causal_mask(self, sz: int, device: th.device) -> Tensor:
+        if self.causal_mask is None or self.causal_mask.size(0) < sz or self.causal_mask.device != device:
+            mask = th.triu(th.ones(sz, sz, device=device), diagonal=1).bool()
+            self.causal_mask = mask
+        return self.causal_mask[:sz, :sz]
+
+    def forward(
+        self,
+        embs: Float[Tensor, "B N D"],
+        ctx: Float[Tensor, "B N M C"],
+    ) -> Float[Tensor, "B N D"]:
+        mask = self.get_causal_mask(embs.size(1), embs.device)
+        
+        x = embs
+        for layer in self.layers:
+            x = layer(x, ctx, mask=mask)
+            
+        return x

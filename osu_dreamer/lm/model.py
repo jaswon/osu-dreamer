@@ -16,6 +16,7 @@ from .data.tokens.tokens import VocabConfig, make_vocab
 from osu_dreamer.modules.spec_features import SpecFeatures
 from .modules.multiscale_ctx import MultiScaleEncoder
 from .modules.global_ctx import GlobalEncoder
+from .modules.decoder import Decoder, DecoderArgs
 
 
 class Model(pl.LightningModule):
@@ -28,10 +29,8 @@ class Model(pl.LightningModule):
         
         # model hparams
         vocab_config: VocabConfig,
-        d_model: int,
-        n_heads: int,
-        n_layers: int,
-        dropout: float,
+        emb_dim: int,
+        decoder_args: DecoderArgs,
         
         # audio encoder hparams
         ctx_dim: int,
@@ -55,8 +54,9 @@ class Model(pl.LightningModule):
         # model components
         vocab = make_vocab(vocab_config)
         vocab_size = len(vocab)
-        self.token_embed = nn.Embedding(vocab_size, d_model)
-        self.token_head = nn.Linear(d_model, vocab_size)
+        self.token_embed = nn.Embedding(vocab_size, emb_dim)
+        self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
+        self.token_head = nn.Linear(emb_dim, vocab_size)
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)  # 0 = PAD token
         
         # audio encoder
