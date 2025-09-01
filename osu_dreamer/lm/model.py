@@ -38,9 +38,6 @@ class Model(pl.LightningModule):
         audio_h_dim: int,
         num_global_ctx: int,
         ctx_scales: list[tuple[int, int]],
-        
-        # validation parameters
-        val_batches: int = 10,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -48,9 +45,6 @@ class Model(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
-        
-        # validation params
-        self.val_batches = val_batches
         
         # model components
         self.vocab = make_vocab(vocab_config)
@@ -111,9 +105,6 @@ class Model(pl.LightningModule):
         return loss
     
     def validation_step(self, batch: Batch, batch_idx: int):
-        if batch_idx >= self.val_batches:
-            return
-        
         # Forward pass
         pred_logits, target_tokens = self.forward(
             batch.audio,
