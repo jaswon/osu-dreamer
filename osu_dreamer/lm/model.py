@@ -2,6 +2,7 @@ from typing import Any
 from jaxtyping import Float, Int
 
 import torch as th
+import torch.nn.functional as F
 from torch import Tensor, nn
 
 import pytorch_lightning as pl
@@ -11,7 +12,7 @@ from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 from osu_dreamer.data.load_audio import get_frame_times
 
 from .data.dataset import Batch
-from .data.tokens.tokens import VocabConfig, make_vocab
+from .data.tokens.tokens import VocabConfig, make_vocab, Token, TokenType
 
 from osu_dreamer.modules.spec_features import SpecFeatures
 from .modules.multiscale_ctx import MultiScaleEncoder
@@ -145,4 +146,73 @@ class Model(pl.LightningModule):
                 "scheduler": scheduler,
                 "interval": "step",
             },
-        } 
+        }
+    
+    @th.no_grad()
+    def sample(
+        self,
+        audio: Float[Tensor, "A L"],
+        map_features: Float[Tensor, "M"],
+        max_len: int = 4096,
+        greedy: bool = True,
+    ) -> Int[Tensor, "1 N"]:
+        self.eval()
+
+        token_to_id = {t: i for i, t in enumerate(self.vocab)}
+        bos_id = token_to_id[Token(TokenType.BOS)]
+        eos_id = token_to_id[Token(TokenType.EOS)]
+
+        # precompute audio features
+        audio_features = self.audio_encoder(audio)
+        global_ctx = self.global_encoder(audio_features)
+        multiscale_features = self.ctx_encoder.precompute(audio_features)
+        frame_times = th.tensor(get_frame_times(audio_features.size(-1)), device=audio.device)
+
+        # initialize sequence and time
+        token_id = bos_id
+        current_time_ms = 0.
+        generated_tokens = []
+        
+        # initialize kv cache
+        cache = None
+
+        for _ in range(max_len):
+            # prepare inputs for single-token forward pass
+            token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
+            timestamp_tensor = th.tensor([[current_time_ms]], device=self.device, dtype=th.float32)
+
+            # get context for the current token
+            frame_idxs = th.searchsorted(frame_times, timestamp_tensor)
+            multi_scale_ctx = self.ctx_encoder(multiscale_features, frame_idxs)
+            
+            expanded_global_ctx = global_ctx[None, None, ...].expand(1, 1, -1, -1)
+            ctx = th.cat([expanded_global_ctx, multi_scale_ctx], dim=2)
+
+            embs = self.token_embed(token_tensor)
+
+            # decode one step
+            output, cache = self.decoder(embs, ctx=ctx, cache=cache)
+            logits = self.token_head(output)
+
+            # sample next token
+            if greedy:
+                next_token_id = th.argmax(logits, dim=-1).item()
+            else:
+                probs = F.softmax(logits, dim=-1)
+                next_token_id = th.multinomial(probs.squeeze(0), num_samples=1).item()
+
+            # stop if EOS
+            if next_token_id == eos_id:
+                break
+
+            generated_tokens.append(next_token_id)
+            token_id = next_token_id
+
+            # update time
+            token = self.vocab[int(next_token_id)]
+            if token.typ == TokenType.TIME_SHIFT_MS:
+                current_time_ms += token.value
+            elif token.typ == TokenType.TIME_SHIFT_S:
+                current_time_ms += token.value * 1000
+        
+        return th.tensor([generated_tokens], device=self.device, dtype=th.long)
