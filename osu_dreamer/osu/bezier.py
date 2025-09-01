@@ -29,7 +29,7 @@ class BezierCurve:
         return BezierCurve((self.degree-1) * (self.p[:,1:] - self.p[:,:-1]))
 
     def at(self, t: Float[ndarray, "T"]) -> Float[ndarray, "2 T"]:
-        return (self._at_vs if self.degree > 12 else self._at_de_casteljau)(t)
+        return self._at_de_casteljau(t)
 
     def _at_vs(self, t: Float[ndarray, "T"]) -> Float[ndarray, "2 T"]:
 

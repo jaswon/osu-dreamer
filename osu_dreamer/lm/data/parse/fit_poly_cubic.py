@@ -17,7 +17,7 @@ def fit_poly_cubic(
 
     # find approximate max error
     u = np.linspace(0, 1, 3*curve.degree)
-    errs = ((cubic.at(u) - curve.at(u)) ** 2).sum(0) ** .5 # L
+    errs = np.linalg.norm(cubic.at(u) - curve.at(u), axis=0) # L
     max_err_i = errs.argmax()
 
     if errs[max_err_i] < max_allowed_err:

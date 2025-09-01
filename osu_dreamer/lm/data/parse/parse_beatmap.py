@@ -23,8 +23,7 @@ class BeatmapEvents:
     def __str__(self):
         return "\n".join([ f"{t:08}: {v}" for t, v in self.timed ])
 
-def from_beatmap(bm: Iterable[str]) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]:
-    cfg = parse_map_file(bm)
+def from_beatmap(cfg: dict) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]:
     general: dict[str, str] = cfg.get('General', {}) # type: ignore
     metadata: dict[str, str] = cfg.get('Metadata', {}) # type: ignore
     diff: dict[str, str] = cfg.get('Difficulty', {}) # type: ignore
@@ -88,7 +87,10 @@ def from_beatmap(bm: Iterable[str]) -> tuple[BeatmapEvents, BeatmapDifficulty, M
             continue
         elif typ & (1 << 1):  # slider
             curve_spec, slides, length = spl[5:8]
-            objects.append((t, parse_slider(x,y,hit_object_args, curve_spec, int(slides), float(length))))
+            try:
+                objects.append((t, parse_slider(x,y,hit_object_args, curve_spec, int(slides), float(length))))
+            except Exception as e:
+                raise Exception((x,y), curve_spec) from e
             continue
         elif typ & (1 << 3):  # spinner
             d = int(float(spl[5]) - t)

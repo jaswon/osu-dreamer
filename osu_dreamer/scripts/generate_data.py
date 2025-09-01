@@ -8,7 +8,8 @@ import numpy as np
 
 from tqdm import tqdm
 
-from osu_dreamer.osu.beatmap import Beatmap
+from osu_dreamer.lm.data.parse.parse_beatmap import from_beatmap, BeatmapDifficulty, BeatmapEvents
+from osu_dreamer.lm.data.parse.parse_file import parse_map_file
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.data.load_audio import load_audio
 
@@ -46,27 +47,37 @@ def generate_data(maps_dir: Path, data_dir: Path, num_workers: int, force: bool)
 
 def process_mapset(kv: tuple[Path, list[Path]], force: bool):
     mapset_dir, map_files = kv
-    audio_map: dict[tuple[Path, Path], list[tuple[Beatmap, Path]]] = {}
+    audio_map: dict[tuple[Path, Path], list[tuple[tuple[BeatmapEvents, BeatmapDifficulty], Path]]] = {}
     for map_file in map_files:
         try:
-            bm = Beatmap(map_file, meta_only=True)
+            with open(map_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            cfg = parse_map_file(lines)
+            general: dict[str, str] = cfg.get('General', {}) # type: ignore
+            mode = int(general.get('Mode', '0'))
+            if mode != 0:
+                # not osu!std, skip
+                continue
+
+            events, diff, meta = from_beatmap(cfg)
+            
+            # account for case-insensitivity
+            lc_files = { f.name.lower(): f.name for f in map_file.parent.iterdir() }
+            audio_path = map_file.parent / lc_files[meta.audio_filename.lower()]
+        
+            audio_dir = mapset_dir / "_".join(audio_path.name.split('.'))
+            map_path = audio_dir / f"{map_file.stem}.map.pkl"
+
+            if not force and map_path.exists():
+                continue
+
+            data_to_pickle = (events, diff)
+            audio_map.setdefault((audio_dir, audio_path), []).append((data_to_pickle, map_path))
         except Exception as e:
-            print(f"{map_file}: {e}")
-            continue
+            raise Exception(map_file) from e
 
-        if bm.mode != 0:
-            # not osu!std, skip
-            # print(f"{map_file}: not an osu!std map")
-            continue
-
-        audio_dir = mapset_dir / "_".join(bm.audio_filename.name.split('.'))
-        map_path = audio_dir / f"{map_file.stem}.map.pkl"
-        if not force and map_path.exists():
-            continue
-
-        audio_map.setdefault((audio_dir, bm.audio_filename), []).append((bm, map_path))
-
-    for (audio_dir, audio_file), bms in audio_map.items():
+    for (audio_dir, audio_file), maps_to_save in audio_map.items():
         spec_path = audio_dir / "spec.pt"
         if not spec_path.exists():
             try:
@@ -80,12 +91,6 @@ def process_mapset(kv: tuple[Path, list[Path]], force: bool):
             with open(spec_path, "wb") as f:
                 np.save(f, spec, allow_pickle=False)
 
-        for bm, map_path in bms:
-            try:
-                bm.parse_map_data()
-            except Exception as e:
-                print(f"{bm.filename}: {e}")
-                continue
-
+        for data_to_pickle, map_path in maps_to_save:
             with open(map_path, "wb") as f:
-                pickle.dump(bm, f)
+                pickle.dump(data_to_pickle, f)

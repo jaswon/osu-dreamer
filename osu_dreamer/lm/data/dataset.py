@@ -16,7 +16,6 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
-from osu_dreamer.lm.data.parse.parse_beatmap import from_beatmap
 from osu_dreamer.lm.data.tokens.tokens import VocabConfig
 
 
@@ -67,9 +66,8 @@ class Dataset(IterableDataset):
 
         audio = th.from_numpy(np.load(map_file.parent / "spec.pt")).float()
         with open(map_file, 'rb') as f:
-            bm = pickle.load(f)
+            ibm, diff = pickle.load(f)
         
-        ibm, diff, _ = from_beatmap(bm)
         map_features = th.tensor([
             diff.hp_drain_rate,
             diff.circle_size,

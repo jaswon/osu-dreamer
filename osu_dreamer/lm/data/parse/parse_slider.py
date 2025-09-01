@@ -20,7 +20,7 @@ def parse_slider(
     ctrl_pts: list[Coordinate] = [(x,y)] + [
         (x,y)
         for p in curve_points
-        for x,y,*_ in [ map(int, p.split(":")) ] 
+        for x,y,*_ in [ map(lambda s: round(float(s)), p.split(":")) ] 
     ]
 
     if len(ctrl_pts) == 1:
@@ -71,7 +71,10 @@ def parse_slider(
             ctrl_pts.insert(1, ctrl_pts[1])  # [A,B,B,C]
     
     # bezier
-    head, segments = parse_bezier(ctrl_pts, length)
+    try:
+        head, segments = parse_bezier(ctrl_pts)
+    except Exception as e:
+        raise Exception(ctrl_pts) from e
 
     # recompute tail from length
     path_length = 0
@@ -132,7 +135,7 @@ def parse_slider(
 
     return BezierSlider(*slider_args, head, segments)
 
-def parse_bezier(ctrl_pts: list[Coordinate], length: float) -> tuple[Coordinate, list[BezierSegment]]:
+def parse_bezier(ctrl_pts: list[Coordinate]) -> tuple[Coordinate, list[BezierSegment]]:
     """
     approximates arbitrary poly-beziers as poly-beziers of order 1 (line) or order 3 (cubic)
     """
@@ -155,6 +158,8 @@ def parse_bezier(ctrl_pts: list[Coordinate], length: float) -> tuple[Coordinate,
     return head, segments
     
 def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
+    if len(cur_seg) < 2:
+        return []
     if len(cur_seg) == 2:
         # line segment
         p,q = cur_seg
@@ -171,8 +176,13 @@ def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
         return [CubicSegment(c1,c2,q)]
     else:
         # higher order - reduce
+        try:
+            poly_cubic = fit_poly_cubic(BezierCurve(np.array(cur_seg).T), max_allowed_err=10)
+        except Exception as e:
+            raise Exception(cur_seg) from e
+        
         return [
             CubicSegment(c1,c2,q)
-            for cubic in fit_poly_cubic(BezierCurve(np.array(cur_seg).T), max_allowed_err=10)
+            for cubic in poly_cubic
             for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
         ]
