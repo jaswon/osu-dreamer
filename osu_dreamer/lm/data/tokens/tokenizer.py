@@ -21,7 +21,7 @@ class Tokenizer:
         list[int], # beatmap tokens
         list[int], # timestamp @ token
     ]:
-        ts, toks = [0], []
+        ts, toks = [], []
         for tok in self._tokenize_timed_objects(bm):
             toks.append(self.token_to_id[tok])
             ts.append(self.t)
@@ -129,6 +129,7 @@ class Tokenizer:
     
     def _tokenize_timed_objects(self, bm: BeatmapEvents) -> Iterator[Token]:
         self.t = 0
+        yield Token(TokenType.BOS)
         for t, event in bm.timed:
             time_shift = t - self.t
             if time_shift > 0:
@@ -144,3 +145,4 @@ class Tokenizer:
                         yield from self._tokenize_hit_object(event)
                     except AssertionError as e:
                         raise AssertionError(t) from e
+        yield Token(TokenType.EOS)

@@ -23,7 +23,7 @@ from osu_dreamer.lm.data.tokens.tokens import VocabConfig
 class Batch(NamedTuple):
     audio: Float[Tensor, "A L"]         # Spectrogram
     map_features: Float[Tensor, "M"]    # Map features
-    tokens: Float[Tensor, "B N"]        # token sequences
+    tokens: Float[Tensor, "B N+1"]      # token sequences
     timestamps: Float[Tensor, "B N"]    # Token timestamps in ms
 
 
@@ -83,10 +83,9 @@ class Dataset(IterableDataset):
             return
 
         tokens_list, timestamps_list = [], []
-        for start_idx in th.randperm(len(beatmap_tokens) - self.context_size)[:self.batch_size]:
+        for start_idx in th.randperm(len(beatmap_tokens) - self.context_size - 1)[:self.batch_size]:
             end_idx = start_idx + self.context_size
-            
-            tokens_list.append(th.tensor(beatmap_tokens[start_idx:end_idx]).long())
+            tokens_list.append(th.tensor(beatmap_tokens[start_idx:end_idx+1]).long())
             timestamps_list.append(th.tensor(token_timestamps[start_idx:end_idx]).long())
 
         yield Batch(audio, map_features, th.stack(tokens_list), th.stack(timestamps_list))
