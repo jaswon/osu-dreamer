@@ -52,8 +52,8 @@ class Model(pl.LightningModule):
         self.val_batches = val_batches
         
         # model components
-        vocab = make_vocab(vocab_config)
-        vocab_size = len(vocab)
+        self.vocab = make_vocab(vocab_config)
+        vocab_size = len(self.vocab)
         self.token_embed = nn.Embedding(vocab_size, emb_dim)
         self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
         self.token_head = nn.Linear(emb_dim, vocab_size)
@@ -83,11 +83,12 @@ class Model(pl.LightningModule):
         frame_idxs = th.searchsorted(frame_times, timestamps) # B N
         multi_scale_ctx = self.ctx_encoder(self.ctx_encoder.precompute(audio_features), frame_idxs) # B N T C
 
-        ctx = th.cat([ global_ctx[None, None], multi_scale_ctx ], dim=2) # B N T+G C
+        expanded_global_ctx = global_ctx[None, None, ...].expand(tokens.size(0), timestamps.size(1), -1, -1)
+        ctx = th.cat([ expanded_global_ctx, multi_scale_ctx ], dim=2) # B N T+G C
         
         embs = self.token_embed(tokens[:,:-1]) # B N D
 
-        output = self.decoder(embs, ctx=ctx) # B N D
+        output, _ = self.decoder(embs, ctx=ctx)
         logits = self.token_head(output) # B N V
         
         return logits, tokens[:,1:]

@@ -20,9 +20,9 @@ class RotaryEmbedding(nn.Module):
         inv_freq = 1.0 / (10000 ** (th.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq); self.inv_freq: Tensor
 
-    def forward(self, x: Float[Tensor, "... N D"]) -> Float[Tensor, "... N D"]:
+    def forward(self, x: Float[Tensor, "... N D"], offset: int = 0) -> Float[Tensor, "... N D"]:
         seq_len = x.shape[-2]
-        t = th.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype)
+        t = th.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype) + offset
         freqs = th.einsum("i,j->ij", t, self.inv_freq)
         emb = th.cat((freqs, freqs), dim=-1)
         
@@ -46,7 +46,12 @@ class SelfAttention(nn.Module):
         self.rotary_emb = RotaryEmbedding(self.d_head)
         self.dropout = dropout
 
-    def forward(self, x: Float[Tensor, "B N D"], mask: Bool[Tensor, "N N"] | None = None) -> Float[Tensor, "B N D"]:
+    def forward(
+        self, 
+        x: Float[Tensor, "B N D"], 
+        mask: Bool[Tensor, "N N"] | None = None, 
+        cache: tuple[Tensor, Tensor] | None = None,
+    ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
         B, N, _ = x.shape
         
         q, k, v = self.qkv_proj(x).chunk(3, dim=-1)
@@ -55,14 +60,28 @@ class SelfAttention(nn.Module):
         k = k.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
         v = v.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
         
-        q = self.rotary_emb(q)
-        k = self.rotary_emb(k)
+        offset = 0
+        if cache is not None:
+            past_k, past_v = cache
+            offset = past_k.shape[2]
+
+        q = self.rotary_emb(q, offset=offset)
+        k = self.rotary_emb(k, offset=offset)
+        
+        if cache is not None:
+            past_k, past_v = cache
+            k = th.cat([past_k, k], dim=2)
+            v = th.cat([past_v, v], dim=2)
+
+        # during inference with cache, N=1, mask should be None.
+        if cache is not None:
+            mask = None
         
         out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=self.dropout if self.training else 0.0)
         
         out = out.transpose(1, 2).contiguous().view(B, N, -1)
         
-        return self.out_proj(out)
+        return self.out_proj(out), (k, v)
 
 class CrossAttention(nn.Module):
     def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float):
@@ -119,8 +138,15 @@ class DecoderLayer(nn.Module):
         
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: Float[Tensor, "B N D"], ctx: Float[Tensor, "B N M C"], mask: Bool[Tensor, "N N"] | None = None) -> Float[Tensor, "B N D"]:
-        x = x + self.dropout(self.self_attn(self.norm1(x), mask=mask))
+    def forward(
+        self, 
+        x: Float[Tensor, "B N D"], 
+        ctx: Float[Tensor, "B N M C"], 
+        mask: Bool[Tensor, "N N"] | None = None, 
+        cache: tuple[Tensor, Tensor] | None = None,
+    ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
+        sa_out, new_cache = self.self_attn(self.norm1(x), mask=mask, cache=cache)
+        x = x + self.dropout(sa_out)
         
         B, N, D = x.shape
         M, C = ctx.shape[2], ctx.shape[3]
@@ -137,7 +163,7 @@ class DecoderLayer(nn.Module):
         
         x = x + self.dropout(self.ffn(self.norm3(x)))
         
-        return x
+        return x, new_cache
 
 class Decoder(nn.Module):
     def __init__(
@@ -163,11 +189,17 @@ class Decoder(nn.Module):
         self,
         embs: Float[Tensor, "B N D"],
         ctx: Float[Tensor, "B N M C"],
-    ) -> Float[Tensor, "B N D"]:
-        mask = self.get_causal_mask(embs.size(1), embs.device)
+        cache: list[tuple[Tensor, Tensor]] | None = None,
+    ) -> tuple[Float[Tensor, "B N D"], list[tuple[Tensor, Tensor]]]:
+        mask = None
+        if cache is None:
+            mask = self.get_causal_mask(embs.size(1), embs.device)
         
         x = embs
-        for layer in self.layers:
-            x = layer(x, ctx, mask=mask)
+        new_caches = []
+        for i, layer in enumerate(self.layers):
+            layer_cache = cache[i] if cache is not None else None
+            x, new_layer_cache = layer(x, ctx, mask=mask, cache=layer_cache)
+            new_caches.append(new_layer_cache)
             
-        return x
+        return x, new_caches
