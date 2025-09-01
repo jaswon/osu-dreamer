@@ -68,7 +68,7 @@ class VocabConfig:
 
     MAGNITUDE_BINS: int = 64
     MIN_MAGNITUDE: float = .05
-    MAX_MAGNITUDE: float = 50
+    MAX_MAGNITUDE: float = 50.
     
 
 def make_vocab(config: VocabConfig) -> tuple[Token, ...]:

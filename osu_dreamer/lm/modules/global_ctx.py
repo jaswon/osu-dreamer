@@ -10,11 +10,11 @@ class GlobalEncoder(nn.Module):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv1d(in_dim, in_dim*num, 5,1,2, groups=in_dim),
-            Rearrange('b (d n) l -> b (n d) l'),
+            Rearrange('b (d n) l -> b (n d) l', n=num),
             nn.SiLU(),
             nn.Conv1d(in_dim*num, out_dim*num, 1),
             nn.AdaptiveAvgPool1d(1),
-            Rearrange('b (n d) 1 -> b n d'),
+            Rearrange('b (n d) 1 -> b n d', n=num),
         )
 
 

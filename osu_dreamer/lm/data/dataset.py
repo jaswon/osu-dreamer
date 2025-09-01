@@ -101,6 +101,9 @@ class Data(pl.LightningDataModule):
         val_size: float | int,
         data_path: str = "./data",
     ):
+        super().__init__()
+        self.save_hyperparameters()
+        
         self.tokenizer = Tokenizer(vocab_config)
         self.context_size = context_size
         self.batch_size = batch_size
