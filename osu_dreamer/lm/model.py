@@ -14,7 +14,7 @@ from osu_dreamer.data.load_audio import get_frame_times
 from .data.dataset import Batch
 from .data.tokens.tokens import VocabConfig, make_vocab, Token, TokenType
 
-from osu_dreamer.modules.spec_features import SpecFeatures
+from .modules.audio_encoder import SimpleAudioEncoder
 from .modules.multiscale_ctx import MultiScaleEncoder
 from .modules.global_ctx import GlobalEncoder
 from .modules.decoder import Decoder, DecoderArgs
@@ -55,7 +55,7 @@ class Model(pl.LightningModule):
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)  # 0 = PAD token
         
         # audio encoder
-        self.audio_encoder = SpecFeatures(audio_h_dim)
+        self.audio_encoder = SimpleAudioEncoder(audio_h_dim)
         self.global_encoder = GlobalEncoder(audio_h_dim, ctx_dim, num_global_ctx)
         self.ctx_encoder = MultiScaleEncoder(audio_h_dim, ctx_dim, ctx_scales)
         
