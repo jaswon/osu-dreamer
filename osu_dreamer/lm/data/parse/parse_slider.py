@@ -76,6 +76,11 @@ def parse_slider(
     except Exception as e:
         raise Exception(ctrl_pts) from e
 
+    # HACK: ignore many-segment beziers
+    if len(segments) > 16:
+        segments: list[BezierSegment] = [LineSegment(ctrl_pts[-1])]
+        length = segments[0].length(head)
+
     # recompute tail from length
     path_length = 0
     seg_lens = []
