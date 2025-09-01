@@ -159,14 +159,26 @@ def parse_bezier(ctrl_pts: list[Coordinate]) -> tuple[Coordinate, list[BezierSeg
     
 def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
     if len(cur_seg) < 2:
+        # invalid
         return []
     if len(cur_seg) == 2:
         # line segment
         p,q = cur_seg
         return [LineSegment(q)]
     elif len(cur_seg) == 3:
-        # quadratic -> lift to cubic
+        # quadratic
         p,c,q = cur_seg
+
+        # check for degenerate
+        if np.linalg.norm(np.array(q) - np.array(p)) < .1:
+            # same endpoint - split into two line segments
+            u = p + .5 * (np.array(c) - np.array(p))
+            return [
+                LineSegment(tuple(u.round().astype(int).tolist())),
+                LineSegment(q),
+            ]
+
+        # lift to cubic
         c1 = round((p[0]+2*c[0])/3), round((p[1]+2*c[1])/3)
         c2 = round((q[0]+2*c[0])/3), round((q[1]+2*c[1])/3)
         return [CubicSegment(c1, c2, q)]
