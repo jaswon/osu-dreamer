@@ -75,18 +75,23 @@ class Decoder:
 
     def parse_time_shift(self) -> int:
         time_shift = 0
+
+        # parse seconds
+        while True:
+            match self.next_token():
+                case Token(TokenType.TIME_SHIFT_S, s):
+                    time_shift += 1000 * s
+                case _ as tok:
+                    self.push_back(tok)
+                    break
+
+        # parse milliseconds
         match self.next_token():
             case Token(TokenType.TIME_SHIFT_MS, ms):
                 time_shift += ms
-            case Token(TokenType.TIME_SHIFT_S, s):
-                time_shift += 1000 * s
-                match self.next_token():
-                    case Token(TokenType.TIME_SHIFT_MS, ms):
-                        time_shift += ms
-                    case _ as tok:
-                        self.push_back(tok)
             case _ as tok:
                 self.push_back(tok)
+                
         self.t += time_shift
         return time_shift
     

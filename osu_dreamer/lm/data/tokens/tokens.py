@@ -122,8 +122,8 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
         Token(TokenType.CLAP),
 
         # numerals
-        *[ Token(TokenType.TIME_SHIFT_MS,i) for i in range(1000) ],
-        *[ Token(TokenType.TIME_SHIFT_S,i) for i in range(config.TIME_SHIFT_SECONDS) ],
+        *[ Token(TokenType.TIME_SHIFT_MS,i+1) for i in range(1000) ],
+        *[ Token(TokenType.TIME_SHIFT_S,i+1) for i in range(config.TIME_SHIFT_SECONDS) ],
         *[
             Token(TokenType.POS_COARSE,(x,y)) 
             for x in range(config.coarse_x_bins)

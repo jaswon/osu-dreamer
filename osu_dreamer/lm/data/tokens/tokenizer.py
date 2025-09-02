@@ -53,8 +53,11 @@ class Tokenizer:
 
     def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
         self.t += ms
-        if ms >= 1000:
-            s, ms = divmod(ms, 1000)
+        s, ms = divmod(ms, 1000)
+        m, s = divmod(s, 60)
+        for _ in range(m):
+            yield Token(TokenType.TIME_SHIFT_S, 60)
+        if s > 0:
             yield Token(TokenType.TIME_SHIFT_S, s)
         if ms > 0:
             yield Token(TokenType.TIME_SHIFT_MS, ms)
