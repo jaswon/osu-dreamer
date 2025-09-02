@@ -1,10 +1,8 @@
 
 from dataclasses import dataclass, asdict
-from typing import Iterable
-
 
 from ..timed import *
-from .parse_file import parse_map_file
+from .parse_file import OsuFile
 from .parse_slider import parse_slider
 from .template import map_template, Metadata
 
@@ -23,20 +21,13 @@ class BeatmapEvents:
     def __str__(self):
         return "\n".join([ f"{t:08}: {v}" for t, v in self.timed ])
 
-def from_beatmap(cfg: dict) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]:
-    general: dict[str, str] = cfg.get('General', {}) # type: ignore
-    metadata: dict[str, str] = cfg.get('Metadata', {}) # type: ignore
-    diff: dict[str, str] = cfg.get('Difficulty', {}) # type: ignore
-    raw_events: list[str] = cfg.get('Events', []) # type: ignore
-    raw_timing_points: list[str] = cfg.get('TimingPoints', []) # type: ignore
-    raw_hit_objects: list[str] = cfg.get('HitObjects', []) # type: ignore
-
+def from_beatmap(cfg: OsuFile) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]:
     uninherited: list[tuple[int, BeatLen]] = []
     inherited: list[tuple[int, SliderVel]] = []
     objects: list[tuple[int, Timed]] = []
 
     # parse breaks
-    for l in raw_events:
+    for l in cfg.events:
         typ, t, *params = l.strip().split(",")
         if typ == '2' or typ == 'Break':
             u, = params
@@ -44,8 +35,8 @@ def from_beatmap(cfg: dict) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]
             objects.append((int(t), Break(duration=d)))
 
     # parse timing points
-    base_slider_vel = float(diff.get('SliderMultiplier', 1.4))
-    for l in raw_timing_points:
+    base_slider_vel = float(cfg.difficulty.get('SliderMultiplier', 1.4))
+    for l in cfg.timing_points:
         vals = [ float(x) for x in l.strip().split(",") ]
         t, x = vals[:2]
 
@@ -71,7 +62,7 @@ def from_beatmap(cfg: dict) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]
             inherited.append((int(t), SliderVel(vel=base_slider_vel)))
 
     # parse hit objects
-    for l in raw_hit_objects:
+    for l in cfg.hit_objects:
         spl = l.strip().split(",")
         x, y, t, typ, hit_sound = [int(float(x)) for x in spl[:5]]
 
@@ -119,16 +110,16 @@ def from_beatmap(cfg: dict) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]
             timed.pop(i)
 
     return BeatmapEvents(timed), BeatmapDifficulty(
-        hp_drain_rate = float(diff.get('HPDrainRate', 5)),
-        circle_size = float(diff.get('CircleSize', 5)),
-        overall_difficulty = float(diff.get('OverallDifficulty', 5)),
-        approach_rate = float(diff.get('ApproachRate', 5)),
-        slider_tick_rate = float(diff.get('SliderTickRate', 1)),
+        hp_drain_rate = float(cfg.difficulty.get('HPDrainRate', 5)),
+        circle_size = float(cfg.difficulty.get('CircleSize', 5)),
+        overall_difficulty = float(cfg.difficulty.get('OverallDifficulty', 5)),
+        approach_rate = float(cfg.difficulty.get('ApproachRate', 5)),
+        slider_tick_rate = float(cfg.difficulty.get('SliderTickRate', 1)),
     ), Metadata(
-        audio_filename = general.get('AudioFilename', 'audio.mp3'),
-        title = metadata.get('Title', 'title'),
-        artist = metadata.get('Artist', 'artist'),
-        version = metadata.get('Version', 'version'),
+        audio_filename = cfg.general.get('AudioFilename', 'audio.mp3'),
+        title = cfg.metadata.get('Title', 'title'),
+        artist = cfg.metadata.get('Artist', 'artist'),
+        version = cfg.metadata.get('Version', 'version'),
     )
 
 

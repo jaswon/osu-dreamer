@@ -54,8 +54,7 @@ def process_mapset(kv: tuple[Path, list[Path]], force: bool):
                 lines = f.readlines()
             
             cfg = parse_map_file(lines)
-            general: dict[str, str] = cfg.get('General', {}) # type: ignore
-            mode = int(general.get('Mode', '0'))
+            mode = int(cfg.general.get('Mode', '0'))
             if mode != 0:
                 # not osu!std, skip
                 continue
