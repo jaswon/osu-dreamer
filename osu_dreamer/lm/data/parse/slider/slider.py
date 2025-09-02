@@ -12,7 +12,7 @@ def parse_slider(
     raw_curve_spec: str,
     slides: int,
     length: float,
-) -> Union[HitCircle, PerfectSlider, BezierSlider]:
+) -> Union[HitCircle, Slider]:
     slider_args = *hit_object_args, -1, slides
     curve_type, *curve_points = raw_curve_spec.split("|")
     ctrl_pts: list[Coordinate] = [(x,y)] + [
@@ -69,4 +69,4 @@ def parse_slider(
             ctrl_pts.insert(1, ctrl_pts[1])  # [A,B,B,C]
     
     # bezier
-    return parse_bezier(slider_args, ctrl_pts)
+    return parse_bezier(slider_args, ctrl_pts, length)

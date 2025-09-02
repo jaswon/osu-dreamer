@@ -18,12 +18,23 @@ class BezierCurve:
     def degree(self):
         return self.p.shape[1]
 
+    def _length_at(self, t: float) -> float:
+        assert 0 <= t <= 1
+        if t == 0: return 0.
+            
+        T, C = np.polynomial.legendre.leggauss(int(5 * self.degree ** .5))
+        
+        # map [-1,1] -> [0, t]
+        t_samples = t/2 * (T + 1)
+        
+        # speed at sample points
+        speeds = np.linalg.norm(self.hodo().at(t_samples), axis=0)
+        
+        return t/2 * (C * speeds).sum()
+
     @cached_property
     def length(self) -> float:
-        T,C = np.polynomial.legendre.leggauss(int(5*self.degree**.5))
-        t = .5 * (T + 1) # map [-1,1] -> [0,1]
-        f = np.linalg.norm(self.hodo().at(t), axis=0)
-        return .5 * (C * f).sum()
+        return self._length_at(1)
 
     def hodo(self) -> "BezierCurve":
         return BezierCurve((self.degree-1) * (self.p[:,1:] - self.p[:,:-1]))
@@ -65,3 +76,33 @@ class BezierCurve:
                 break
             p = (1-t) * p[:,:-1] + t * p[:,1:]
         return BezierCurve(np.array(left).T), BezierCurve(np.array(right).T)
+
+    def _find_t_for_length(self, target_length: float) -> float:
+        if target_length <= 0:
+            return 0.0
+        if target_length >= self.length:
+            return 1.0
+
+        # Binary search for t
+        low_t, high_t = 0.0, 1.0
+        
+        for _ in range(20): # 20 iterations give plenty of precision
+            mid_t = (low_t + high_t) / 2
+            current_length = self._length_at(mid_t)
+            
+            if current_length < target_length:
+                low_t = mid_t
+            else:
+                high_t = mid_t
+                
+        return (low_t + high_t) / 2
+
+    def split_at_length(self, fraction: float) -> tuple["BezierCurve", "BezierCurve"]:
+        """
+        Splits the curve at a point specified by a fraction of its total arc length.
+        """
+        assert 0 <= fraction <= 1
+        
+        target_length = fraction * self.length
+        t = self._find_t_for_length(target_length)
+        return self.split_at(t)

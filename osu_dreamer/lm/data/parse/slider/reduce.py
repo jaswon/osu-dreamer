@@ -3,17 +3,17 @@ import numpy as np
 
 from osu_dreamer.osu.bezier import BezierCurve
 
-def fit_poly_cubic(
+def reduce_to_poly_cubic(
     curve: BezierCurve,
-    max_allowed_err: float = 1., 
+    max_allowed_err: float = 10., 
 ) -> list[BezierCurve]:
-    """fits a cubic poly-Bezier curve to a high-order Bezier curve"""
+    """reduces a high-order Bezier curve to a cubic poly-Bezier curve"""
 
     assert curve.degree >= 4
     if curve.degree == 4:
         return [curve]
     
-    cubic = fit_cubic(curve)
+    cubic = reduce_to_cubic(curve)
 
     # find approximate max error
     u = np.linspace(0, 1, 3*curve.degree)
@@ -26,11 +26,11 @@ def fit_poly_cubic(
     # split at max error location and fit recursively
     split_a, split_b = curve.split_at(t=float(u[max_err_i]))
     return [
-        *fit_poly_cubic(split_a, max_allowed_err),
-        *fit_poly_cubic(split_b, max_allowed_err),
+        *reduce_to_poly_cubic(split_a, max_allowed_err),
+        *reduce_to_poly_cubic(split_b, max_allowed_err),
     ]
 
-def fit_cubic(curve: BezierCurve) -> BezierCurve:
+def reduce_to_cubic(curve: BezierCurve) -> BezierCurve:
     P, D = curve.p.T, curve.degree
     
     # endpoints

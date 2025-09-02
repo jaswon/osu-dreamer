@@ -146,9 +146,16 @@ class PerfectSlider(Slider):
         # ref: alternate segment theorem
         return ac_dist * self.deviation / np.sin(self.deviation)
     
+
 @dataclass
-class LineSegment:
+class BezierSegment:
     q: Coordinate
+
+    def length(self, p: Coordinate) -> float:
+        raise NotImplementedError
+    
+@dataclass
+class LineSegment(BezierSegment):
 
     def __str__(self) -> str:
         return f"Line({self.q})"
@@ -157,10 +164,19 @@ class LineSegment:
         return np.linalg.norm(np.array(p) - np.array(self.q)).item()
 
 @dataclass
-class CubicSegment:
+class QuadraticSegment(BezierSegment):
+    c: Coordinate
+
+    def __str__(self) -> str:
+        return f"Quadratic({self.c}, {self.q})"
+    
+    def length(self, p: Coordinate) -> float:
+        return BezierCurve(np.array([p,self.c,self.q]).T).length 
+
+@dataclass
+class CubicSegment(BezierSegment):
     pc: Coordinate
     qc: Coordinate
-    q: Coordinate
 
     def __str__(self) -> str:
         return f"Cubic({self.pc}, {self.qc}, {self.q})"
@@ -168,7 +184,6 @@ class CubicSegment:
     def length(self, p: Coordinate) -> float:
         return BezierCurve(np.array([p,self.pc,self.qc,self.q]).T).length
     
-BezierSegment = LineSegment | CubicSegment
     
 @dataclass
 class BezierSlider(Slider):
@@ -187,6 +202,25 @@ class BezierSlider(Slider):
             length += seg.length(p)
             p = seg.q
         return length
+    
+@dataclass
+class PolyLineSlider(Slider):
+    vertices: list[Coordinate]
+
+    def _cls_str(self) -> str:
+        return "L"
+    
+    def _slider_str(self):
+        return f" {self.head} {" ".join(map(str, self.vertices))}"
+    
+    def length(self) -> float:
+        length = 0
+        start = self.head
+        for v in self.vertices:
+            length += np.linalg.norm(np.array(start) - np.array(v)).item()
+            start = v
+        return length
+
 
 Timed = Union[
     BeatLen,
@@ -194,6 +228,5 @@ Timed = Union[
     Break,
     HitCircle,
     Spinner,
-    PerfectSlider,
-    BezierSlider,
+    Slider,
 ]
