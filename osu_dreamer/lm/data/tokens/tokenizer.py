@@ -23,7 +23,10 @@ class Tokenizer:
     ]:
         ts, toks = [], []
         for tok in self._tokenize_timed_objects(bm):
-            toks.append(self.token_to_id[tok])
+            try:
+                toks.append(self.token_to_id[tok])
+            except KeyError as e:
+                raise Exception(self.t) from e
             ts.append(self.t)
         return toks, ts
 
