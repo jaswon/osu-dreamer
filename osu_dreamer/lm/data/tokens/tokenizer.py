@@ -64,6 +64,7 @@ class Tokenizer:
         yield Token(TokenType.RELEASE)
 
     def _tokenize_deviation(self, d: float) -> Iterator[Token]:
+        assert -np.pi < d < np.pi, d
         b = 1+int(abs(d)*self.config.DEVIATION_BINS/np.pi)
         yield Token(TokenType.DEVIATION, b if d > 0 else -b)
     

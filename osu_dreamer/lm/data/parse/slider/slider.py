@@ -39,7 +39,7 @@ def parse_slider(
             s = (a + b + c) / 2.0
             R = a * b * c / 4.0 / np.sqrt(s * (s - a) * (s - b) * (s - c))
 
-            theta = length/R
+            theta = min(1.95*np.pi,length/R)
             if ABC < 0: # clockwise
                 theta *= -1
 
