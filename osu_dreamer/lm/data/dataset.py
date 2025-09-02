@@ -65,6 +65,10 @@ class Dataset(IterableDataset):
     def sample_map(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
 
         audio = th.from_numpy(np.load(map_file.parent / "spec.pt")).float()
+
+        if audio.size(-1) > 2*60*1000/6:
+            return
+
         with open(map_file, 'rb') as f:
             ibm, diff = pickle.load(f)
         
