@@ -65,9 +65,9 @@ def reduce_to_cubic(curve: BezierCurve) -> BezierCurve:
     q2 = q3 - d1 * beta
 
     # check for degenerate cubic
-    if (q1 == q0).all():
+    if np.linalg.norm(q1-q0) < 2:
         c = q2
-    elif (q2 == q3).all():
+    elif np.linalg.norm(q2-q3) < 2:
         c = q1
     else:
         return BezierCurve(np.array([q0,q1,q2,q3]).T)
