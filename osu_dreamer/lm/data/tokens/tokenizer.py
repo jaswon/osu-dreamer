@@ -4,7 +4,7 @@ from typing import Iterator
 import numpy as np
 
 from .decoder import Decoder
-from ..parse.parse_beatmap import BeatmapEvents
+from ..parse.beatmap import BeatmapEvents
 from ..timed import *
 from .tokens import Token, TokenType, VocabConfig, make_vocab
 

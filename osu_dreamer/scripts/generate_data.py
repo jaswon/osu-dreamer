@@ -8,8 +8,8 @@ import numpy as np
 
 from tqdm import tqdm
 
-from osu_dreamer.lm.data.parse.parse_beatmap import from_beatmap, BeatmapDifficulty, BeatmapEvents
-from osu_dreamer.lm.data.parse.parse_file import parse_map_file
+from osu_dreamer.lm.data.parse.beatmap import from_beatmap, BeatmapDifficulty, BeatmapEvents
+from osu_dreamer.lm.data.parse.file import parse_map_file
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.data.load_audio import load_audio
 

@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from ..parse.parse_beatmap import BeatmapEvents
+from ..parse.beatmap import BeatmapEvents
 
 from ..timed import *
 from .tokens import Token, TokenType, VocabConfig

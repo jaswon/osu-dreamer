@@ -1,78 +1,32 @@
 
-from typing import Union
-
-import numpy as np
+from jaxtyping import Float
 
 from osu_dreamer.osu.bezier import BezierCurve
 
-from ..timed import *
+from ...timed import *
 from .fit_poly_cubic import fit_poly_cubic
 
-def parse_slider(
-    x: int, y: int,
-    hit_object_args: tuple[bool, bool, bool, bool],
-    raw_curve_spec: str,
-    slides: int,
-    length: float,
-) -> Union[HitCircle, PerfectSlider, BezierSlider]:
-    slider_args = *hit_object_args, -1, slides
-    curve_type, *curve_points = raw_curve_spec.split("|")
-    ctrl_pts: list[Coordinate] = [(x,y)] + [
-        (x,y)
-        for p in curve_points
-        for x,y,*_ in [ map(lambda s: round(float(s)), p.split(":")) ] 
-    ]
+def parse_bezier(
+    slider_args: tuple[bool, bool, bool, bool, int, int], 
+    ctrl_pts: list[Coordinate],
+):
 
-    if len(ctrl_pts) == 1:
-        # bad slider, return hit circle
-        return HitCircle(*hit_object_args,(x,y))
-    
-    if len(ctrl_pts) == 3 and curve_type == 'P':
-        # perfect
-        A,B,C = np.array(ctrl_pts)
-
-        ABC = np.cross(B - A, C - B)
-        if ABC != 0:
-
-            # recompute tail from length
-            a = np.linalg.norm(C - B)
-            b = np.linalg.norm(C - A)
-            c = np.linalg.norm(B - A)
-            s = (a + b + c) / 2.0
-            R = a * b * c / 4.0 / np.sqrt(s * (s - a) * (s - b) * (s - c))
-
-            theta = length/R
-            if ABC < 0: # clockwise
-                theta *= -1
-
-            b1 = a * a * (- a * a + b * b + c * c)
-            b2 = b * b * (+ a * a - b * b + c * c)
-            b3 = c * c * (+ a * a + b * b - c * c)
-            O = np.column_stack((A, B, C)).dot(np.hstack((b1, b2, b3)))
-            O /= b1 + b2 + b3
-
-            OA = A - O
-            OAP = np.array([-OA[1], OA[0]])
-            C = O + OA*np.cos(theta) + OAP*np.sin(theta)
-
-            return PerfectSlider(
-                *slider_args, 
-                head = tuple(A.round().astype(int).tolist()),
-                tail = tuple(C.round().astype(int).tolist()),
-                deviation = theta / -2,
-            )
-
-        # collinear
-        if np.dot(B - A, C - B) > 0:  # A -- B -- C
-            # line - remove middle control point
-            ctrl_pts.pop(1)
-        else:  # A -- C -- B
-            # double back slider - repeat middle control point
-            ctrl_pts.insert(1, ctrl_pts[1])  # [A,B,B,C]
-    
-    # bezier
+    assert len(ctrl_pts) >= 2
     try:
-        head, segments = parse_bezier(ctrl_pts)
+
+        segments = []
+        head, *ctrl_pts = ctrl_pts
+        
+        cur_seg = [head]
+        for p in ctrl_pts:
+            if p == cur_seg[-1]:
+                segments.extend(get_segments(cur_seg))
+                cur_seg = [p]
+            else:
+                cur_seg.append(p)
+            
+        if len(cur_seg) > 1:
+            segments.extend(get_segments(cur_seg))
     except Exception as e:
         raise Exception(ctrl_pts) from e
 
@@ -106,9 +60,11 @@ def parse_slider(
                 # append line segment
                 if delta > 10:
                     qcq = np.array(q) - np.array(qc)
-                    u = qcq / np.linalg.norm(qcq) * delta
-                    q = np.array(q) + u
-                    segments.append(LineSegment(tuple(q.round().astype(int).tolist())))
+                    qcq_len = np.linalg.norm(qcq)
+                    if qcq_len > .1:
+                        u = qcq / qcq_len * delta
+                        q = np.array(q) + u
+                        segments.append(LineSegment(tuple(q.round().astype(int).tolist())))
 
     elif length < path_length:
         while path_length - length >= seg_lens[-1]:
@@ -140,27 +96,6 @@ def parse_slider(
 
     return BezierSlider(*slider_args, head, segments)
 
-def parse_bezier(ctrl_pts: list[Coordinate]) -> tuple[Coordinate, list[BezierSegment]]:
-    """
-    approximates arbitrary poly-beziers as poly-beziers of order 1 (line) or order 3 (cubic)
-    """
-    assert len(ctrl_pts) >= 2
-
-    segments = []
-    head, *ctrl_pts = ctrl_pts
-    
-    cur_seg = [head]
-    for p in ctrl_pts:
-        if p == cur_seg[-1]:
-            segments.extend(get_segments(cur_seg))
-            cur_seg = [p]
-        else:
-            cur_seg.append(p)
-        
-    if len(cur_seg) > 1:
-        segments.extend(get_segments(cur_seg))
-
-    return head, segments
     
 def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
     if len(cur_seg) < 2:
@@ -203,3 +138,64 @@ def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
             for cubic in poly_cubic
             for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
         ]
+    
+
+Vec2 = Float[np.ndarray, "2"]
+
+def sample_bezier_slider(ctrl_pts_list: list[Coordinate], length: float):
+
+    ctrl_pts: list[Vec2] = [ np.array(pt) for pt in ctrl_pts_list ]
+
+    # split control points at repeat points
+    ctrl_curves: list[list[Vec2]] = []
+    last_idx = 0
+    for i,p in enumerate(ctrl_pts[1:]):
+        if (ctrl_pts[i] == p).all():
+            ctrl_curves.append(ctrl_pts[last_idx:i+1])
+            last_idx = i+1
+    ctrl_curves.append(ctrl_pts[last_idx:])
+
+    path_length = 0
+    curves: list[BezierCurve] = []
+    for c in ctrl_curves:
+        if len(c) < 2:
+            # invalid bezier curve spec
+            continue
+
+        curve = BezierCurve(np.array(c).T)
+        path_length += curve.length
+        curves.append(curve)
+
+    # reparametrize based on length
+    if length > path_length:
+        # longer than defined, extend in a straight line
+
+        # end of bezier curve is tangent to last segment in control points
+        last_curve_nodes = curves[-1].p
+        p = last_curve_nodes[:, -1]
+        v = p - last_curve_nodes[:, -2]
+
+        nodes = np.array([p, p + v / np.linalg.norm(v) * (length - path_length)])
+        curves.append(BezierCurve(nodes.T))
+        ctrl_pts.extend(nodes)
+    else:
+        # shorter than defined, shorten last segment
+        while path_length - length >= curves[-1].length:
+            # slider doesn't reach last segment - shouldn't happen via editor, but possible to encode
+            path_length -= curves.pop().length
+        curves[-1], _ = curves[-1].split_at( 1 - (path_length - length) / curves[-1].length )
+
+        # recompute control points
+        ctrl_pts = [ p for curve in curves for p in curve.p.T ]
+        
+    cum_t = np.cumsum([ c.length for c in curves ])
+    length = cum_t[-1]
+    ts = np.linspace(0, length, int(max(4, length//5)))
+    idxs = np.searchsorted(cum_t, ts)
+    range_start = np.insert(cum_t, 0, 0)[idxs]
+    rts = (ts - range_start) / (cum_t[idxs] - range_start)
+
+    return np.stack([
+        curves[idx].at(np.array([t]))[:,0]
+        for idx, t in zip(idxs, rts)
+    ], axis=0), ts / length

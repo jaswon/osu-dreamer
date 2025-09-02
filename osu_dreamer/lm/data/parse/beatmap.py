@@ -2,8 +2,8 @@
 from dataclasses import dataclass, asdict
 
 from ..timed import *
-from .parse_file import OsuFile
-from .parse_slider import parse_slider
+from .file import OsuFile
+from .slider.slider import parse_slider
 from .template import map_template, Metadata
 
 @dataclass
