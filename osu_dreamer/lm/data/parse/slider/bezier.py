@@ -84,29 +84,34 @@ def parse_bezier(
 
         delta = path_length - length
         seg_len = seg_lens[-1]
-        p = np.array(heads[-1])
-        match segments[-1]:
-            case LineSegment(q):
-                # shorten line segment
-                pq = np.array(q) - p
-                pq = pq / seg_len * (seg_len - delta)
-                q = p + pq
-                segments[-1].q = tuple(q.round().astype(int).tolist())
-            case QuadraticSegment(q,c):
-                # split quadratic segment
-                cubic = BezierCurve(np.array([p,c,q]).T)
-                split, _ = cubic.split_at_length(1-delta/seg_len)
-                _,c,q = split.p.T
-                segments[-1].q = tuple(q.round().astype(int).tolist())
-                segments[-1].c = tuple(c.round().astype(int).tolist())
-            case CubicSegment(q,c1,c2):
-                # split cubic segment
-                cubic = BezierCurve(np.array([p,c1,c2,q]).T)
-                split, _ = cubic.split_at_length(1-delta/seg_len)
-                _,pc,qc,q = split.p.T
-                segments[-1].q = tuple(q.round().astype(int).tolist())
-                segments[-1].pc = tuple(pc.round().astype(int).tolist())
-                segments[-1].qc = tuple(qc.round().astype(int).tolist())
+
+        if seg_len - delta < 10:
+            # shortening last segment results in a small segment, just remove
+            segments.pop()
+        else:
+            p = np.array(heads[-1])
+            match segments[-1]:
+                case LineSegment(q):
+                    # shorten line segment
+                    pq = np.array(q) - p
+                    pq = pq / seg_len * (seg_len - delta)
+                    q = p + pq
+                    segments[-1].q = tuple(q.round().astype(int).tolist())
+                case QuadraticSegment(q,c):
+                    # split quadratic segment
+                    cubic = BezierCurve(np.array([p,c,q]).T)
+                    split, _ = cubic.split_at_length(1-delta/seg_len)
+                    _,c,q = split.p.T
+                    segments[-1].q = tuple(q.round().astype(int).tolist())
+                    segments[-1].c = tuple(c.round().astype(int).tolist())
+                case CubicSegment(q,c1,c2):
+                    # split cubic segment
+                    cubic = BezierCurve(np.array([p,c1,c2,q]).T)
+                    split, _ = cubic.split_at_length(1-delta/seg_len)
+                    _,pc,qc,q = split.p.T
+                    segments[-1].q = tuple(q.round().astype(int).tolist())
+                    segments[-1].pc = tuple(pc.round().astype(int).tolist())
+                    segments[-1].qc = tuple(qc.round().astype(int).tolist())
 
     # check for lines/polylines
     if all(isinstance(seg, LineSegment) for seg in segments):
