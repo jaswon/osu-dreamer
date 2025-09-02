@@ -143,7 +143,17 @@ def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
         return [QuadraticSegment(q,c)]
     elif len(cur_seg) == 4:
         # bezier
-        _,c1,c2,q = cur_seg
+        p,c1,c2,q = cur_seg
+
+        # check for degenerate
+        if np.linalg.norm(np.array(q) - np.array(p)) < .1:
+            curve = BezierCurve(np.array([p,c1,c2,q]).T)
+            return [
+                CubicSegment(q,c1,c2)
+                for cubic in curve.split_at_length(.5)
+                for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
+            ]
+
         return [CubicSegment(q,c1,c2)]
     else:
         # higher order - reduce
@@ -154,7 +164,11 @@ def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
         
         return [
             CubicSegment(q,c1,c2)
-            for cubic in poly_cubic
+            for curve in poly_cubic
+            for cubic in ( # check for degenerate
+                curve.split_at_length(.5) 
+                if np.linalg.norm(curve.p[:,0] - curve.p[:,-1]) < .1 
+                else [curve]
+            )
             for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
         ]
-    
