@@ -68,5 +68,9 @@ def parse_slider(
             # double back slider - repeat middle control point
             ctrl_pts.insert(1, ctrl_pts[1])  # [A,B,B,C]
     
-    # bezier
+
+    if curve_type == "L" and len(ctrl_pts) > 2:
+        # polyline
+        ctrl_pts = [ p for pq in zip(ctrl_pts[:-1], ctrl_pts[1:]) for p in pq ]
+
     return parse_bezier(slider_args, ctrl_pts, length)
