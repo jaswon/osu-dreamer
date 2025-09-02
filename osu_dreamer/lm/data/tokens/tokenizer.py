@@ -64,9 +64,10 @@ class Tokenizer:
         yield Token(TokenType.RELEASE)
 
     def _tokenize_deviation(self, d: float) -> Iterator[Token]:
-        assert -np.pi < d < np.pi, d
-        b = 1+int(abs(d)*self.config.DEVIATION_BINS/np.pi)
-        yield Token(TokenType.DEVIATION, b if d > 0 else -b)
+        assert -np.pi <= d <= np.pi, d
+        if d == np.pi: d = -np.pi
+        deviation_bin = round( (d+np.pi)/2/np.pi * self.config.DEVIATION_BINS ) % self.config.DEVIATION_BINS
+        yield Token(TokenType.DEVIATION, deviation_bin)
     
     def _tokenize_hit_object(self, event: HitObject) -> Iterator[Token]:
         if event.new_combo: yield Token(TokenType.NEW_COMBO)

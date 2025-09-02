@@ -74,6 +74,8 @@ class VocabConfig:
     
 
 def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
+
+    assert config.DEVIATION_BINS % 2 == 0
     
     coarse_x_bin_size, rem = divmod(config.x_max - config.x_min, config.coarse_x_bins)
     assert rem == 0
@@ -105,8 +107,7 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
         Token(TokenType.QUADRATIC),
         *[ Token(TokenType.SLIDES,i) for i in range(config.SLIDES_BINS) ],
         *[
-            Token(TokenType.DEVIATION,sgn*(1+s))
-            for sgn in [-1, 1]
+            Token(TokenType.DEVIATION,s)
             for s in range(config.DEVIATION_BINS)
         ],
         *[

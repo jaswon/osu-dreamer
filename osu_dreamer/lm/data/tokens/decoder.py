@@ -97,8 +97,7 @@ class Decoder:
     
     def parse_deviation(self) -> float:
         deviation_bin = self.parse_token_value(TokenType.DEVIATION)
-        deviation = (abs(deviation_bin) - 1) * np.pi / self.config.DEVIATION_BINS
-        return deviation if deviation_bin > 0 else -deviation
+        return deviation_bin * 2*np.pi / self.config.DEVIATION_BINS - np.pi
         
     def parse_hit_object(self) -> Timed:
         new_combo, whistle, finish, clap = False, False, False, False
