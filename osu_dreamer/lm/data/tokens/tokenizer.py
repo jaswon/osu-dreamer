@@ -90,24 +90,51 @@ class Tokenizer:
                         yield from self._tokenize_coordinate(event.tail)
                         yield from self._tokenize_deviation(event.deviation)
 
+                    case PolyLineSlider(vertices=vertices):
+                        yield Token(TokenType.POLYLINE)
+                        for v in vertices:
+                            yield from self._tokenize_coordinate(v)
+
                     case BezierSlider():
                         yield Token(TokenType.BEZIER)
                         head = event.head
                         for seg in event.segments:
-                            if isinstance(seg, LineSegment):
-                                yield Token(TokenType.LINE)
-                                yield from self._tokenize_coordinate(seg.q)
-                            else:
-                                try:
-                                    yield from self._tokenize_cubic_segment(head, seg)
-                                except Exception as e:
-                                    raise Exception((head, seg)) from e
+                            try:
+                                match seg:
+                                    case LineSegment():
+                                        yield from self._tokenize_linear_segment(head, seg)
+                                    case QuadraticSegment():
+                                        yield from self._tokenize_quad_segment(head, seg)
+                                    case CubicSegment():
+                                        yield from self._tokenize_cubic_segment(head, seg)
+                            except Exception as e:
+                                raise Exception((head, seg)) from e
                             head = seg.q
+
+    def _tokenize_linear_segment(self, head: Coordinate, seg: LineSegment) -> Iterator[Token]:
+        yield Token(TokenType.LINEAR)
+        yield from self._tokenize_coordinate(seg.q)
+
+    def _tokenize_quad_segment(self, head: Coordinate, seg: QuadraticSegment) -> Iterator[Token]:
+        p, q = np.array(head), np.array(seg.q)
+        v0, v1 = q - p
+        v_len = (v0*v0 + v1*v1) ** .5
+        assert v_len > .1
+
+        c0, c1 = np.array(seg.c) - p
+        c_scale = (c0*c0 + c1*c1) ** .5 / v_len
+        c_dev = float(np.arctan2(v0*c1 - v1*c0, v0*c0 + v1*c1))
+
+        yield Token(TokenType.QUADRATIC)
+        yield from self._tokenize_coordinate(seg.q)
+        yield from self._tokenize_deviation(c_dev)
+        yield from self._tokenize_magnitude(c_scale)
 
     def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Iterator[Token]:
         p, q = np.array(head), np.array(seg.q)
         v0, v1 = q - p
         v_len = (v0*v0 + v1*v1) ** .5
+        assert v_len > .1
 
         pc0, pc1 = np.array(seg.pc) - p
         pc_scale = (pc0*pc0 + pc1*pc1) ** .5 / v_len

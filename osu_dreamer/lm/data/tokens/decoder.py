@@ -27,6 +27,13 @@ class Decoder:
     
     def push_back(self, tok: Token):
         self.push_back_stack.append(tok)
+
+    def parse_token(self, T: TokenType):
+        match self.next_token():
+            case Token(typ) if typ is T:
+                return
+            case _ as tok:
+                raise self.UnexpectedToken(tok)
     
     def parse_token_value(self, T: TokenType):
         match self.next_token():
@@ -38,19 +45,19 @@ class Decoder:
     def parse_beatmap_events(self) -> BeatmapEvents:
         events: list[tuple[int, Timed]] = []
         self.t = 0
-        try:
-            while True:
-                self.parse_time_shift()
-                obj_time = self.t
-                match self.next_token():
-                    case Token(TokenType.BREAK):
-                        timed = Break(self.parse_duration())
-                    case _ as tok:
-                        self.push_back(tok)
-                        timed = self.parse_hit_object()
-                events.append((obj_time, timed))
-        except StopIteration:
-            return BeatmapEvents(events)
+        self.parse_token(TokenType.BOS)
+        while True:
+            self.parse_time_shift()
+            obj_time = self.t
+            match self.next_token():
+                case Token(TokenType.EOS):
+                    return BeatmapEvents(events)
+                case Token(TokenType.BREAK):
+                    timed = Break(self.parse_duration())
+                case _ as tok:
+                    self.push_back(tok)
+                    timed = self.parse_hit_object()
+            events.append((obj_time, timed))
     
     def parse_coordinate(self) -> tuple[int, int]:
         coarse_x_bin, coarse_y_bin = self.parse_token_value(TokenType.POS_COARSE)
@@ -85,11 +92,7 @@ class Decoder:
     
     def parse_duration(self) -> int:
         time_shift = self.parse_time_shift()
-        match self.next_token():
-            case Token(TokenType.RELEASE):
-                pass
-            case _ as tok:
-                raise self.UnexpectedToken(tok)
+        self.parse_token(TokenType.RELEASE)
         return time_shift
     
     def parse_deviation(self) -> float:
@@ -118,6 +121,7 @@ class Decoder:
                 return HitCircle(*hit_object_args, self.parse_coordinate())
             case Token(TokenType.SLIDER):
                 dur = self.parse_duration()
+                assert dur > 0
                 slides: int = self.parse_token_value(TokenType.SLIDES)
                 head = self.parse_coordinate()
                 slider_args = *hit_object_args, dur, slides, head
@@ -126,13 +130,24 @@ class Decoder:
                         tail = self.parse_coordinate()
                         deviation = self.parse_deviation()
                         return PerfectSlider(*slider_args, tail, deviation)
+                    case Token(TokenType.POLYLINE):
+                        vertices = []
+                        while True:
+                            try:
+                                vertices.append(self.parse_coordinate())
+                            except self.UnexpectedToken as e:
+                                self.push_back(e.args[0])
+                                break
+                        return PolyLineSlider(*slider_args, vertices)
                     case Token(TokenType.BEZIER):
                         segments: list[BezierSegment] = []
                         p = head
                         while True:
                             match self.next_token():
-                                case Token(TokenType.LINE):
+                                case Token(TokenType.LINEAR):
                                     segments.append(LineSegment(self.parse_coordinate()))
+                                case Token(TokenType.QUADRATIC):
+                                    segments.append(self.parse_quadratic_segment(p))
                                 case Token(TokenType.CUBIC):
                                     segments.append(self.parse_cubic_segment(p))
                                 case _ as tok:
@@ -144,6 +159,23 @@ class Decoder:
                         raise self.UnexpectedToken(tok)
             case _ as tok:
                 raise self.UnexpectedToken(tok)
+            
+    def parse_quadratic_segment(self, head: Coordinate) -> QuadraticSegment:
+
+        tail = self.parse_coordinate()
+        c_dev = self.parse_deviation()
+        c_scale = self.parse_magnitude()
+
+        p, q = np.array(head), np.array(tail)
+        v = q - p
+        u = np.array([-v[1], v[0]])
+
+        c = p + c_scale * (v*np.cos(c_dev) + u*np.sin(c_dev))
+
+        return QuadraticSegment(
+            q = tuple(q.round().astype(int).tolist()),
+            c = tuple(c.round().astype(int).tolist()),
+        )
             
     def parse_cubic_segment(self, head: Coordinate) -> CubicSegment:
 
@@ -161,9 +193,9 @@ class Decoder:
         qc = q - qc_scale * (v*np.cos(qc_dev) + u*np.sin(qc_dev))
 
         return CubicSegment(
+            q = tuple(q.round().astype(int).tolist()),
             pc = tuple(pc.round().astype(int).tolist()),
             qc = tuple(qc.round().astype(int).tolist()),
-            q = tuple(q.round().astype(int).tolist()),
         )
 
     def parse_magnitude(self) -> float:

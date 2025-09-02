@@ -100,8 +100,9 @@ def from_beatmap(cfg: OsuFile) -> tuple[BeatmapEvents, BeatmapDifficulty, Metada
             cur_beat_len = v.ms
         elif isinstance(v, SliderVel):
             cur_slider_vel = v.vel
-        elif isinstance(v, (PerfectSlider, BezierSlider)):
-            slide_duration = v.length() / (cur_slider_vel * 100) * cur_beat_len
+        elif isinstance(v, Slider):
+            # (negative of) visual length of sliders is temporarily stored in duration 
+            slide_duration = -v.duration / (cur_slider_vel * 100) * cur_beat_len
             v.duration = round(v.slides * slide_duration)
 
     # remove timing points
@@ -166,41 +167,55 @@ def to_beatmap(
                 slider_vels.append(v.vel())
 
                 typ = 1 << 1
+                x, y = v.head
 
-                if isinstance(v, PerfectSlider):
-                    x, y = v.head
-                    qx, qy = v.tail
-                    if v.deviation == 0:
-                        # straight line
-                        curve = f"L|{qx}:{qy}"
-                    else:
-                        cx, cy = v.get_control_point()
-                        curve = f"P|{cx}:{cy}|{qx}:{qy}"
-                elif isinstance(v, BezierSlider):
-                    # first point is encoded separately as x0,y0
-                    x, y = v.head
+                match v:
+                    case PerfectSlider():
+                        qx, qy = v.tail
+                        if v.deviation == 0:
+                            # straight line
+                            curve = f"L|{qx}:{qy}"
+                        else:
+                            cx, cy = v.get_control_point()
+                            curve = f"P|{cx}:{cy}|{qx}:{qy}"
 
-                    # check if single line
-                    if len(v.segments) == 1 and isinstance(v.segments[0], LineSegment):
-                        qx, qy = v.segments[0].q
-                        curve = f"L|{qx}:{qy}"
-                    else:
-                        pts = []
-                        last_q = None
-                        for seg in v.segments:
-                            if last_q is not None:
-                                pts.append(last_q)
-                            last_q = seg.q
+                    case PolyLineSlider(vertices=vertices):
+                        if len(vertices) == 1:
+                            # single line
+                            qx, qy = vertices[0]
+                            curve = f"L|{qx}:{qy}"
+                        else:
+                            # poly line
+                            pts = [ f"{x}:{y}" for x,y in vertices for _ in range(2) ]
+                            curve = "|".join(["B"] + pts[:-1])
 
-                            if isinstance(seg, LineSegment):
-                                pts.append(seg.q)
-                            elif isinstance(seg, CubicSegment):
-                                pts.append(seg.pc)
-                                pts.append(seg.qc)
-                                pts.append(seg.q)
+                    case BezierSlider():
 
-                        rest = "|".join(f"{px}:{py}" for px, py in pts)
-                        curve = f"B|{rest}"
+                        if len(v.segments) == 1 and isinstance(v.segments[0], LineSegment):
+                            # single line
+                            qx, qy = v.segments[0].q
+                            curve = f"L|{qx}:{qy}"
+                        else:
+                            pts = []
+                            last_q = None
+                            for seg in v.segments:
+                                if last_q is not None:
+                                    pts.append(last_q)
+                                last_q = seg.q
+
+                                match seg:
+                                    case LineSegment(q):
+                                        pts.append(q)
+                                    case QuadraticSegment(q,c):
+                                        pts.append(c)
+                                        pts.append(q)
+                                    case CubicSegment(q,c1,c2):
+                                        pts.append(c1)
+                                        pts.append(c2)
+                                        pts.append(q)
+
+                            rest = "|".join(f"{px}:{py}" for px, py in pts)
+                            curve = f"B|{rest}"
 
                 params = [curve, v.slides, v.length()]
 

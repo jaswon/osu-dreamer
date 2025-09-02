@@ -22,8 +22,10 @@ TokenType = CustomReprEnum('TokenType', [
 
     # slider tokens
     'PERFECT',
+    'POLYLINE',
     'BEZIER',
-    'LINE',
+    'LINEAR',
+    'QUADRATIC',
     'CUBIC',
     'SLIDES',
     'DEVIATION',
@@ -67,7 +69,7 @@ class VocabConfig:
     DEVIATION_BINS: int = 64
 
     MAGNITUDE_BINS: int = 64
-    MIN_MAGNITUDE: float = .05
+    MIN_MAGNITUDE: float = .01
     MAX_MAGNITUDE: float = 50.
     
 
@@ -96,9 +98,11 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
 
         # slider tokens
         Token(TokenType.PERFECT),
+        Token(TokenType.POLYLINE),
         Token(TokenType.BEZIER),
-        Token(TokenType.LINE),
+        Token(TokenType.LINEAR),
         Token(TokenType.CUBIC),
+        Token(TokenType.QUADRATIC),
         *[ Token(TokenType.SLIDES,i) for i in range(config.SLIDES_BINS) ],
         *[
             Token(TokenType.DEVIATION,sgn*(1+s))

@@ -13,7 +13,7 @@ def parse_slider(
     slides: int,
     length: float,
 ) -> Union[HitCircle, Slider]:
-    slider_args = *hit_object_args, -1, slides
+    slider_args = *hit_object_args, -int(length), slides
     curve_type, *curve_points = raw_curve_spec.split("|")
     ctrl_pts: list[Coordinate] = [(x,y)] + [
         (x,y)
