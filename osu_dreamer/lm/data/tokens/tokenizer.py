@@ -123,38 +123,34 @@ class Tokenizer:
     def _tokenize_quad_segment(self, head: Coordinate, seg: QuadraticSegment) -> Iterator[Token]:
         p, q = np.array(head), np.array(seg.q)
         v0, v1 = q - p
-        v_len = (v0*v0 + v1*v1) ** .5
-        assert v_len > .1
 
         c0, c1 = np.array(seg.c) - p
-        c_scale = (c0*c0 + c1*c1) ** .5 / v_len
+        c_mag = (c0*c0 + c1*c1) ** .5
         c_dev = float(np.arctan2(v0*c1 - v1*c0, v0*c0 + v1*c1))
 
         yield Token(TokenType.QUADRATIC)
         yield from self._tokenize_coordinate(seg.q)
         yield from self._tokenize_deviation(c_dev)
-        yield from self._tokenize_magnitude(c_scale)
+        yield from self._tokenize_magnitude(c_mag)
 
     def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Iterator[Token]:
         p, q = np.array(head), np.array(seg.q)
         v0, v1 = q - p
-        v_len = (v0*v0 + v1*v1) ** .5
-        assert v_len > .1
 
         pc0, pc1 = np.array(seg.pc) - p
-        pc_scale = (pc0*pc0 + pc1*pc1) ** .5 / v_len
+        pc_mag = (pc0*pc0 + pc1*pc1) ** .5
         pc_dev = float(np.arctan2(v0*pc1 - v1*pc0, v0*pc0 + v1*pc1))
         
         qc0, qc1 = q - np.array(seg.qc)
-        qc_scale = (qc0*qc0 + qc1*qc1) ** .5 / v_len
+        qc_mag = (qc0*qc0 + qc1*qc1) ** .5
         qc_dev = float(np.arctan2(v0*qc1 - v1*qc0, v0*qc0 + v1*qc1))
 
         yield Token(TokenType.CUBIC)
         yield from self._tokenize_coordinate(seg.q)
         yield from self._tokenize_deviation(pc_dev)
         yield from self._tokenize_deviation(qc_dev)
-        yield from self._tokenize_magnitude(pc_scale)
-        yield from self._tokenize_magnitude(qc_scale)
+        yield from self._tokenize_magnitude(pc_mag)
+        yield from self._tokenize_magnitude(qc_mag)
 
     def _tokenize_magnitude(self, d: float) -> Iterator[Token]:
         assert self.config.MIN_MAGNITUDE <= d <= self.config.MAX_MAGNITUDE, d

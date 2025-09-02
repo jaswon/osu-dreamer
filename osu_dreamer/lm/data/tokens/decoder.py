@@ -169,7 +169,8 @@ class Decoder:
         v = q - p
         u = np.array([-v[1], v[0]])
 
-        c = p + c_scale * (v*np.cos(c_dev) + u*np.sin(c_dev))
+        d = v*np.cos(c_dev) + u*np.sin(c_dev)
+        c = p + c_scale * d / np.linalg.norm(d)
 
         return QuadraticSegment(
             q = tuple(q.round().astype(int).tolist()),
@@ -188,8 +189,11 @@ class Decoder:
         v = q - p
         u = np.array([-v[1], v[0]])
 
-        pc = p + pc_scale * (v*np.cos(pc_dev) + u*np.sin(pc_dev))
-        qc = q - qc_scale * (v*np.cos(qc_dev) + u*np.sin(qc_dev))
+        pd = v*np.cos(pc_dev) + u*np.sin(pc_dev)
+        qd = v*np.cos(qc_dev) + u*np.sin(qc_dev)
+
+        pc = p + pc_scale * pd / np.linalg.norm(pd)
+        qc = q - qc_scale * qd / np.linalg.norm(qd)
 
         return CubicSegment(
             q = tuple(q.round().astype(int).tolist()),

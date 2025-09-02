@@ -69,8 +69,8 @@ class VocabConfig:
     DEVIATION_BINS: int = 64
 
     MAGNITUDE_BINS: int = 64
-    MIN_MAGNITUDE: float = .01
-    MAX_MAGNITUDE: float = 50.
+    MIN_MAGNITUDE: float = 1.
+    MAX_MAGNITUDE: float = 1000.
     
 
 def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
