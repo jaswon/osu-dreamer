@@ -7,6 +7,8 @@ from torch import Tensor, nn
 
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
+from tqdm import tqdm
+import itertools
 
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
@@ -155,8 +157,9 @@ class Model(pl.LightningModule):
         self,
         audio: Float[Tensor, "A L"],
         map_features: Float[Tensor, "M"],
-        max_len: int = 4096,
+        max_len: int = -1,
         greedy: bool = True,
+        show_progress: bool = False,
     ) -> Int[Tensor, "1 N"]:
         self.eval()
 
@@ -169,6 +172,7 @@ class Model(pl.LightningModule):
         global_ctx = self.global_encoder(audio_features)
         multiscale_features = self.ctx_encoder.precompute(audio_features)
         frame_times = th.tensor(get_frame_times(audio_features.size(-1)), device=audio.device)
+        audio_duration_ms = frame_times[-1].item()
 
         # initialize sequence and time
         token_id = bos_id
@@ -178,43 +182,53 @@ class Model(pl.LightningModule):
         # initialize kv cache
         cache = None
 
-        for _ in range(max_len):
-            # prepare inputs for single-token forward pass
-            token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
-            timestamp_tensor = th.tensor([[current_time_ms]], device=self.device, dtype=th.float32)
+        with tqdm(total=int(audio_duration_ms), desc="sampling", disable=not show_progress) as pbar:
+            for i in itertools.count():
+                if max_len > 0 and i >= max_len:
+                    break
+                
+                if current_time_ms > audio_duration_ms:
+                    break
 
-            # get context for the current token
-            frame_idxs = th.searchsorted(frame_times, timestamp_tensor)
-            multi_scale_ctx = self.ctx_encoder(multiscale_features, frame_idxs)
-            
-            expanded_global_ctx = global_ctx[None, None, ...].expand(1, 1, -1, -1)
-            ctx = th.cat([expanded_global_ctx, multi_scale_ctx], dim=2)
+                # prepare inputs for single-token forward pass
+                token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
+                timestamp_tensor = th.tensor([[current_time_ms]], device=self.device, dtype=th.float32)
 
-            embs = self.token_embed(token_tensor)
+                # get context for the current token
+                frame_idxs = th.searchsorted(frame_times, timestamp_tensor)
+                multi_scale_ctx = self.ctx_encoder(multiscale_features, frame_idxs)
+                
+                expanded_global_ctx = global_ctx[None, None, ...].expand(1, 1, -1, -1)
+                ctx = th.cat([expanded_global_ctx, multi_scale_ctx], dim=2)
 
-            # decode one step
-            output, cache = self.decoder(embs, ctx=ctx, cache=cache)
-            logits = self.token_head(output)
+                embs = self.token_embed(token_tensor)
 
-            # sample next token
-            if greedy:
-                next_token_id = th.argmax(logits, dim=-1).item()
-            else:
-                probs = F.softmax(logits, dim=-1)
-                next_token_id = th.multinomial(probs.squeeze(0), num_samples=1).item()
+                # decode one step
+                output, cache = self.decoder(embs, ctx=ctx, cache=cache)
+                logits = self.token_head(output)
 
-            # stop if EOS
-            if next_token_id == eos_id:
-                break
+                # sample next token
+                if greedy:
+                    next_token_id = th.argmax(logits, dim=-1).item()
+                else:
+                    probs = F.softmax(logits, dim=-1)
+                    next_token_id = th.multinomial(probs.squeeze(0), num_samples=1).item()
 
-            generated_tokens.append(next_token_id)
-            token_id = next_token_id
+                # stop if EOS
+                if next_token_id == eos_id:
+                    break
 
-            # update time
-            token = self.vocab[int(next_token_id)]
-            if token.typ == TokenType.TIME_SHIFT_MS:
-                current_time_ms += token.value
-            elif token.typ == TokenType.TIME_SHIFT_S:
-                current_time_ms += token.value * 1000
+                generated_tokens.append(next_token_id)
+                token_id = next_token_id
+
+                # update time
+                last_time_ms = current_time_ms
+                token = self.vocab[int(next_token_id)]
+                if token.typ == TokenType.TIME_SHIFT_MS:
+                    current_time_ms += token.value
+                elif token.typ == TokenType.TIME_SHIFT_S:
+                    current_time_ms += token.value * 1000
+                
+                pbar.update(current_time_ms - last_time_ms)
         
         return th.tensor([generated_tokens], device=self.device, dtype=th.long)
