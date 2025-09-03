@@ -5,7 +5,7 @@ import numpy as np
 
 from ...timed import *
 from .fit import fit_to_poly_cubic
-from .bezier import parse_bezier
+from .bezier import parse_bezier, to_segments
 
 def parse_slider(
     x: int, y: int,
@@ -76,10 +76,7 @@ def parse_slider(
 
     if curve_type == "C":
         # catmull-rom - just fit bezier to control points
-        return BezierSlider(*slider_args, head=ctrl_pts[0], segments=[
-            CubicSegment(q,c1,c2)
-            for cubic in fit_to_poly_cubic(np.array(ctrl_pts), np.linspace(0, 1, len(ctrl_pts)))
-            for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
-        ])
+        segments = to_segments(fit_to_poly_cubic(np.array(ctrl_pts), np.linspace(0, 1, len(ctrl_pts))))
+        return BezierSlider(*slider_args, head=ctrl_pts[0], segments=segments)
 
     return parse_bezier(slider_args, ctrl_pts, length)

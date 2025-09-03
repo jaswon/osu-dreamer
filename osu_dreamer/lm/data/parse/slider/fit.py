@@ -19,6 +19,9 @@ def fit_to_poly_cubic(
 
     cubic = fit_to_cubic(points, ts)
 
+    if cubic.p.shape[1] < 4:
+        return [cubic]
+
     # find max error
     errs = np.linalg.norm(cubic.at(ts).T - points, axis=1) # L
     max_err_i = errs.argmax()
@@ -65,37 +68,35 @@ def fit_to_cubic(
 
     # If there are only two points, the curve is a straight line.
     if len(points) == 2:
-        # A cubic Bezier represents a line if control points are collinear.
-        # We place P1 and P2 on the line segment P0-P3.
-        p1 = p0 * 2/3 + p3 * 1/3
-        p2 = p0 * 1/3 + p3 * 2/3
-        return BezierCurve(np.stack([p0, p1, p2, p3], axis=1))
+        return BezierCurve(np.stack([p0, p3], axis=1))
 
     # If there are three points, fit a quadratic and elevate degree.
     if len(points) == 3:
         d1 = points[1]
         t1 = ts[1]
 
+        # check for collinearity
+        v1 = d1 - p0
+        v2 = p3 - p0
+        
+        v1_norm = np.linalg.norm(v1)
+        v2_norm = np.linalg.norm(v2)
+
+        # if points are collinear or coincident, return a straight line
+        # this avoids division by zero and degenerate cubics
+        if v1_norm < 1e-6 or v2_norm < 1e-6 or \
+           (v1_norm * v2_norm > 1e-9 and np.abs(v1[0] * v2[1] - v1[1] * v2[0]) / (v1_norm * v2_norm) < 1e-6):
+            return BezierCurve(np.stack([p0, p3], axis=1))
+
         # Solve for the middle control point of a quadratic Bezier
         # Q(t) = (1-t)^2*p0 + 2t(1-t)*q1 + t^2*p3
         # such that Q(t1) = d1
-        q1_num = d1 - (1 - t1)**2 * p0 - t1**2 * p3
-        q1_den = 2 * t1 * (1 - t1)
+        c_num = d1 - (1 - t1)**2 * p0 - t1**2 * p3
+        c_den = 2 * t1 * (1 - t1)
         
-        # Avoid division by zero if t1 is 0 or 1, though this shouldn't happen
-        # with normalized ts in a 3-point segment.
-        if q1_den == 0:
-            p1 = p0 * 2/3 + p3 * 1/3
-            p2 = p0 * 1/3 + p3 * 2/3
-            return BezierCurve(np.stack([p0, p1, p2, p3], axis=1))
-
-        q1 = q1_num / q1_den
-
-        # Degree-elevate the quadratic to a cubic
-        p1 = (1/3) * p0 + (2/3) * q1
-        p2 = (2/3) * q1 + (1/3) * p3
+        c = c_num / c_den
         
-        return BezierCurve(np.stack([p0, p1, p2, p3], axis=1))
+        return BezierCurve(np.stack([p0, c, p3], axis=1))
 
     # For more than three points, we set up a linear least squares problem.
     # A cubic Bezier is C(t) = B0(t)P0 + B1(t)P1 + B2(t)P2 + B3(t)P3,
@@ -124,8 +125,7 @@ def fit_to_cubic(
         p1, p2 = np.linalg.lstsq(A, residual_points, rcond=None)[0]
     except np.linalg.LinAlgError:
         # Default to a straight line.
-        p1 = p0 * 2/3 + p3 * 1/3
-        p2 = p0 * 1/3 + p3 * 2/3
+        return BezierCurve(np.stack([p0, p3], axis=1))
     
     # check for degenerate cubic
     if np.linalg.norm(p1-p0) < 2:
@@ -135,9 +135,7 @@ def fit_to_cubic(
     else:
         return BezierCurve(np.stack([p0, p1, p2, p3], axis=1))
 
-    p1 = p0 + (c-p0) * 2/3
-    p2 = p3 + (c-p3) * 2/3
-    return BezierCurve(np.stack([p0, p1, p2, p3], axis=1))
+    return BezierCurve(np.stack([p0, c, p3], axis=1))
 
 def sample_bezier_slider(
     segments: list[list[Coordinate]],

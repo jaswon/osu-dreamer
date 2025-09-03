@@ -9,8 +9,7 @@ def reduce_to_poly_cubic(
 ) -> list[BezierCurve]:
     """reduces a high-order Bezier curve to a cubic poly-Bezier curve"""
 
-    assert curve.degree >= 4
-    if curve.degree == 4:
+    if curve.degree <= 4:
         return [curve]
     
     cubic = reduce_to_cubic(curve)
@@ -72,7 +71,4 @@ def reduce_to_cubic(curve: BezierCurve) -> BezierCurve:
     else:
         return BezierCurve(np.array([q0,q1,q2,q3]).T)
 
-    q1 = q0 + (c-q0) * 2/3
-    q2 = q3 + (c-q3) * 2/3
-
-    return BezierCurve(np.array([q0,q1,q2,q3]).T)
+    return BezierCurve(np.array([q0,c,q3]).T)

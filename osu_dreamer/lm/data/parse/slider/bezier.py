@@ -1,9 +1,28 @@
 
+from typing import Sequence
 from osu_dreamer.osu.bezier import BezierCurve
 
 from ...timed import *
 from .reduce import reduce_to_poly_cubic
 from .fit import sample_bezier_slider, fit_to_poly_cubic
+
+def to_segments(curves: Sequence[BezierCurve]) -> list[BezierSegment]:
+    segments = []
+    for curve in curves:
+        for curve in ( # check for degenerate
+            curve.split_at_length(.5) 
+            if np.linalg.norm(curve.p[:,0] - curve.p[:,-1]) < .1 
+            else [curve]
+        ):
+            ctrls = list(map(tuple,curve.p.T.round().astype(int).tolist()))
+            if len(ctrls) == 2:
+                segments.append(LineSegment(ctrls[1]))
+            elif len(ctrls) == 3:
+                segments.append(QuadraticSegment(c=ctrls[1], q=ctrls[2]))
+            else:
+                segments.append(CubicSegment(pc=ctrls[1], qc=ctrls[2], q=ctrls[3]))
+    return segments
+
 
 def parse_bezier(
     slider_args: tuple[bool, bool, bool, bool, int, int], 
@@ -31,11 +50,7 @@ def parse_bezier(
     if len(ctrl_curves) > 6:
         # fit poly-cubic to interpolated points
         ps, ts = sample_bezier_slider(ctrl_curves, length)
-        return BezierSlider(*slider_args, head=head, segments=[
-            CubicSegment(q,c1,c2)
-            for cubic in fit_to_poly_cubic(ps, ts)
-            for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
-        ])
+        return BezierSlider(*slider_args, head=head, segments=to_segments(fit_to_poly_cubic(ps, ts)))
     
     # parse and reduce to poly-cubic
     segments = [ seg for curve in ctrl_curves for seg in get_segments(curve) ]
@@ -147,11 +162,7 @@ def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
         # check for degenerate
         if np.linalg.norm(np.array(q) - np.array(p)) < .1:
             curve = BezierCurve(np.array([p,c1,c2,q]).T)
-            return [
-                CubicSegment(q,c1,c2)
-                for cubic in curve.split_at_length(.5)
-                for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
-            ]
+            return to_segments(curve.split_at_length(.5))
 
         return [CubicSegment(q,c1,c2)]
     else:
@@ -161,13 +172,4 @@ def get_segments(cur_seg: list[Coordinate]) -> list[BezierSegment]:
         except Exception as e:
             raise Exception(cur_seg) from e
         
-        return [
-            CubicSegment(q,c1,c2)
-            for curve in poly_cubic
-            for cubic in ( # check for degenerate
-                curve.split_at_length(.5) 
-                if np.linalg.norm(curve.p[:,0] - curve.p[:,-1]) < .1 
-                else [curve]
-            )
-            for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
-        ]
+        return to_segments(poly_cubic)
