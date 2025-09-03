@@ -1,4 +1,3 @@
-
 from typing import Optional
 from collections.abc import Sequence
 
@@ -11,29 +10,26 @@ import torch as th
 import click
 
 from osu_dreamer.data.load_audio import load_audio
-from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
+from osu_dreamer.lm.model import Model
+from osu_dreamer.lm.data.parse.beatmap import to_beatmap, BeatmapDifficulty, Metadata
 
-from osu_dreamer.diffusion_model.model import Model
-    
 
 file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 
 @click.command()
 @click.option('--model-path',   type=file_option_type, required=True, help='trained model (.ckpt)')
 @click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
-@click.option('--diff',         type=(float, float, float, float, float), multiple=True, help='difficulty conditioning (sr, ar, od, cs, hp)')
-@click.option('--sample-steps', type=int, default=32, help='number of diffusion steps to sample')
+@click.option('--diff',         type=(float, float, float, float, float), multiple=True, help='difficulty attributes (hp,cs,od,ar,slider tick rate)')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
 @click.option('--artist',       type=str, help='Song artist - required if it cannot be determined from the audio metadata')
 def predict(
     model_path: Path,
     audio_file: Path,
     diff: Sequence[tuple[float, float, float, float, float]],
-    sample_steps: int,
     title: Optional[str],
     artist: Optional[str],
 ):
-    """generate osu!std maps from raw audio."""
+    """generate osu!std maps from raw audio using the language model."""
     
     # read metadata from audio file
     # ======
@@ -65,18 +61,32 @@ def predict(
     # ======
     dev = next(model.parameters()).device
     audio = th.tensor(load_audio(audio_file), device=dev).float()
-    labels = th.tensor(diff, device=dev)
     
     # generate maps
     # ======
-    with th.no_grad():
-        pred_signals = model.sample(
-            audio, labels,
-            num_steps=sample_steps, 
-            show_progress=True,
+    maps = []
+    for i, d in enumerate(diff):
+        print(f"generating map for difficulty {i+1}/{len(diff)}")
+        map_features = th.tensor(d, device=dev).float()
+        
+        with th.no_grad():
+            token_ids = model.sample(
+                audio, map_features,
+                max_len=-1,
+                greedy=False,
+                show_progress=True,
+            )
+
+        map_events = model.T.decode(token_ids[0].tolist())
+        map_diff = BeatmapDifficulty(
+            hp_drain_rate=d[0],
+            circle_size=d[1],
+            overall_difficulty=d[2],
+            approach_rate=d[3],
+            slider_tick_rate=d[4],
         )
-        pred_signals = pred_signals.cpu().numpy()
-        labels = labels.cpu().numpy()
+
+        maps.append((map_events, map_diff))
 
     # package mapset
     # ======
@@ -90,12 +100,12 @@ def predict(
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
         
-        for i, (label, pred_signal) in enumerate(zip(labels, pred_signals)):
+        for i, (map_events, map_diff) in enumerate(maps):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
-                decode_beatmap(
+                to_beatmap(
+                    map_events, map_diff, 
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    label, pred_signal,
                 ),
             )
     
