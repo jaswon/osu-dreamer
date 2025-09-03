@@ -31,10 +31,9 @@ def parse_bezier(
     if len(ctrl_curves) > 6:
         # fit poly-cubic to interpolated points
         ps, ts = sample_bezier_slider(ctrl_curves, length)
-        poly_cubic = fit_to_poly_cubic(ps, ts)
         return BezierSlider(*slider_args, head=head, segments=[
             CubicSegment(q,c1,c2)
-            for cubic in poly_cubic
+            for cubic in fit_to_poly_cubic(ps, ts)
             for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
         ])
     

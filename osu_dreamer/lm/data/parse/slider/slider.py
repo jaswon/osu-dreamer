@@ -4,6 +4,7 @@ from typing import Union
 import numpy as np
 
 from ...timed import *
+from .fit import fit_to_poly_cubic
 from .bezier import parse_bezier
 
 def parse_slider(
@@ -72,5 +73,13 @@ def parse_slider(
     if curve_type == "L" and len(ctrl_pts) > 2:
         # polyline
         ctrl_pts = [ p for pq in zip(ctrl_pts[:-1], ctrl_pts[1:]) for p in pq ]
+
+    if curve_type == "C":
+        # catmull-rom - just fit bezier to control points
+        return BezierSlider(*slider_args, head=ctrl_pts[0], segments=[
+            CubicSegment(q,c1,c2)
+            for cubic in fit_to_poly_cubic(np.array(ctrl_pts), np.linspace(0, 1, len(ctrl_pts)))
+            for _,c1,c2,q in [list(map(tuple,cubic.p.T.round().astype(int).tolist()))]
+        ])
 
     return parse_bezier(slider_args, ctrl_pts, length)
