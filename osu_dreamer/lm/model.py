@@ -10,6 +10,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 import itertools
 
+from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 from osu_dreamer.data.load_audio import get_frame_times
@@ -50,8 +51,8 @@ class Model(pl.LightningModule):
         self.lr_schedule = make_lr_schedule(schedule_args)
         
         # model components
-        self.vocab = make_vocab(vocab_config)
-        vocab_size = len(self.vocab)
+        self.T = Tokenizer(vocab_config)
+        vocab_size = len(self.T.id_to_token)
         self.token_embed = nn.Embedding(vocab_size, emb_dim)
         self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
         self.token_head = nn.Linear(emb_dim, vocab_size)
@@ -112,7 +113,7 @@ class Model(pl.LightningModule):
         # On the first validation batch of every epoch, generate a sample
         if batch_idx == 0 and self.global_rank == 0:
             generated_token_ids = self.sample(batch.audio, batch.map_features, max_len=512)
-            generated_tokens = [ self.vocab[int(i.item())] for i in generated_token_ids[0] ]
+            generated_tokens = [ self.T.id_to_token[int(i.item())] for i in generated_token_ids[0] ]
 
             exp: SummaryWriter = self.logger.experiment # type: ignore
             sample_text = '\n'.join([ str(event) for event in generated_tokens ])
@@ -163,7 +164,7 @@ class Model(pl.LightningModule):
     ) -> Int[Tensor, "1 N"]:
         self.eval()
 
-        token_to_id = {t: i for i, t in enumerate(self.vocab)}
+        token_to_id = {t: i for i, t in enumerate(self.T.id_to_token)}
         bos_id = token_to_id[Token(TokenType.BOS)]
         eos_id = token_to_id[Token(TokenType.EOS)]
 
@@ -223,7 +224,7 @@ class Model(pl.LightningModule):
 
                 # update time
                 last_time_ms = current_time_ms
-                token = self.vocab[int(next_token_id)]
+                token = self.T.id_to_token[int(next_token_id)]
                 if token.typ == TokenType.TIME_SHIFT_MS:
                     current_time_ms += token.value
                 elif token.typ == TokenType.TIME_SHIFT_S:
