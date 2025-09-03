@@ -70,5 +70,8 @@ def reduce_to_cubic(curve: BezierCurve) -> BezierCurve:
         c = q1
     else:
         return BezierCurve(np.array([q0,q1,q2,q3]).T)
+    
+    if np.linalg.norm(c-q0) < 2 or np.linalg.norm(c-q3) < 2:
+        return BezierCurve(np.array([q0,q3]).T)
 
     return BezierCurve(np.array([q0,c,q3]).T)
