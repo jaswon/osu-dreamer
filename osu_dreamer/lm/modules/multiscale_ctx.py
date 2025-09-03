@@ -12,7 +12,7 @@ class MultiScaleEncoder(nn.Module):
         self.out = nn.Linear(in_dim, out_dim)
 
         last_w = 1
-        self.convs = nn.ModuleList([ nn.Identity() ])
+        self.convs = nn.ModuleList()
         for r_past, r_future in r[:-1]:
             w = 1+r_past+r_future
             self.convs.append(nn.Sequential(
@@ -23,28 +23,30 @@ class MultiScaleEncoder(nn.Module):
             last_w *= w
 
     def precompute(self, x: Float[Tensor, "1 D L"]) -> list[Float[Tensor, "1 D L"]]:
-        features = [x]
+        features = [x,x]
         for conv in self.convs:
-            x = conv(x)
-            features.append(x)
+            features.append(conv(features[-1]))
         return features
 
     def forward(
-        self, 
-        features: list[Float[Tensor, "1 iD L"]], 
+        self,
+        features: list[Float[Tensor, "1 iD L"]],
         positions: Int[Tensor, "B N"],
     ) -> Float[Tensor, "B N T oD"]:
+        assert len(features) == len(self.r) + 1
 
-        ctx = [ features[0].transpose(1,2)[0, positions[:,:,None]] ] # B N 1 D
+        L = features[0].size(-1)
+        ctx = []
         stride = 1
-        L = features[0].shape[2]
-        for i, (r_past, r_future) in enumerate(self.r):
-            x_conv = features[i+1]
-            w = th.cat([ -1-th.arange(r_past), 1+th.arange(r_future) ], dim=0)
-            p = positions[:,:,None] + stride * w.to(positions.device)[None,None,:] # B N W
-            ctx_p = x_conv.transpose(1,2)[0, th.clamp(p, 0, L - 1)]
-            ctx_p[(p<0) | (p>=L)] = 0
-            ctx.append(ctx_p) # B N W D
-            stride *= 1+r_past+r_future
+        for x_conv, r in zip(features, [None] + self.r):
+            p = positions[:, :, None]
+            if r is not None:
+                r_past, r_future = r
+                w = th.cat([-1 - th.arange(r_past), 1 + th.arange(r_future)], dim=0)
+                p = p + stride * w.to(positions.device)[None, None, :]  # B N W
+                stride *= 1 + r_past + r_future
+            ctx_p = x_conv.transpose(1, 2).contiguous()[0, th.clamp(p, 0, L - 1)]
+            ctx_p[(p < 0) | (p >= L)] = 0
+            ctx.append(ctx_p)  # B N W D
 
         return self.out(th.cat(ctx, dim=2))
