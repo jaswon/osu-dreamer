@@ -146,8 +146,7 @@ class DecoderLayer(nn.Module):
         cache: tuple[Tensor, Tensor] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
         sa_out, new_cache = self.self_attn(self.norm1(x), cache=cache)
-        x = x + self.dropout(sa_out)
-        
+
         B, N, D = x.shape
         M, C = ctx.shape[2], ctx.shape[3]
         
@@ -159,6 +158,7 @@ class DecoderLayer(nn.Module):
         cross_attn_out = self.cross_attn(q_reshaped, ctx_reshaped)
         cross_attn_out = cross_attn_out.view(B, N, D)
         
+        x = x + self.dropout(sa_out)
         x = x + self.dropout(cross_attn_out)
         
         x = x + self.dropout(self.ffn(self.norm3(x)))
