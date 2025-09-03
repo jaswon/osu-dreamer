@@ -9,6 +9,8 @@ import numpy as np
 from tqdm import tqdm
 
 from osu_dreamer.lm.data.parse.beatmap import from_beatmap, BeatmapDifficulty, BeatmapEvents
+from osu_dreamer.lm.data.tokens.tokens import VocabConfig
+from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
 from osu_dreamer.lm.data.parse.file import parse_map_file
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.data.load_audio import load_audio
@@ -48,6 +50,7 @@ def generate_data(maps_dir: Path, data_dir: Path, num_workers: int, force: bool)
 def process_mapset(kv: tuple[Path, list[Path]], force: bool):
     mapset_dir, map_files = kv
     audio_map: dict[tuple[Path, Path], list[tuple[tuple[BeatmapEvents, BeatmapDifficulty], Path]]] = {}
+    tokenizer = Tokenizer(VocabConfig())
     for map_file in map_files:
         try:
             with open(map_file, 'r', encoding='utf-8') as f:
@@ -60,6 +63,9 @@ def process_mapset(kv: tuple[Path, list[Path]], force: bool):
                 continue
 
             events, diff, meta = from_beatmap(cfg)
+
+            # try encoding events to fail early on tokenizer errors
+            tokenizer.encode(events)
             
             # account for case-insensitivity
             lc_files = { f.name.lower(): f.name for f in map_file.parent.iterdir() }
