@@ -1,5 +1,5 @@
 from __future__ import annotations
-from jaxtyping import Float, Bool
+from jaxtyping import Float
 
 from dataclasses import dataclass
 
@@ -51,7 +51,6 @@ class SelfAttention(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B N D"], 
-        mask: Bool[Tensor, "N N"] | None = None, 
         cache: tuple[Tensor, Tensor] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
         B, N, _ = x.shape
@@ -75,11 +74,11 @@ class SelfAttention(nn.Module):
             k = th.cat([past_k, k], dim=2)
             v = th.cat([past_v, v], dim=2)
 
-        # during inference with cache, N=1, mask should be None.
-        if cache is not None:
-            mask = None
-        
-        out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=self.dropout if self.training else 0.0)
+        out = F.scaled_dot_product_attention(
+            q, k, v,
+            is_causal=cache is None,
+            dropout_p=self.dropout if self.training else 0.0,
+        )
         
         out = out.transpose(1, 2).contiguous().view(B, N, -1)
         
@@ -144,10 +143,9 @@ class DecoderLayer(nn.Module):
         self, 
         x: Float[Tensor, "B N D"], 
         ctx: Float[Tensor, "B N M C"], 
-        mask: Bool[Tensor, "N N"] | None = None, 
         cache: tuple[Tensor, Tensor] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
-        sa_out, new_cache = self.self_attn(self.norm1(x), mask=mask, cache=cache)
+        sa_out, new_cache = self.self_attn(self.norm1(x), cache=cache)
         x = x + self.dropout(sa_out)
         
         B, N, D = x.shape
@@ -175,21 +173,16 @@ class Decoder(nn.Module):
         args: DecoderArgs,
     ):
         super().__init__()
+        
         if args.checkpoint:
             self.run_block = lambda block, *args: checkpoint(block, *args, use_reentrant=False)
         else:
             self.run_block = lambda block, *args: block(*args)
+
         self.layers = nn.ModuleList([
             DecoderLayer(emb_dim, args.n_heads, args.dropout, ctx_dim)
             for _ in range(args.n_layers)
         ])
-        self.register_buffer('causal_mask', None, persistent=False)
-
-    def get_causal_mask(self, sz: int, device: th.device) -> Tensor:
-        if self.causal_mask is None or self.causal_mask.size(0) < sz or self.causal_mask.device != device:
-            mask = th.triu(th.ones(sz, sz, device=device), diagonal=1).bool()
-            self.causal_mask = mask
-        return self.causal_mask[:sz, :sz]
 
     def forward(
         self,
@@ -197,15 +190,11 @@ class Decoder(nn.Module):
         ctx: Float[Tensor, "B N M C"],
         cache: list[tuple[Tensor, Tensor]] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], list[tuple[Tensor, Tensor]]]:
-        mask = None
-        if cache is None:
-            mask = self.get_causal_mask(embs.size(1), embs.device)
-        
         x = embs
         new_caches = []
         for i, layer in enumerate(self.layers):
             layer_cache = cache[i] if cache is not None else None
-            x, new_layer_cache = self.run_block(layer, x, ctx, mask, layer_cache) # type: ignore
+            x, new_layer_cache = self.run_block(layer, x, ctx, layer_cache) # type: ignore
             new_caches.append(new_layer_cache)
             
         return x, new_caches
