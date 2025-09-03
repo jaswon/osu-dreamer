@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 import pytorch_lightning as pl
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
@@ -105,6 +106,16 @@ class Model(pl.LightningModule):
         return loss
     
     def validation_step(self, batch: Batch, batch_idx: int):
+        
+        # On the first validation batch of every epoch, generate a sample
+        if batch_idx == 0 and self.global_rank == 0:
+            generated_token_ids = self.sample(batch.audio, batch.map_features, max_len=512)
+            generated_tokens = [ self.vocab[int(i.item())] for i in generated_token_ids[0] ]
+
+            exp: SummaryWriter = self.logger.experiment # type: ignore
+            sample_text = '\n'.join([ str(event) for event in generated_tokens ])
+            exp.add_text(f'sample', sample_text, global_step=self.global_step)
+
         # Forward pass
         pred_logits, target_tokens = self.forward(
             batch.audio,
@@ -123,7 +134,7 @@ class Model(pl.LightningModule):
         # Log metrics
         self.log('val/loss', loss, batch_size=batch.tokens.size(0))
         self.log('val/accuracy', accuracy, batch_size=batch.tokens.size(0))
-        
+
         return loss
     
     def configure_optimizers(self):
