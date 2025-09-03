@@ -21,13 +21,14 @@ class Tokenizer:
         list[int], # beatmap tokens
         list[int], # timestamp @ token
     ]:
-        ts, toks = [], []
+        ts, toks = [0], []
         for tok in self._tokenize_timed_objects(bm):
             try:
                 toks.append(self.token_to_id[tok])
             except KeyError as e:
                 raise Exception(self.t) from e
             ts.append(self.t)
+        ts.pop()
         return toks, ts
 
     def decode(self, beatmap_token_ids: list[int]) -> BeatmapEvents:
@@ -52,14 +53,16 @@ class Tokenizer:
         yield Token(TokenType.POS_FINE, (fine_x_bin, fine_y_bin))
 
     def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
-        self.t += ms
         s, ms = divmod(ms, 1000)
         m, s = divmod(s, 60)
         for _ in range(m):
+            self.t += 60*1000
             yield Token(TokenType.TIME_SHIFT_S, 60)
         if s > 0:
+            self.t += s*1000
             yield Token(TokenType.TIME_SHIFT_S, s)
         if ms > 0:
+            self.t += ms
             yield Token(TokenType.TIME_SHIFT_MS, ms)
 
     def _tokenize_duration(self, ms: int) -> Iterator[Token]:
