@@ -126,7 +126,17 @@ def fit_to_cubic(
         # Default to a straight line.
         p1 = p0 * 2/3 + p3 * 1/3
         p2 = p0 * 1/3 + p3 * 2/3
+    
+    # check for degenerate cubic
+    if np.linalg.norm(p1-p0) < 2:
+        c = p2
+    elif np.linalg.norm(p2-p3) < 2:
+        c = p1
+    else:
+        return BezierCurve(np.stack([p0, p1, p2, p3], axis=1))
 
+    p1 = p0 + (c-p0) * 2/3
+    p2 = p3 + (c-p3) * 2/3
     return BezierCurve(np.stack([p0, p1, p2, p3], axis=1))
 
 def sample_bezier_slider(
