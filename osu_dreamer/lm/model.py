@@ -16,7 +16,7 @@ from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 from osu_dreamer.data.load_audio import get_frame_times
 
 from .data.dataset import Batch
-from .data.tokens.tokens import VocabConfig, make_vocab, Token, TokenType
+from .data.tokens.tokens import VocabConfig, Token, TokenType
 
 from .modules.audio_encoder import SimpleAudioEncoder
 from .modules.multiscale_ctx import MultiScaleEncoder
@@ -41,7 +41,6 @@ class Model(pl.LightningModule):
         ctx_dim: int,
         audio_h_dim: int,
         num_global_ctx: int,
-        ctx_scales: list[tuple[int, int]],
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -61,7 +60,7 @@ class Model(pl.LightningModule):
         # audio encoder
         self.audio_encoder = SimpleAudioEncoder(audio_h_dim)
         self.global_encoder = GlobalEncoder(audio_h_dim, ctx_dim, num_global_ctx)
-        self.ctx_encoder = MultiScaleEncoder(audio_h_dim, ctx_dim, ctx_scales)
+        self.ctx_encoder = MultiScaleEncoder(audio_h_dim, ctx_dim, list(vocab_config.context_radii))
         
     
     def forward(
@@ -225,10 +224,8 @@ class Model(pl.LightningModule):
                 # update time
                 last_time_ms = current_time_ms
                 token = self.T.id_to_token[int(next_token_id)]
-                if token.typ == TokenType.TIME_SHIFT_MS:
-                    current_time_ms += token.value
-                elif token.typ == TokenType.TIME_SHIFT_S:
-                    current_time_ms += token.value * 1000
+                if token.typ == TokenType.TIME_SHIFT:
+                    current_time_ms += self.T.time_shifts[token.value]
                 
                 pbar.update(current_time_ms - last_time_ms)
         

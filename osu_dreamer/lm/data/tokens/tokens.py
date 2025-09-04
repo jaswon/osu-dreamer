@@ -38,8 +38,7 @@ TokenType = CustomReprEnum('TokenType', [
     'CLAP',
 
     # numerals
-    'TIME_SHIFT_MS',
-    'TIME_SHIFT_S',
+    'TIME_SHIFT',
     'POS_COARSE',
     'POS_FINE',
 ])
@@ -54,7 +53,7 @@ class Token(NamedTuple):
 
 @dataclass
 class VocabConfig:
-    TIME_SHIFT_SECONDS: int = 60
+    context_radii: tuple[tuple[int, int],...] = ( (4,4), (3,3), (1,3), (1,3), (1,3) )
 
     x_min: int = 0-128
     x_max: int = 512+128
@@ -71,7 +70,7 @@ class VocabConfig:
     MAGNITUDE_BINS: int = 64
     MIN_MAGNITUDE: float = 1.
     MAX_MAGNITUDE: float = 1000.
-    
+
 
 def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
 
@@ -122,10 +121,12 @@ def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
         Token(TokenType.CLAP),
 
         # numerals
-        *[ Token(TokenType.TIME_SHIFT_MS,i+1) for i in range(1000) ],
-        *[ Token(TokenType.TIME_SHIFT_S,i+1) for i in range(config.TIME_SHIFT_SECONDS) ],
         *[
-            Token(TokenType.POS_COARSE,(x,y)) 
+            Token(TokenType.TIME_SHIFT, i)
+            for i in range(sum(b for _,b in config.context_radii)) # one token for each future position
+        ],
+        *[
+            Token(TokenType.POS_COARSE,(x,y))
             for x in range(config.coarse_x_bins)
             for y in range(config.coarse_y_bins)
         ],

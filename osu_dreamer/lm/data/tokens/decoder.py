@@ -1,6 +1,8 @@
 
 import numpy as np
 
+from osu_dreamer.data.load_audio import MS_PER_FRAME
+
 from ..parse.beatmap import BeatmapEvents
 
 from ..timed import *
@@ -19,6 +21,14 @@ class Decoder:
         self.tokens = iter(tokens)
         self.push_back_stack = []
         self.t = 0
+
+        # compute valid time shifts
+        self.time_shifts = []
+        stride = MS_PER_FRAME
+        for r_past, r_future in config.context_radii:
+            for i in range(r_future):
+                self.time_shifts.append(stride * (i+1))
+            stride *= 1 + r_past + r_future
 
     def next_token(self) -> Token:
         if len(self.push_back_stack):
@@ -76,21 +86,13 @@ class Decoder:
     def parse_time_shift(self) -> int:
         time_shift = 0
 
-        # parse seconds
         while True:
             match self.next_token():
-                case Token(TokenType.TIME_SHIFT_S, s):
-                    time_shift += 1000 * s
+                case Token(TokenType.TIME_SHIFT, i):
+                    time_shift += self.time_shifts[i]
                 case _ as tok:
                     self.push_back(tok)
                     break
-
-        # parse milliseconds
-        match self.next_token():
-            case Token(TokenType.TIME_SHIFT_MS, ms):
-                time_shift += ms
-            case _ as tok:
-                self.push_back(tok)
                 
         self.t += time_shift
         return time_shift

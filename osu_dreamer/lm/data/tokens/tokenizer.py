@@ -1,14 +1,16 @@
 
 from typing import Iterator
 
+import bisect
+
 import numpy as np
+
+from osu_dreamer.data.load_audio import MS_PER_FRAME
 
 from .decoder import Decoder
 from ..parse.beatmap import BeatmapEvents
 from ..timed import *
 from .tokens import Token, TokenType, VocabConfig, make_vocab
-
-cross = lambda a,b: a[0]*b[1] - a[1]*b[0]
 
 class Tokenizer:
     def __init__(self, config: VocabConfig):
@@ -16,7 +18,15 @@ class Tokenizer:
         self.id_to_token = make_vocab(config)
         self.token_to_id = { token: i for i, token in enumerate(self.id_to_token) }
         self.t = 0
-                            
+
+        # compute valid time shifts
+        self.time_shifts = []
+        stride = MS_PER_FRAME
+        for r_past, r_future in config.context_radii:
+            for i in range(r_future):
+                self.time_shifts.append(stride * (i+1))
+            stride *= 1 + r_past + r_future
+
     def encode(self, bm: BeatmapEvents) -> tuple[
         list[int], # beatmap tokens
         list[int], # timestamp @ token
@@ -53,17 +63,16 @@ class Tokenizer:
         yield Token(TokenType.POS_FINE, (fine_x_bin, fine_y_bin))
 
     def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
-        s, ms = divmod(ms, 1000)
-        m, s = divmod(s, 60)
-        for _ in range(m):
-            self.t += 60*1000
-            yield Token(TokenType.TIME_SHIFT_S, 60)
-        if s > 0:
-            self.t += s*1000
-            yield Token(TokenType.TIME_SHIFT_S, s)
-        if ms > 0:
-            self.t += ms
-            yield Token(TokenType.TIME_SHIFT_MS, ms)
+        while ms > 0:
+            i = bisect.bisect_right(self.time_shifts, ms) - 1
+            if i < 0:
+                # remaining time is smaller than frame resolution, ignore
+                return
+            
+            time_shift = self.time_shifts[i]
+            self.t += time_shift
+            ms -= time_shift
+            yield Token(TokenType.TIME_SHIFT, i)
 
     def _tokenize_duration(self, ms: int) -> Iterator[Token]:
         yield from self._tokenize_time_shift(ms)
