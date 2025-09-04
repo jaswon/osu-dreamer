@@ -57,11 +57,15 @@ class Decoder:
         self.t = 0
         self.parse_token(TokenType.BOS)
         while True:
+            try:
+                self.parse_token(TokenType.EOS)
+                return BeatmapEvents(events)
+            except self.UnexpectedToken as e:
+                self.push_back(e.args[0])
+
             self.parse_time_shift()
             obj_time = self.t
             match self.next_token():
-                case Token(TokenType.EOS):
-                    return BeatmapEvents(events)
                 case Token(TokenType.BREAK):
                     timed = Break(self.parse_duration())
                 case _ as tok:
