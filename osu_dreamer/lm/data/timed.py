@@ -171,7 +171,7 @@ class QuadraticSegment(BezierSegment):
         return f"Quadratic({self.c}, {self.q})"
     
     def length(self, p: Coordinate) -> float:
-        return BezierCurve(np.array([p,self.c,self.q]).T).length 
+        return BezierCurve(np.array([p,self.c,self.q]).astype(float).T).length 
 
 @dataclass
 class CubicSegment(BezierSegment):
@@ -182,7 +182,7 @@ class CubicSegment(BezierSegment):
         return f"Cubic({self.pc}, {self.qc}, {self.q})"
     
     def length(self, p: Coordinate) -> float:
-        return BezierCurve(np.array([p,self.pc,self.qc,self.q]).T).length
+        return BezierCurve(np.array([p,self.pc,self.qc,self.q]).astype(float).T).length
     
     
 @dataclass

@@ -34,7 +34,7 @@ class BezierCurve:
 
     @cached_property
     def length(self) -> float:
-        return self._length_at(1)
+        return self._length_at(1.)
 
     def hodo(self) -> "BezierCurve":
         return BezierCurve((self.degree-1) * (self.p[:,1:] - self.p[:,:-1]))

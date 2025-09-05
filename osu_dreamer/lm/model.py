@@ -10,6 +10,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 import itertools
 
+from osu_dreamer.lm.data.tokens.state import LogitProcessor
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
@@ -176,18 +177,23 @@ class Model(pl.LightningModule):
 
         # initialize sequence and time
         token_id = bos_id
-        current_time_ms = 0.
-        generated_tokens = []
+        current_time_ms = 0
+        generated_tokens = [bos_id]
         
         # initialize kv cache
         cache = None
+
+        # initialize logit processor
+        lp = LogitProcessor(self.T.config)
+        logit_mask = th.tensor(lp.advance(bos_id), device=audio.device)
 
         with tqdm(total=int(audio_duration_ms), desc="sampling", disable=not show_progress) as pbar:
             for i in itertools.count():
                 if max_len > 0 and i >= max_len:
                     break
                 
-                if current_time_ms > audio_duration_ms:
+                if current_time_ms > audio_duration_ms and logit_mask[eos_id]:
+                    generated_tokens.append(eos_id)
                     break
 
                 # prepare inputs for single-token forward pass
@@ -207,23 +213,28 @@ class Model(pl.LightningModule):
                 output, cache = self.decoder(embs, ctx=ctx, cache=cache)
                 logits = self.token_head(output)
 
+                # apply logit mask
+                logits = th.where(logit_mask, logits, -th.inf)
+
                 # sample next token
                 if greedy:
-                    next_token_id = th.argmax(logits, dim=-1).item()
+                    next_token_id = int(th.argmax(logits, dim=-1).item())
                 else:
                     probs = F.softmax(logits, dim=-1)
-                    next_token_id = th.multinomial(probs.squeeze(0), num_samples=1).item()
+                    next_token_id = int(th.multinomial(probs.squeeze(0), num_samples=1).item())
+
+                generated_tokens.append(next_token_id)
 
                 # stop if EOS
                 if next_token_id == eos_id:
                     break
 
-                generated_tokens.append(next_token_id)
                 token_id = next_token_id
+                logit_mask = th.tensor(lp.advance(token_id), device=audio.device)
 
                 # update time
                 last_time_ms = current_time_ms
-                token = self.T.id_to_token[int(next_token_id)]
+                token = self.T.id_to_token[token_id]
                 if token.typ == TokenType.TIME_SHIFT:
                     current_time_ms += self.T.time_shifts[token.value]
                 
