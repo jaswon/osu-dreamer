@@ -11,13 +11,12 @@ from tqdm import tqdm
 import itertools
 
 from osu_dreamer.lm.data.tokens.state import LogitProcessor
-from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 from osu_dreamer.data.load_audio import get_frame_times
 
 from .data.dataset import Batch
-from .data.tokens.tokens import VocabConfig, Token, TokenType
+from .data.tokens.tokens import Vocab, Token, TokenType
 
 from .modules.audio_encoder import SimpleAudioEncoder
 from .modules.multiscale_ctx import MultiScaleEncoder
@@ -34,7 +33,7 @@ class Model(pl.LightningModule):
         schedule_args: LRScheduleArgs,
         
         # model hparams
-        vocab_config: VocabConfig,
+        vocab: Vocab,
         emb_dim: int,
         decoder_args: DecoderArgs,
         
@@ -51,8 +50,8 @@ class Model(pl.LightningModule):
         self.lr_schedule = make_lr_schedule(schedule_args)
         
         # model components
-        self.T = Tokenizer(vocab_config)
-        vocab_size = len(self.T.id_to_token)
+        self.vocab = vocab
+        vocab_size = len(vocab.tokens)
         self.token_embed = nn.Embedding(vocab_size, emb_dim)
         self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
         self.token_head = nn.Linear(emb_dim, vocab_size)
@@ -61,7 +60,7 @@ class Model(pl.LightningModule):
         # audio encoder
         self.audio_encoder = SimpleAudioEncoder(audio_h_dim)
         self.global_encoder = GlobalEncoder(audio_h_dim, ctx_dim, num_global_ctx)
-        self.ctx_encoder = MultiScaleEncoder(audio_h_dim, ctx_dim, list(vocab_config.context_radii))
+        self.ctx_encoder = MultiScaleEncoder(audio_h_dim, ctx_dim, list(vocab.context_radii))
         
     
     def forward(
@@ -113,7 +112,7 @@ class Model(pl.LightningModule):
         # On the first validation batch of every epoch, generate a sample
         if batch_idx == 0 and self.global_rank == 0:
             generated_token_ids = self.sample(batch.audio, batch.map_features, max_len=512)
-            generated_tokens = [ self.T.id_to_token[int(i.item())] for i in generated_token_ids[0] ]
+            generated_tokens = [ self.vocab.tokens[int(i.item())] for i in generated_token_ids[0] ]
 
             exp: SummaryWriter = self.logger.experiment # type: ignore
             sample_text = '\n'.join([ str(event) for event in generated_tokens ])
@@ -164,9 +163,8 @@ class Model(pl.LightningModule):
     ) -> Int[Tensor, "1 N"]:
         self.eval()
 
-        token_to_id = {t: i for i, t in enumerate(self.T.id_to_token)}
-        bos_id = token_to_id[Token(TokenType.BOS)]
-        eos_id = token_to_id[Token(TokenType.EOS)]
+        bos_id = self.vocab.ids[Token(TokenType.BOS)]
+        eos_id = self.vocab.ids[Token(TokenType.EOS)]
 
         # precompute audio features
         audio_features = self.audio_encoder(audio[None])
@@ -184,7 +182,7 @@ class Model(pl.LightningModule):
         cache = None
 
         # initialize logit processor
-        lp = LogitProcessor(self.T.config)
+        lp = LogitProcessor(self.vocab)
         logit_mask = th.tensor(lp.advance(bos_id), device=audio.device)
 
         with tqdm(total=int(audio_duration_ms), desc="sampling", disable=not show_progress) as pbar:
@@ -234,9 +232,9 @@ class Model(pl.LightningModule):
 
                 # update time
                 last_time_ms = current_time_ms
-                token = self.T.id_to_token[token_id]
+                token = self.vocab.tokens[token_id]
                 if token.typ == TokenType.TIME_SHIFT:
-                    current_time_ms += self.T.time_shifts[token.value]
+                    current_time_ms += self.vocab.time_shifts[token.value]
                 
                 pbar.update(current_time_ms - last_time_ms)
         

@@ -9,7 +9,7 @@ import numpy as np
 from tqdm import tqdm
 
 from osu_dreamer.lm.data.parse.beatmap import from_beatmap, BeatmapDifficulty, BeatmapEvents
-from osu_dreamer.lm.data.tokens.tokens import VocabConfig
+from osu_dreamer.lm.data.tokens.tokens import Vocab
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
 from osu_dreamer.lm.data.parse.file import parse_map_file
 from osu_dreamer.data.reclaim_memory import reclaim_memory
@@ -50,7 +50,7 @@ def generate_data(maps_dir: Path, data_dir: Path, num_workers: int, force: bool)
 def process_mapset(kv: tuple[Path, list[Path]], force: bool):
     mapset_dir, map_files = kv
     audio_map: dict[tuple[Path, Path], list[tuple[tuple[BeatmapEvents, BeatmapDifficulty], Path]]] = {}
-    tokenizer = Tokenizer(VocabConfig())
+    tokenizer = Tokenizer(Vocab())
     for map_file in map_files:
         try:
             with open(map_file, 'r', encoding='utf-8') as f:

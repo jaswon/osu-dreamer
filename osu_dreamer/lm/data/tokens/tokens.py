@@ -3,6 +3,8 @@ from typing import NamedTuple, Any
 from dataclasses import dataclass
 from enum import Enum
 
+from osu_dreamer.data.load_audio import MS_PER_FRAME
+
 class CustomReprEnum(Enum):
     def __repr__(self):
         return self.name
@@ -52,7 +54,7 @@ class Token(NamedTuple):
     
 
 @dataclass
-class VocabConfig:
+class Vocab:
     context_radii: tuple[tuple[int, int],...] = ( (4,4), (3,3), (1,3), (1,3), (1,3) )
 
     x_min: int = 0-128
@@ -71,68 +73,78 @@ class VocabConfig:
     MIN_MAGNITUDE: float = 1.
     MAX_MAGNITUDE: float = 1000.
 
+    def __post_init__(self):
 
-def make_vocab(config: VocabConfig) -> tuple[Token, ...]:
+        assert self.DEVIATION_BINS % 2 == 0
+        
+        coarse_x_bin_size, rem = divmod(self.x_max - self.x_min, self.coarse_x_bins)
+        assert rem == 0
+        assert coarse_x_bin_size % self.fine_x_bins == 0
 
-    assert config.DEVIATION_BINS % 2 == 0
-    
-    coarse_x_bin_size, rem = divmod(config.x_max - config.x_min, config.coarse_x_bins)
-    assert rem == 0
-    assert coarse_x_bin_size % config.fine_x_bins == 0
+        coarse_y_bin_size, rem = divmod(self.y_max - self.y_min, self.coarse_y_bins)
+        assert rem == 0
+        assert coarse_y_bin_size % self.fine_y_bins == 0
 
-    coarse_y_bin_size, rem = divmod(config.y_max - config.y_min, config.coarse_y_bins)
-    assert rem == 0
-    assert coarse_y_bin_size % config.fine_y_bins == 0
+        self.tokens: tuple[Token, ...] = (
+            # control
+            Token(TokenType.PAD),
+            Token(TokenType.BOS),
+            Token(TokenType.EOS),
 
-    return (
-        # control
-        Token(TokenType.PAD),
-        Token(TokenType.BOS),
-        Token(TokenType.EOS),
+            # event types
+            Token(TokenType.BREAK),
+            Token(TokenType.HIT_CIRCLE),
+            Token(TokenType.SPINNER),
+            Token(TokenType.SLIDER),
+            Token(TokenType.RELEASE),
 
-        # event types
-        Token(TokenType.BREAK),
-        Token(TokenType.HIT_CIRCLE),
-        Token(TokenType.SPINNER),
-        Token(TokenType.SLIDER),
-        Token(TokenType.RELEASE),
+            # slider tokens
+            Token(TokenType.PERFECT),
+            Token(TokenType.POLYLINE),
+            Token(TokenType.BEZIER),
+            Token(TokenType.LINEAR),
+            Token(TokenType.CUBIC),
+            Token(TokenType.QUADRATIC),
+            *[ Token(TokenType.SLIDES,i) for i in range(self.SLIDES_BINS) ],
+            *[
+                Token(TokenType.DEVIATION,s)
+                for s in range(self.DEVIATION_BINS)
+            ],
+            *[
+                Token(TokenType.MAGNITUDE,m)
+                for m in range(self.MAGNITUDE_BINS)
+            ],
 
-        # slider tokens
-        Token(TokenType.PERFECT),
-        Token(TokenType.POLYLINE),
-        Token(TokenType.BEZIER),
-        Token(TokenType.LINEAR),
-        Token(TokenType.CUBIC),
-        Token(TokenType.QUADRATIC),
-        *[ Token(TokenType.SLIDES,i) for i in range(config.SLIDES_BINS) ],
-        *[
-            Token(TokenType.DEVIATION,s)
-            for s in range(config.DEVIATION_BINS)
-        ],
-        *[
-            Token(TokenType.MAGNITUDE,m)
-            for m in range(config.MAGNITUDE_BINS)
-        ],
+            # hit object flags
+            Token(TokenType.NEW_COMBO),
+            Token(TokenType.WHISTLE),
+            Token(TokenType.FINISH),
+            Token(TokenType.CLAP),
 
-        # hit object flags
-        Token(TokenType.NEW_COMBO),
-        Token(TokenType.WHISTLE),
-        Token(TokenType.FINISH),
-        Token(TokenType.CLAP),
+            # numerals
+            *[
+                Token(TokenType.TIME_SHIFT, i)
+                for i in range(sum(b for _,b in self.context_radii)) # one token for each future position
+            ],
+            *[
+                Token(TokenType.POS_COARSE,(x,y))
+                for x in range(self.coarse_x_bins)
+                for y in range(self.coarse_y_bins)
+            ],
+            *[
+                Token(TokenType.POS_FINE,(x,y))
+                for x in range(self.fine_x_bins)
+                for y in range(self.fine_y_bins)
+            ],
+        )
 
-        # numerals
-        *[
-            Token(TokenType.TIME_SHIFT, i)
-            for i in range(sum(b for _,b in config.context_radii)) # one token for each future position
-        ],
-        *[
-            Token(TokenType.POS_COARSE,(x,y))
-            for x in range(config.coarse_x_bins)
-            for y in range(config.coarse_y_bins)
-        ],
-        *[
-            Token(TokenType.POS_FINE,(x,y))
-            for x in range(config.fine_x_bins)
-            for y in range(config.fine_y_bins)
-        ],
-    )
+        self.ids = { token: i for i, token in enumerate(self.tokens) }
+
+
+        # compute valid time shifts
+        self.time_shifts = []
+        stride = MS_PER_FRAME
+        for r_past, r_future in self.context_radii:
+            for i in range(r_future):
+                self.time_shifts.append(stride * (i+1))
+            stride *= 1 + r_past + r_future

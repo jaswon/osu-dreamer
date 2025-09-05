@@ -16,9 +16,9 @@ default_config_path = './osu_dreamer/lm/model.yml'
 
 class MyLightningCLI(LightningCLI):
     def before_instantiate_classes(self) -> None:
-        # Manually link the vocab_config from the data module to the model.
+        # Manually link the vocab from the data module to the model.
         # This is a workaround for a limitation in LightningCLI's link_arguments with nested class arguments.
-        self.config.model.vocab_config = self.config.data.vocab_config
+        self.config.model.vocab = self.config.data.vocab
 
 @click.command()
 @click.option('-c', '--config', type=file_option_type, default=default_config_path, help='config file')

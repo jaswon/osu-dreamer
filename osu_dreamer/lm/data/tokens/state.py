@@ -1,7 +1,7 @@
 
 import lark
 
-from .tokens import Token, VocabConfig, make_vocab
+from .tokens import Vocab
 
 token_grammar = r"""
     start: "BOS" event* "EOS"
@@ -28,11 +28,11 @@ token_grammar = r"""
 """
 
 class LogitProcessor:
-    def __init__(self, config: VocabConfig):
-        self.vocab = make_vocab(config)
+    def __init__(self, vocab: Vocab):
+        self.vocab = vocab
         self.parser = lark.Lark(token_grammar, parser='lalr').parse_interactive()
 
     def advance(self, token_id: int) -> list[bool]:
-        self.parser.feed_token(lark.Token(self.vocab[token_id].typ.name, ''))
+        self.parser.feed_token(lark.Token(self.vocab.tokens[token_id].typ.name, ''))
         valid_types = self.parser.accepts()
-        return [ tok.typ.name in valid_types for tok in self.vocab ]
+        return [ tok.typ.name in valid_types for tok in self.vocab.tokens ]

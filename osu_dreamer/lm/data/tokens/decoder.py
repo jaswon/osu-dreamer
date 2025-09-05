@@ -6,7 +6,7 @@ from osu_dreamer.data.load_audio import MS_PER_FRAME
 from ..parse.beatmap import BeatmapEvents
 
 from ..timed import *
-from .tokens import Token, TokenType, VocabConfig
+from .tokens import Token, TokenType, Vocab
 
 class Decoder:
 
@@ -14,21 +14,13 @@ class Decoder:
 
     def __init__(
         self, 
-        config: VocabConfig, 
+        vocab: Vocab,
         tokens: list[Token],
     ):
-        self.config = config
+        self.vocab = vocab
         self.tokens = iter(tokens)
         self.push_back_stack = []
         self.t = 0
-
-        # compute valid time shifts
-        self.time_shifts = []
-        stride = MS_PER_FRAME
-        for r_past, r_future in config.context_radii:
-            for i in range(r_future):
-                self.time_shifts.append(stride * (i+1))
-            stride *= 1 + r_past + r_future
 
     def next_token(self) -> Token:
         if len(self.push_back_stack):
@@ -77,13 +69,13 @@ class Decoder:
         coarse_x_bin, coarse_y_bin = self.parse_token_value(TokenType.POS_COARSE)
         fine_x_bin, fine_y_bin = self.parse_token_value(TokenType.POS_FINE)
 
-        coarse_x_bin_size = (self.config.x_max - self.config.x_min) // self.config.coarse_x_bins
-        coarse_y_bin_size = (self.config.y_max - self.config.y_min) // self.config.coarse_y_bins
-        fine_x_bin_size = coarse_x_bin_size // self.config.fine_x_bins
-        fine_y_bin_size = coarse_y_bin_size // self.config.fine_y_bins
+        coarse_x_bin_size = (self.vocab.x_max - self.vocab.x_min) // self.vocab.coarse_x_bins
+        coarse_y_bin_size = (self.vocab.y_max - self.vocab.y_min) // self.vocab.coarse_y_bins
+        fine_x_bin_size = coarse_x_bin_size // self.vocab.fine_x_bins
+        fine_y_bin_size = coarse_y_bin_size // self.vocab.fine_y_bins
 
-        x = self.config.x_min + coarse_x_bin * coarse_x_bin_size + (fine_x_bin + .5) * fine_x_bin_size
-        y = self.config.y_min + coarse_y_bin * coarse_y_bin_size + (fine_y_bin + .5) * fine_y_bin_size
+        x = self.vocab.x_min + coarse_x_bin * coarse_x_bin_size + (fine_x_bin + .5) * fine_x_bin_size
+        y = self.vocab.y_min + coarse_y_bin * coarse_y_bin_size + (fine_y_bin + .5) * fine_y_bin_size
         
         return round(x), round(y)
 
@@ -93,7 +85,7 @@ class Decoder:
         while True:
             match self.next_token():
                 case Token(TokenType.TIME_SHIFT, i):
-                    time_shift += self.time_shifts[i]
+                    time_shift += self.vocab.time_shifts[i]
                 case _ as tok:
                     self.push_back(tok)
                     break
@@ -108,7 +100,7 @@ class Decoder:
     
     def parse_deviation(self) -> float:
         deviation_bin = self.parse_token_value(TokenType.DEVIATION)
-        return deviation_bin * 2*np.pi / self.config.DEVIATION_BINS - np.pi
+        return deviation_bin * 2*np.pi / self.vocab.DEVIATION_BINS - np.pi
         
     def parse_hit_object(self) -> Timed:
         new_combo, whistle, finish, clap = False, False, False, False
@@ -214,5 +206,5 @@ class Decoder:
 
     def parse_magnitude(self) -> float:
         b = self.parse_token_value(TokenType.MAGNITUDE)
-        t = b / self.config.MAGNITUDE_BINS # [0,1)
-        return self.config.MIN_MAGNITUDE * (self.config.MAX_MAGNITUDE / self.config.MIN_MAGNITUDE) ** t
+        t = b / self.vocab.MAGNITUDE_BINS # [0,1)
+        return self.vocab.MIN_MAGNITUDE * (self.vocab.MAX_MAGNITUDE / self.vocab.MIN_MAGNITUDE) ** t

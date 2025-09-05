@@ -16,7 +16,7 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
-from osu_dreamer.lm.data.tokens.tokens import VocabConfig
+from osu_dreamer.lm.data.tokens.tokens import Vocab
 
 
 class Batch(NamedTuple):
@@ -31,7 +31,7 @@ class Dataset(IterableDataset):
         super().__init__()
         self.dataset = kwargs.pop("dataset")
         self.context_size: int = kwargs.pop("context_size")
-        self.tokenizer: Tokenizer = kwargs.pop("tokenizer")
+        self.vocab: Vocab = kwargs.pop("vocab")
         self.batch_size: int = kwargs.pop("batch_size")
             
         if len(kwargs):
@@ -81,7 +81,7 @@ class Dataset(IterableDataset):
         ]).float()
 
         try:
-            beatmap_tokens, token_timestamps = self.tokenizer.encode(ibm)
+            beatmap_tokens, token_timestamps = Tokenizer(self.vocab).encode(ibm)
         except Exception as e:
             raise Exception(map_file) from e
 
@@ -100,7 +100,7 @@ class Dataset(IterableDataset):
 class Data(pl.LightningDataModule):
     def __init__(
         self,
-        vocab_config: VocabConfig,
+        vocab: Vocab,
         context_size: int,
         batch_size: int,
         num_workers: int,
@@ -110,7 +110,7 @@ class Data(pl.LightningDataModule):
         super().__init__()
         self.save_hyperparameters()
         
-        self.tokenizer = Tokenizer(vocab_config)
+        self.vocab = vocab
         self.context_size = context_size
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -154,13 +154,13 @@ class Data(pl.LightningDataModule):
         self.train_dataset = Dataset(
             dataset=self.train_set,
             context_size=self.context_size,
-            tokenizer=self.tokenizer,
+            vocab=self.vocab,
             batch_size=self.batch_size,
         )
         self.val_dataset = Dataset(
             dataset=self.val_set,
             context_size=self.context_size,
-            tokenizer=self.tokenizer,
+            vocab=self.vocab,
             batch_size=1,
         )
     

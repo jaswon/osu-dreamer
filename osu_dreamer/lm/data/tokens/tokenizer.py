@@ -5,27 +5,15 @@ import bisect
 
 import numpy as np
 
-from osu_dreamer.data.load_audio import MS_PER_FRAME
-
 from .decoder import Decoder
 from ..parse.beatmap import BeatmapEvents
 from ..timed import *
-from .tokens import Token, TokenType, VocabConfig, make_vocab
+from .tokens import Token, TokenType, Vocab
 
 class Tokenizer:
-    def __init__(self, config: VocabConfig):
-        self.config = config
-        self.id_to_token = make_vocab(config)
-        self.token_to_id = { token: i for i, token in enumerate(self.id_to_token) }
+    def __init__(self, vocab: Vocab):
+        self.vocab = vocab
         self.t = 0
-
-        # compute valid time shifts
-        self.time_shifts = []
-        stride = MS_PER_FRAME
-        for r_past, r_future in config.context_radii:
-            for i in range(r_future):
-                self.time_shifts.append(stride * (i+1))
-            stride *= 1 + r_past + r_future
 
     def encode(self, bm: BeatmapEvents) -> tuple[
         list[int], # beatmap tokens
@@ -34,7 +22,7 @@ class Tokenizer:
         ts, toks = [0], []
         for tok in self._tokenize_timed_objects(bm):
             try:
-                toks.append(self.token_to_id[tok])
+                toks.append(self.vocab.ids[tok])
             except KeyError as e:
                 raise Exception(self.t) from e
             ts.append(self.t)
@@ -43,33 +31,33 @@ class Tokenizer:
 
     def decode(self, beatmap_token_ids: list[int]) -> BeatmapEvents:
         return Decoder(
-            self.config,
-            [ self.id_to_token[tid] for tid in beatmap_token_ids ]
+            self.vocab,
+            [ self.vocab.tokens[tid] for tid in beatmap_token_ids ]
         ).parse_beatmap_events()
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
-        assert self.config.x_min <= p[0] < self.config.x_max, p[0]
-        assert self.config.y_min <= p[1] < self.config.y_max, p[1]
+        assert self.vocab.x_min <= p[0] < self.vocab.x_max, p[0]
+        assert self.vocab.y_min <= p[1] < self.vocab.y_max, p[1]
 
-        coarse_x_bin_size = (self.config.x_max - self.config.x_min) // self.config.coarse_x_bins
-        coarse_y_bin_size = (self.config.y_max - self.config.y_min) // self.config.coarse_y_bins
+        coarse_x_bin_size = (self.vocab.x_max - self.vocab.x_min) // self.vocab.coarse_x_bins
+        coarse_y_bin_size = (self.vocab.y_max - self.vocab.y_min) // self.vocab.coarse_y_bins
 
-        coarse_x_bin, fine_x = divmod(p[0] - self.config.x_min, coarse_x_bin_size)
-        coarse_y_bin, fine_y = divmod(p[1] - self.config.y_min, coarse_y_bin_size)
+        coarse_x_bin, fine_x = divmod(p[0] - self.vocab.x_min, coarse_x_bin_size)
+        coarse_y_bin, fine_y = divmod(p[1] - self.vocab.y_min, coarse_y_bin_size)
         yield Token(TokenType.POS_COARSE, (coarse_x_bin, coarse_y_bin))
 
-        fine_x_bin, _ = divmod(fine_x, coarse_x_bin_size // self.config.fine_x_bins)
-        fine_y_bin, _ = divmod(fine_y, coarse_y_bin_size // self.config.fine_y_bins)
+        fine_x_bin, _ = divmod(fine_x, coarse_x_bin_size // self.vocab.fine_x_bins)
+        fine_y_bin, _ = divmod(fine_y, coarse_y_bin_size // self.vocab.fine_y_bins)
         yield Token(TokenType.POS_FINE, (fine_x_bin, fine_y_bin))
 
     def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
         while ms > 0:
-            i = bisect.bisect_right(self.time_shifts, ms) - 1
+            i = bisect.bisect_right(self.vocab.time_shifts, ms) - 1
             if i < 0:
                 # remaining time is smaller than frame resolution, ignore
                 return
             
-            time_shift = self.time_shifts[i]
+            time_shift = self.vocab.time_shifts[i]
             self.t += time_shift
             ms -= time_shift
             yield Token(TokenType.TIME_SHIFT, i)
@@ -81,7 +69,7 @@ class Tokenizer:
     def _tokenize_deviation(self, d: float) -> Iterator[Token]:
         assert -np.pi <= d <= np.pi, d
         if d == np.pi: d = -np.pi
-        deviation_bin = round( (d+np.pi)/2/np.pi * self.config.DEVIATION_BINS ) % self.config.DEVIATION_BINS
+        deviation_bin = round( (d+np.pi)/2/np.pi * self.vocab.DEVIATION_BINS ) % self.vocab.DEVIATION_BINS
         yield Token(TokenType.DEVIATION, deviation_bin)
     
     def _tokenize_hit_object(self, event: HitObject) -> Iterator[Token]:
@@ -102,7 +90,7 @@ class Tokenizer:
             case Slider():
                 yield Token(TokenType.SLIDER)
                 yield from self._tokenize_duration(event.duration)
-                yield Token(TokenType.SLIDES, min(event.slides, self.config.SLIDES_BINS - 1))
+                yield Token(TokenType.SLIDES, min(event.slides, self.vocab.SLIDES_BINS - 1))
                 yield from self._tokenize_coordinate(event.head)
                 match event:
                     case PerfectSlider():
@@ -168,9 +156,9 @@ class Tokenizer:
         yield from self._tokenize_magnitude(qc_mag)
 
     def _tokenize_magnitude(self, d: float) -> Iterator[Token]:
-        assert self.config.MIN_MAGNITUDE <= d <= self.config.MAX_MAGNITUDE, d
-        t = np.log(d/self.config.MIN_MAGNITUDE) / np.log(self.config.MAX_MAGNITUDE/self.config.MIN_MAGNITUDE) # [0,1]
-        b = min(self.config.MAGNITUDE_BINS-1, int(t * self.config.MAGNITUDE_BINS))
+        assert self.vocab.MIN_MAGNITUDE <= d <= self.vocab.MAX_MAGNITUDE, d
+        t = np.log(d/self.vocab.MIN_MAGNITUDE) / np.log(self.vocab.MAX_MAGNITUDE/self.vocab.MIN_MAGNITUDE) # [0,1]
+        b = min(self.vocab.MAGNITUDE_BINS-1, int(t * self.vocab.MAGNITUDE_BINS))
         yield Token(TokenType.MAGNITUDE, b)
     
     def _tokenize_timed_objects(self, bm: BeatmapEvents) -> Iterator[Token]:
