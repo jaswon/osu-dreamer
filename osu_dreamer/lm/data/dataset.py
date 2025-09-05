@@ -1,6 +1,6 @@
 from typing import NamedTuple, Iterator
 from torch import Tensor
-from jaxtyping import Float
+from jaxtyping import Float, Bool
 
 import pickle
 import random
@@ -15,6 +15,7 @@ from torch.utils.data import IterableDataset
 import pytorch_lightning as pl
 
 from osu_dreamer.data.reclaim_memory import reclaim_memory
+from osu_dreamer.lm.data.tokens.state import LogitProcessor
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
 from osu_dreamer.lm.data.tokens.tokens import Vocab
 
@@ -24,6 +25,7 @@ class Batch(NamedTuple):
     map_features: Float[Tensor, "M"]    # Map features
     tokens: Float[Tensor, "B N+1"]      # token sequences
     timestamps: Float[Tensor, "B N"]    # Token timestamps in ms
+    valid: Bool[Tensor, "B N V"]        # valid emissions for each position
 
 
 class Dataset(IterableDataset):
@@ -87,14 +89,21 @@ class Dataset(IterableDataset):
 
         if len(beatmap_tokens) < self.context_size:
             return
+        
+        lp = LogitProcessor(self.vocab)
+        valid_list: list[th.Tensor] = []
+        for token_id in beatmap_tokens:
+            valid_list.append( th.tensor(lp.advance(token_id), dtype=th.bool) )
+        valid: Bool[th.Tensor, "N V"] = th.stack(valid_list)
 
-        tokens_list, timestamps_list = [], []
+        tokens_list, timestamps_list, valid_list = [], [], []
         for start_idx in th.randperm(len(beatmap_tokens) - self.context_size - 1)[:self.batch_size]:
             end_idx = start_idx + self.context_size
             tokens_list.append(th.tensor(beatmap_tokens[start_idx:end_idx+1]).long())
             timestamps_list.append(th.tensor(token_timestamps[start_idx:end_idx]).long())
+            valid_list.append(valid[start_idx:end_idx])
 
-        yield Batch(audio, map_features, th.stack(tokens_list), th.stack(timestamps_list))
+        yield Batch(audio, map_features, th.stack(tokens_list), th.stack(timestamps_list), th.stack(valid_list))
 
 
 class Data(pl.LightningDataModule):

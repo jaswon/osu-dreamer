@@ -1,5 +1,5 @@
 from typing import Any
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, Bool
 
 import torch as th
 import torch.nn.functional as F
@@ -69,6 +69,7 @@ class Model(pl.LightningModule):
         map_features: Float[Tensor, "M"],
         tokens: Int[Tensor, "B Np1"],
         timestamps: Int[Tensor, "B N"],
+        valid: Bool[Tensor, "B N V"],
     ) -> tuple[
         Float[Tensor, "B N V"], # pred logits
         Int[Tensor, "B N"]      # true targets
@@ -88,6 +89,7 @@ class Model(pl.LightningModule):
 
         output, _ = self.decoder(embs, ctx=ctx)
         logits = self.token_head(output) # B N V
+        logits.masked_fill_(~valid, -th.inf)
         
         return logits, tokens[:,1:]
     
@@ -98,6 +100,7 @@ class Model(pl.LightningModule):
             batch.map_features,
             batch.tokens,
             batch.timestamps,
+            batch.valid,
         )
         
         loss = self.criterion(pred_logits.reshape(-1, pred_logits.size(-1)), target_tokens.reshape(-1))
@@ -124,6 +127,7 @@ class Model(pl.LightningModule):
             batch.map_features,
             batch.tokens,
             batch.timestamps,
+            batch.valid,
         )
         
         # Calculate loss
