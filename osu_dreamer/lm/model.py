@@ -114,7 +114,7 @@ class Model(pl.LightningModule):
         
         # On the first validation batch of every epoch, generate a sample
         if batch_idx == 0 and self.global_rank == 0:
-            generated_token_ids = self.sample(batch.audio, batch.map_features, max_len=512)
+            generated_token_ids = self.sample(batch.audio, batch.map_features, max_len=512, top_p=0.)
             generated_tokens = [ self.vocab.tokens[int(i.item())] for i in generated_token_ids[0] ]
 
             exp: SummaryWriter = self.logger.experiment # type: ignore
@@ -162,7 +162,7 @@ class Model(pl.LightningModule):
         audio: Float[Tensor, "A L"],
         map_features: Float[Tensor, "M"],
         max_len: int = -1,
-        greedy: bool = True,
+        top_p: float = .9,
         show_progress: bool = False,
     ) -> Int[Tensor, "1 N"]:
         self.eval()
@@ -219,11 +219,21 @@ class Model(pl.LightningModule):
                 logits = th.where(logit_mask, logits, -th.inf)
 
                 # sample next token
-                if greedy:
+                if top_p <= 0:
                     next_token_id = int(th.argmax(logits, dim=-1).item())
                 else:
+                    # Nucleus (top-p) sampling
                     probs = F.softmax(logits, dim=-1)
-                    next_token_id = int(th.multinomial(probs.squeeze(0), num_samples=1).item())
+                    sorted_probs, sorted_indices = th.sort(probs, descending=True)
+                    cumulative_probs = th.cumsum(sorted_probs, dim=-1)
+                    # Find cutoff
+                    cutoff = (cumulative_probs > top_p).float().argmax().item() + 1
+                    top_p_probs = sorted_probs[..., :cutoff]
+                    top_p_indices = sorted_indices[..., :cutoff]
+                    # Renormalize
+                    top_p_probs = top_p_probs / top_p_probs.sum(dim=-1, keepdim=True)
+                    sampled_idx = th.multinomial(top_p_probs.squeeze(0), num_samples=1)
+                    next_token_id = int(top_p_indices.squeeze(0)[sampled_idx].item())
 
                 generated_tokens.append(next_token_id)
 
