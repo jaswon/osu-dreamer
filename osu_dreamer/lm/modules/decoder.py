@@ -14,7 +14,7 @@ class DecoderArgs:
     n_heads: int
     n_layers: int
     dropout: float
-    checkpoint: bool = False
+    checkpoint: bool = True
 
 class RotaryEmbedding(nn.Module):
     def __init__(self, dim: int):
@@ -84,34 +84,6 @@ class SelfAttention(nn.Module):
         
         return self.out_proj(out), (k, v)
 
-class CrossAttention(nn.Module):
-    def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float):
-        super().__init__()
-        self.n_heads = n_heads
-        self.d_head = d_model // n_heads
-        
-        self.q_proj = nn.Linear(d_model, d_model)
-        self.kv_proj = nn.Linear(ctx_dim, d_model * 2)
-        self.out_proj = nn.Linear(d_model, d_model)
-        self.dropout = dropout
-
-    def forward(self, x: Float[Tensor, "B N D"], ctx: Float[Tensor, "B M C"]) -> Float[Tensor, "B N D"]:
-        B, N, _ = x.shape
-        M = ctx.shape[1]
-        
-        q = self.q_proj(x)
-        k, v = self.kv_proj(ctx).chunk(2, dim=-1)
-        
-        q = q.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
-        k = k.view(B, M, self.n_heads, self.d_head).transpose(1, 2)
-        v = v.view(B, M, self.n_heads, self.d_head).transpose(1, 2)
-        
-        out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout if self.training else 0.0)
-        
-        out = out.transpose(1, 2).contiguous().view(B, N, -1)
-        
-        return self.out_proj(out)
-
 class SwiGLU(nn.Module):
     def __init__(self, d_model: int, h_dim: int | None = None):
         super().__init__()
@@ -130,7 +102,11 @@ class DecoderLayer(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
         super().__init__()
         self.self_attn = SelfAttention(d_model, n_heads, dropout)
-        self.cross_attn = CrossAttention(d_model, ctx_dim, n_heads, dropout)
+        self.cross_attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout,
+            kdim=ctx_dim, vdim=ctx_dim, batch_first=True,
+        )
+        self.cross_attn_gate = nn.Linear(d_model, d_model)
         self.ffn = SwiGLU(d_model)
         
         self.norm1 = nn.LayerNorm(d_model)
@@ -149,17 +125,18 @@ class DecoderLayer(nn.Module):
 
         B, N, D = x.shape
         M, C = ctx.shape[2], ctx.shape[3]
-        
+
+        x = x + self.dropout(sa_out)
         q = self.norm2(x)
         
         q_reshaped = q.view(B * N, 1, D)
         ctx_reshaped = ctx.view(B * N, M, C)
         
-        cross_attn_out = self.cross_attn(q_reshaped, ctx_reshaped)
+        cross_attn_out, _ = self.cross_attn(q_reshaped, ctx_reshaped, ctx_reshaped, need_weights=False)
         cross_attn_out = cross_attn_out.view(B, N, D)
         
-        x = x + self.dropout(sa_out)
-        x = x + self.dropout(cross_attn_out)
+        gate = th.sigmoid(self.cross_attn_gate(x))
+        x = x + self.dropout(gate * cross_attn_out)
         
         x = x + self.dropout(self.ffn(self.norm3(x)))
         
