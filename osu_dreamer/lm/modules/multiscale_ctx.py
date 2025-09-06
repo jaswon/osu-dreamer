@@ -19,6 +19,7 @@ class MultiScaleEncoder(nn.Module):
                 nn.ZeroPad1d((r_past*last_w, r_future*last_w)),
                 nn.Conv1d(in_dim, in_dim, w, 1, dilation=last_w, groups=in_dim),
                 nn.Conv1d(in_dim, in_dim, 1),
+                nn.SiLU(),
             ))
             last_w *= w
 
