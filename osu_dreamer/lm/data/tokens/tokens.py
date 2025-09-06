@@ -41,6 +41,7 @@ TokenType = CustomReprEnum('TokenType', [
 
     # numerals
     'TIME_SHIFT',
+    'TIME_SHIFT_MASK',
     'POS_COARSE',
     'POS_FINE',
 ])
@@ -126,6 +127,7 @@ class Vocab:
                 Token(TokenType.TIME_SHIFT, i)
                 for i in range(sum(b for _,b in self.context_radii)) # one token for each future position
             ],
+            Token(TokenType.TIME_SHIFT_MASK),
             *[
                 Token(TokenType.POS_COARSE,(x,y))
                 for x in range(self.coarse_x_bins)
@@ -140,7 +142,6 @@ class Vocab:
 
         self.ids = { token: i for i, token in enumerate(self.tokens) }
 
-
         # compute valid time shifts
         self.time_shifts = []
         stride = MS_PER_FRAME
@@ -148,3 +149,6 @@ class Vocab:
             for i in range(r_future):
                 self.time_shifts.append(stride * (i+1))
             stride *= 1 + r_past + r_future
+
+        # compute time shift ids
+        self.time_shift_ids = [ i for i,tok in enumerate(self.tokens) if tok.typ == TokenType.TIME_SHIFT ]

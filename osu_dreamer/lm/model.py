@@ -31,6 +31,7 @@ class Model(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
+        time_shift_mask_rate: float,
         
         # model hparams
         vocab: Vocab,
@@ -48,6 +49,7 @@ class Model(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
+        self.time_shift_mask_rate = time_shift_mask_rate
         
         # model components
         self.vocab = vocab
@@ -84,8 +86,19 @@ class Model(pl.LightningModule):
 
         expanded_global_ctx = global_ctx[None, None, ...].expand(tokens.size(0), timestamps.size(1), -1, -1)
         ctx = th.cat([ expanded_global_ctx, multi_scale_ctx ], dim=2) # B N T+G C
+
+        # randomly mask time shift tokens
+        inp_tokens = tokens[:,:-1]
+        time_shift_mask = th.isin(inp_tokens, th.tensor(self.vocab.time_shift_ids, device=audio.device))
+        assert time_shift_mask.any()
+        time_shift_mask_rate = th.rand(inp_tokens.size(), device=audio.device) < self.time_shift_mask_rate
+        inp_tokens = th.where(
+            time_shift_mask & time_shift_mask_rate, 
+            self.vocab.ids[Token(TokenType.TIME_SHIFT_MASK)], 
+            inp_tokens,
+        )
         
-        embs = self.token_embed(tokens[:,:-1]) # B N D
+        embs = self.token_embed(inp_tokens) # B N D
 
         output, _ = self.decoder(embs, ctx=ctx)
         logits = self.token_head(output) # B N V

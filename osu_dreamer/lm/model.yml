@@ -60,6 +60,8 @@ model:
     warmup_steps: 1000
     warmup_init: 0.1
     decay_start: 10000
+
+  time_shift_mask_rate: .15
     
   emb_dim: 128
   ctx_dim: 64
