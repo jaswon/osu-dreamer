@@ -106,6 +106,7 @@ class DecoderLayer(nn.Module):
             d_model, n_heads, dropout=dropout,
             kdim=ctx_dim, vdim=ctx_dim, batch_first=True,
         )
+        self.ctx_kv = nn.Linear(ctx_dim, ctx_dim * 2)
         self.cross_attn_gate = nn.Linear(d_model, d_model)
         self.ffn = SwiGLU(d_model)
         
@@ -129,10 +130,10 @@ class DecoderLayer(nn.Module):
         x = x + self.dropout(sa_out)
         q = self.norm2(x)
         
-        q_reshaped = q.view(B * N, 1, D)
-        ctx_reshaped = ctx.view(B * N, M, C)
+        q = q.view(B * N, 1, D)
+        k, v = self.ctx_kv(ctx.view(B * N, M, C)).chunk(2, dim=-1)
         
-        cross_attn_out, _ = self.cross_attn(q_reshaped, ctx_reshaped, ctx_reshaped, need_weights=False)
+        cross_attn_out, _ = self.cross_attn(q, k, v, need_weights=False)
         cross_attn_out = cross_attn_out.view(B, N, D)
         
         gate = th.sigmoid(self.cross_attn_gate(x))
