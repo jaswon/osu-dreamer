@@ -1,6 +1,5 @@
 
-from dataclasses import dataclass
-from typing import Union
+from dataclasses import KW_ONLY, dataclass
 
 import numpy as np
 
@@ -9,80 +8,48 @@ from osu_dreamer.osu.bezier import BezierCurve
 Coordinate = tuple[int, int]
 
 @dataclass
-class BeatLen:
+class Timed:
+    t: int
+    
+@dataclass
+class Hold(Timed):
+    u: int
+
+    @property
+    def duration(self) -> int:
+        return max(0, self.u-self.t)
+
+@dataclass
+class BeatLen(Timed):
     """uninherited timing point"""
     ms: float
-    
-    def __str__(self):
-        return f"BeatLen({self.ms})"
 
 @dataclass
-class SliderVel:
+class SliderVel(Timed):
     """inherited timing point"""
     vel: float
-    
-    def __str__(self):
-        return f"SliderVel({self.vel})"
 
 @dataclass
-class Break:
-    duration: int
-    
-    def __str__(self):
-        return f"Break[duration={self.duration}]"
+class Break(Hold):
+    pass
 
 @dataclass
-class HitObject:
+class HitObject(Timed):
     new_combo: bool
     whistle: bool
     finish: bool
     clap: bool
 
-    def _cls_str(self) -> str:
-        return self.__class__.__name__
-
-    def _object_str(self) -> str:
-        return ""
-    
-    def __str__(self) -> str:
-        return "".join([
-            "*" if self.new_combo else " ",
-            self._cls_str(),
-            f"[{"".join([
-                "w" if self.whistle else "_",
-                "f" if self.finish else "_",
-                "c" if self.clap else "_",
-            ])}]",
-            self._object_str(),
-        ])
-
 @dataclass
 class HitCircle(HitObject):
     p: Coordinate
 
-    def _cls_str(self) -> str:
-        return "C"
-
-    def _object_str(self) -> str:
-        return f" {self.p}"
+@dataclass
+class Spinner(HitObject, Hold):
+    pass
 
 @dataclass
-class Hold(HitObject):
-    duration: int
-
-    def _hold_str(self) -> str:
-        return ""
-
-    def _object_str(self) -> str:
-        return f"[duration={self.duration}]{self._hold_str()}"
-
-@dataclass
-class Spinner(Hold):
-    def _cls_str(self) -> str:
-        return "S"
-
-@dataclass
-class Slider(Hold):
+class Slider(HitObject, Hold):
     slides: int
     head: Coordinate
 
@@ -92,12 +59,37 @@ class Slider(Hold):
     def vel(self) -> float:
         return self.length() * self.slides / self.duration
 
-    def _slider_str(self) -> str:
-        return ""
+@dataclass
+class BezierSegment:
+    ctrl: list[Coordinate]
 
-    def _hold_str(self):
-        return f"[slides={self.slides}]{self._slider_str()}"
-
+    def length(self, p: Coordinate) -> float:
+        return BezierCurve(np.array([p, *self.ctrl]).astype(float).T).length 
+    
+@dataclass
+class BezierSlider(Slider):
+    segments: list[BezierSegment]
+    
+    def length(self) -> float:
+        length = 0
+        p = self.head
+        for seg in self.segments:
+            length += seg.length(p)
+            p = seg.ctrl[-1]
+        return length
+    
+@dataclass
+class PolyLineSlider(Slider):
+    vertices: list[Coordinate]
+    
+    def length(self) -> float:
+        length = 0
+        start = self.head
+        for v in self.vertices:
+            length += np.linalg.norm(np.array(start) - np.array(v)).item()
+            start = v
+        return length
+    
 @dataclass
 class PerfectSlider(Slider):
     tail: Coordinate
@@ -108,15 +100,6 @@ class PerfectSlider(Slider):
     # `deviation` = 0 => technically corresponds to line slider,
     #   but lines are actually parsed as a bezier slider with a single line segment
     deviation: float # (-pi, pi)\{0}
-
-    def _cls_str(self) -> str:
-        return "P"
-
-    def _slider_str(self) -> str:
-        s = ""
-        if self.deviation != 0:
-            s = f"[deviation={self.deviation:.2f}]"
-        return s + f" {self.head} {self.tail}"
     
     def get_control_point(self) -> Coordinate:
         """Get a point `B` on the perfect slider"""
@@ -146,87 +129,3 @@ class PerfectSlider(Slider):
         # ref: alternate segment theorem
         return ac_dist * self.deviation / np.sin(self.deviation)
     
-
-@dataclass
-class BezierSegment:
-    q: Coordinate
-
-    def length(self, p: Coordinate) -> float:
-        raise NotImplementedError
-    
-@dataclass
-class LineSegment(BezierSegment):
-
-    def __str__(self) -> str:
-        return f"Line({self.q})"
-    
-    def length(self, p: Coordinate) -> float:
-        return np.linalg.norm(np.array(p) - np.array(self.q)).item()
-
-@dataclass
-class QuadraticSegment(BezierSegment):
-    c: Coordinate
-
-    def __str__(self) -> str:
-        return f"Quadratic({self.c}, {self.q})"
-    
-    def length(self, p: Coordinate) -> float:
-        return BezierCurve(np.array([p,self.c,self.q]).astype(float).T).length 
-
-@dataclass
-class CubicSegment(BezierSegment):
-    pc: Coordinate
-    qc: Coordinate
-
-    def __str__(self) -> str:
-        return f"Cubic({self.pc}, {self.qc}, {self.q})"
-    
-    def length(self, p: Coordinate) -> float:
-        return BezierCurve(np.array([p,self.pc,self.qc,self.q]).astype(float).T).length
-    
-    
-@dataclass
-class BezierSlider(Slider):
-    segments: list[BezierSegment]
-
-    def _cls_str(self) -> str:
-        return "B"
-    
-    def _slider_str(self):
-        return f" {self.head} {" ".join(map(str, self.segments))}"
-    
-    def length(self) -> float:
-        length = 0
-        p = self.head
-        for seg in self.segments:
-            length += seg.length(p)
-            p = seg.q
-        return length
-    
-@dataclass
-class PolyLineSlider(Slider):
-    vertices: list[Coordinate]
-
-    def _cls_str(self) -> str:
-        return "L"
-    
-    def _slider_str(self):
-        return f" {self.head} {" ".join(map(str, self.vertices))}"
-    
-    def length(self) -> float:
-        length = 0
-        start = self.head
-        for v in self.vertices:
-            length += np.linalg.norm(np.array(start) - np.array(v)).item()
-            start = v
-        return length
-
-
-Timed = Union[
-    BeatLen,
-    SliderVel,
-    Break,
-    HitCircle,
-    Spinner,
-    Slider,
-]

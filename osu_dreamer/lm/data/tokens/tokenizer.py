@@ -108,48 +108,48 @@ class Tokenizer:
                         head = event.head
                         for seg in event.segments:
                             try:
-                                match seg:
-                                    case LineSegment():
-                                        yield from self._tokenize_linear_segment(head, seg)
-                                    case QuadraticSegment():
-                                        yield from self._tokenize_quad_segment(head, seg)
-                                    case CubicSegment():
-                                        yield from self._tokenize_cubic_segment(head, seg)
+                                match seg.ctrl:
+                                    case [q]:
+                                        yield from self._tokenize_linear_segment(head, q)
+                                    case [c,q]:
+                                        yield from self._tokenize_quad_segment(head, c, q)
+                                    case [c1,c2,q]:
+                                        yield from self._tokenize_cubic_segment(head, c1, c2, q)
                             except Exception as e:
                                 raise Exception((head, seg)) from e
-                            head = seg.q
+                            head = q
 
-    def _tokenize_linear_segment(self, head: Coordinate, seg: LineSegment) -> Iterator[Token]:
+    def _tokenize_linear_segment(self, head: Coordinate, q: Coordinate) -> Iterator[Token]:
         yield Token(TokenType.LINEAR)
-        yield from self._tokenize_coordinate(seg.q)
+        yield from self._tokenize_coordinate(q)
 
-    def _tokenize_quad_segment(self, head: Coordinate, seg: QuadraticSegment) -> Iterator[Token]:
-        p, q = np.array(head), np.array(seg.q)
+    def _tokenize_quad_segment(self, head: Coordinate, c: Coordinate, q_: Coordinate) -> Iterator[Token]:
+        p, q = np.array(head), np.array(q_)
         v0, v1 = q - p
 
-        c0, c1 = np.array(seg.c) - p
+        c0, c1 = np.array(c) - p
         c_mag = (c0*c0 + c1*c1) ** .5
         c_dev = float(np.arctan2(v0*c1 - v1*c0, v0*c0 + v1*c1))
 
         yield Token(TokenType.QUADRATIC)
-        yield from self._tokenize_coordinate(seg.q)
+        yield from self._tokenize_coordinate(q_)
         yield from self._tokenize_deviation(c_dev)
         yield from self._tokenize_magnitude(c_mag)
 
-    def _tokenize_cubic_segment(self, head: Coordinate, seg: CubicSegment) -> Iterator[Token]:
-        p, q = np.array(head), np.array(seg.q)
+    def _tokenize_cubic_segment(self, head: Coordinate, pc_: Coordinate, qc_: Coordinate, q_: Coordinate) -> Iterator[Token]:
+        p, q = np.array(head), np.array(q_)
         v0, v1 = q - p
 
-        pc0, pc1 = np.array(seg.pc) - p
+        pc0, pc1 = np.array(pc_) - p
         pc_mag = (pc0*pc0 + pc1*pc1) ** .5
         pc_dev = float(np.arctan2(v0*pc1 - v1*pc0, v0*pc0 + v1*pc1))
         
-        qc0, qc1 = q - np.array(seg.qc)
+        qc0, qc1 = q - np.array(qc_)
         qc_mag = (qc0*qc0 + qc1*qc1) ** .5
         qc_dev = float(np.arctan2(v0*qc1 - v1*qc0, v0*qc0 + v1*qc1))
 
         yield Token(TokenType.CUBIC)
-        yield from self._tokenize_coordinate(seg.q)
+        yield from self._tokenize_coordinate(q_)
         yield from self._tokenize_deviation(pc_dev)
         yield from self._tokenize_deviation(qc_dev)
         yield from self._tokenize_magnitude(pc_mag)
@@ -164,8 +164,8 @@ class Tokenizer:
     def _tokenize_timed_objects(self, bm: BeatmapEvents) -> Iterator[Token]:
         self.t = 0
         yield Token(TokenType.BOS)
-        for t, event in bm.timed:
-            time_shift = t - self.t
+        for event in bm.timed:
+            time_shift = event.t - self.t
             if time_shift > 0:
                 yield from self._tokenize_time_shift(time_shift)
 
@@ -178,5 +178,5 @@ class Tokenizer:
                     try:
                         yield from self._tokenize_hit_object(event)
                     except Exception as e:
-                        raise Exception(t) from e
+                        raise Exception(event.t) from e
         yield Token(TokenType.EOS)

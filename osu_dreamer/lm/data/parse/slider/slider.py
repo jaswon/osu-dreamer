@@ -8,13 +8,13 @@ from .fit import fit_to_poly_cubic
 from .bezier import parse_bezier, to_segments
 
 def parse_slider(
-    x: int, y: int,
+    t: int, x: int, y: int,
     hit_object_args: tuple[bool, bool, bool, bool],
     raw_curve_spec: str,
     slides: int,
     length: float,
 ) -> Union[HitCircle, Slider]:
-    slider_args = *hit_object_args, -int(length), slides
+    slider_args = t, -round(length), *hit_object_args, slides
     curve_type, *curve_points = raw_curve_spec.split("|")
     ctrl_pts: list[Coordinate] = [(x,y)] + [
         (x,y)
@@ -24,7 +24,7 @@ def parse_slider(
 
     if len(ctrl_pts) == 1:
         # bad slider, return hit circle
-        return HitCircle(*hit_object_args,(x,y))
+        return HitCircle(t,*hit_object_args,p=(x,y))
     
     if len(ctrl_pts) == 3 and curve_type == 'P':
         # perfect

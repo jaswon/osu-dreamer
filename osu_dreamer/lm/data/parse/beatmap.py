@@ -16,15 +16,15 @@ class BeatmapDifficulty:
 
 @dataclass
 class BeatmapEvents:
-    timed: list[tuple[int, Timed]]
+    timed: list[Timed]
 
     def __str__(self):
-        return "\n".join([ f"{t:08}: {v}" for t, v in self.timed ])
+        return "\n".join([ f"{v.t:08}: {v}" for v in self.timed ])
 
 def from_beatmap(cfg: OsuFile) -> tuple[BeatmapEvents, BeatmapDifficulty, Metadata]:
-    uninherited: list[tuple[int, BeatLen]] = []
-    inherited: list[tuple[int, SliderVel]] = []
-    objects: list[tuple[int, Timed]] = []
+    uninherited: list[BeatLen] = []
+    inherited: list[SliderVel] = []
+    objects: list[Timed] = []
 
     # parse breaks
     for l in cfg.events:
@@ -32,13 +32,14 @@ def from_beatmap(cfg: OsuFile) -> tuple[BeatmapEvents, BeatmapDifficulty, Metada
         if typ == '2' or typ == 'Break':
             u, = params
             d = int(float(u) - float(t))
-            objects.append((int(t), Break(duration=d)))
+            objects.append(Break(round(float(t)), round(float(u))))
 
     # parse timing points
     base_slider_vel = float(cfg.difficulty.get('SliderMultiplier', 1.4))
     for l in cfg.timing_points:
         vals = [ float(x) for x in l.strip().split(",") ]
         t, x = vals[:2]
+        t = round(t)
 
         if x < 0:
             # inherited timing point - controls slider multiplier 
@@ -47,66 +48,65 @@ def from_beatmap(cfg: OsuFile) -> tuple[BeatmapEvents, BeatmapDifficulty, Metada
             slider_vel = round(base_slider_vel * min(10., max(.1, -100/x)), 3)
 
             if len(inherited) > 0:
-                last_t, last_sm = inherited[-1]
-                if last_t == t:
+                last_sm = inherited[-1]
+                if last_sm.t == t:
                     # override previous inherited point at same time
                     inherited.pop()
                 if last_sm.vel == slider_vel:
                     # skip emitting "same" inherited point
                     continue
                 
-            inherited.append((int(t), SliderVel(vel=slider_vel)))
+            inherited.append(SliderVel(t, vel=slider_vel))
         else:
             # uninherited timing point - controls beat length and meter, resets slider multiplier
-            uninherited.append((int(t), BeatLen(ms=x)))
-            inherited.append((int(t), SliderVel(vel=base_slider_vel)))
+            uninherited.append(BeatLen(t, ms=x))
+            inherited.append(SliderVel(t, vel=base_slider_vel))
 
     # parse hit objects
     for l in cfg.hit_objects:
         spl = l.strip().split(",")
-        x, y, t, typ, hit_sound = [int(float(x)) for x in spl[:5]]
+        x, y, t, typ, hit_sound = [round(float(x)) for x in spl[:5]]
 
         hit_object_args = (
-            (typ&(1<<2)) > 0,           # new_combo
-            0 != hit_sound & (1 << 1),  # whistle
-            0 != hit_sound & (1 << 2),  # finish
-            0 != hit_sound & (1 << 3),  # clap
+            (typ&(1<<2)) > 0,
+            0 != hit_sound & (1 << 1),
+            0 != hit_sound & (1 << 2),
+            0 != hit_sound & (1 << 3),
         )
 
         if typ & (1 << 0):  # hit circle
-            objects.append((t, HitCircle(*hit_object_args, p=(x,y))))
+            objects.append(HitCircle(t, *hit_object_args, p=(x,y)))
             continue
         elif typ & (1 << 1):  # slider
             curve_spec, slides, length = spl[5:8]
             try:
-                slider = parse_slider(x,y,hit_object_args, curve_spec, int(slides), float(length))
+                slider = parse_slider(t,x,y, hit_object_args, curve_spec, int(slides), float(length))
             except Exception as e:
                 raise Exception(t, (x,y), curve_spec) from e
-            objects.append((t, slider))
+            objects.append(slider)
             continue
         elif typ & (1 << 3):  # spinner
-            d = int(float(spl[5]) - t)
-            objects.append((t, Spinner(*hit_object_args, duration=d)))
+            objects.append(Spinner(t, round(float(spl[5])), *hit_object_args))
             continue
 
     # `sorted` is stable- for the same time, order is maintained
-    timed = sorted([ *uninherited, *inherited, *objects ], key=lambda t: t[0])
+    timed = sorted([ *uninherited, *inherited, *objects ], key=lambda obj: obj.t)
 
     # post-hoc computation of duration from slider length, beat length, and slider mult
-    cur_beat_len = uninherited[0][1].ms
+    cur_beat_len = uninherited[0].ms
     cur_slider_vel = base_slider_vel
-    for i, (t, v) in enumerate(timed):
+    for i, v in enumerate(timed):
         if isinstance(v, BeatLen):
             cur_beat_len = v.ms
         elif isinstance(v, SliderVel):
             cur_slider_vel = v.vel
         elif isinstance(v, Slider):
-            # (negative of) visual length of sliders is temporarily stored in duration 
-            slide_duration = -v.duration / (cur_slider_vel * 100) * cur_beat_len
-            v.duration = round(v.slides * slide_duration)
+            # (negative of) visual length of sliders is temporarily stored in u 
+            slide_duration = -v.u / (cur_slider_vel * 100) * cur_beat_len
+            v.u = v.t + round(v.slides * slide_duration)
 
     # remove timing points
-    for i, (_, v) in reversed(list(enumerate(timed))):
+    for i, v in reversed(list(enumerate(timed))):
         if isinstance(v, (BeatLen, SliderVel)):
             timed.pop(i)
 
@@ -133,7 +133,7 @@ def to_beatmap(
     # first loop over inherited timing points to compute base slider vel
     min_slider_vel = float('inf')
     max_slider_vel = float('-inf')
-    for _, obj in ib.timed:
+    for obj in ib.timed:
         if isinstance(obj, Slider):
             vel = obj.vel()
             min_slider_vel = min(min_slider_vel, vel)
@@ -147,7 +147,8 @@ def to_beatmap(
     slider_vels = []
 
     # running timing context for reconstructing slider length
-    for t, v in ib.timed:
+    for v in ib.timed:
+        t = v.t
         if isinstance(v, Break):
             end_time = t + v.duration
             breaks.append(f"2,{t},{end_time}")
@@ -191,9 +192,9 @@ def to_beatmap(
 
                     case BezierSlider():
 
-                        if len(v.segments) == 1 and isinstance(v.segments[0], LineSegment):
+                        if len(v.segments) == 1 and len(v.segments[0].ctrl) == 1:
                             # single line
-                            qx, qy = v.segments[0].q
+                            qx, qy = v.segments[0].ctrl[0]
                             curve = f"L|{qx}:{qy}"
                         else:
                             pts = []
@@ -201,18 +202,8 @@ def to_beatmap(
                             for seg in v.segments:
                                 if last_q is not None:
                                     pts.append(last_q)
-                                last_q = seg.q
-
-                                match seg:
-                                    case LineSegment(q):
-                                        pts.append(q)
-                                    case QuadraticSegment(q,c):
-                                        pts.append(c)
-                                        pts.append(q)
-                                    case CubicSegment(q,c1,c2):
-                                        pts.append(c1)
-                                        pts.append(c2)
-                                        pts.append(q)
+                                last_q = seg.ctrl[-1]
+                                pts.extend(seg.ctrl)
 
                             rest = "|".join(f"{px}:{py}" for px, py in pts)
                             curve = f"B|{rest}"

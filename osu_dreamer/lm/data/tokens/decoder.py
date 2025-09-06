@@ -1,8 +1,6 @@
 
 import numpy as np
 
-from osu_dreamer.data.load_audio import MS_PER_FRAME
-
 from ..parse.beatmap import BeatmapEvents
 
 from ..timed import *
@@ -45,7 +43,7 @@ class Decoder:
                 raise self.UnexpectedToken(tok)
 
     def parse_beatmap_events(self) -> BeatmapEvents:
-        events: list[tuple[int, Timed]] = []
+        events: list[Timed] = []
         self.t = 0
         self.parse_token(TokenType.BOS)
         while True:
@@ -59,11 +57,11 @@ class Decoder:
             obj_time = self.t
             match self.next_token():
                 case Token(TokenType.BREAK):
-                    timed = Break(self.parse_duration())
+                    timed = Break(obj_time, self.parse_duration())
                 case _ as tok:
                     self.push_back(tok)
-                    timed = self.parse_hit_object()
-            events.append((obj_time, timed))
+                    timed = self.parse_hit_object(obj_time)
+            events.append(timed)
     
     def parse_coordinate(self) -> tuple[int, int]:
         coarse_x_bin, coarse_y_bin = self.parse_token_value(TokenType.POS_COARSE)
@@ -102,7 +100,7 @@ class Decoder:
         deviation_bin = self.parse_token_value(TokenType.DEVIATION)
         return deviation_bin * 2*np.pi / self.vocab.DEVIATION_BINS - np.pi
         
-    def parse_hit_object(self) -> Timed:
+    def parse_hit_object(self, t: int) -> Timed:
         new_combo, whistle, finish, clap = False, False, False, False
         while True:
             match self.next_token():
@@ -118,15 +116,16 @@ class Decoder:
 
         match self.next_token():
             case Token(TokenType.SPINNER):
-                return Spinner(*hit_object_args, self.parse_duration())
+                u = t + self.parse_duration()
+                return Spinner(t, u, *hit_object_args)
             case Token(TokenType.HIT_CIRCLE):
-                return HitCircle(*hit_object_args, self.parse_coordinate())
+                return HitCircle(t, *hit_object_args, self.parse_coordinate())
             case Token(TokenType.SLIDER):
-                dur = self.parse_duration()
-                assert dur > 0
+                u = t + self.parse_duration()
+                assert u > t
                 slides: int = self.parse_token_value(TokenType.SLIDES)
                 head = self.parse_coordinate()
-                slider_args = *hit_object_args, dur, slides, head
+                slider_args = t, u, *hit_object_args, slides, head
                 match self.next_token():
                     case Token(TokenType.PERFECT):
                         tail = self.parse_coordinate()
@@ -147,7 +146,7 @@ class Decoder:
                         while True:
                             match self.next_token():
                                 case Token(TokenType.LINEAR):
-                                    segments.append(LineSegment(self.parse_coordinate()))
+                                    segments.append(self.parse_linear_segment(p))
                                 case Token(TokenType.QUADRATIC):
                                     segments.append(self.parse_quadratic_segment(p))
                                 case Token(TokenType.CUBIC):
@@ -155,14 +154,17 @@ class Decoder:
                                 case _ as tok:
                                     self.push_back(tok)
                                     break
-                            p = segments[-1].q
+                            p = segments[-1].ctrl[-1]
                         return BezierSlider(*slider_args, segments)
                     case _ as tok:
                         raise self.UnexpectedToken(tok)
             case _ as tok:
                 raise self.UnexpectedToken(tok)
             
-    def parse_quadratic_segment(self, head: Coordinate) -> QuadraticSegment:
+    def parse_linear_segment(self, head: Coordinate) -> BezierSegment:
+        return BezierSegment([self.parse_coordinate()])
+            
+    def parse_quadratic_segment(self, head: Coordinate) -> BezierSegment:
 
         tail = self.parse_coordinate()
         c_dev = self.parse_deviation()
@@ -175,12 +177,12 @@ class Decoder:
         d = v*np.cos(c_dev) + u*np.sin(c_dev)
         c = p + c_scale * d / np.linalg.norm(d)
 
-        return QuadraticSegment(
-            q = tuple(q.round().astype(int).tolist()),
-            c = tuple(c.round().astype(int).tolist()),
-        )
+        return BezierSegment([
+            tuple(c.round().astype(int).tolist())
+            for c in [c,q]
+        ])
             
-    def parse_cubic_segment(self, head: Coordinate) -> CubicSegment:
+    def parse_cubic_segment(self, head: Coordinate) -> BezierSegment:
 
         tail = self.parse_coordinate()
         pc_dev = self.parse_deviation()
@@ -198,11 +200,10 @@ class Decoder:
         pc = p + pc_scale * pd / np.linalg.norm(pd)
         qc = q - qc_scale * qd / np.linalg.norm(qd)
 
-        return CubicSegment(
-            q = tuple(q.round().astype(int).tolist()),
-            pc = tuple(pc.round().astype(int).tolist()),
-            qc = tuple(qc.round().astype(int).tolist()),
-        )
+        return BezierSegment([
+            tuple(c.round().astype(int).tolist())
+            for c in [pc,qc,q]
+        ])
 
     def parse_magnitude(self) -> float:
         b = self.parse_token_value(TokenType.MAGNITUDE)
