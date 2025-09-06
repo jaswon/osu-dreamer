@@ -11,6 +11,7 @@ import click
 
 from osu_dreamer.data.load_audio import load_audio
 from osu_dreamer.lm.model import Model
+from osu_dreamer.lm.data.tokens.decoder import Decoder
 from osu_dreamer.lm.data.parse.beatmap import to_beatmap, BeatmapDifficulty, Metadata
 
 
@@ -73,11 +74,10 @@ def predict(
             token_ids = model.sample(
                 audio, map_features,
                 max_len=-1,
-                greedy=False,
                 show_progress=True,
             )
 
-        map_events = model.T.decode(token_ids[0].tolist())
+        map_events = Decoder(model.vocab, token_ids.tolist()).parse_beatmap_events()
         map_diff = BeatmapDifficulty(
             hp_drain_rate=d[0],
             circle_size=d[1],

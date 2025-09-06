@@ -30,10 +30,7 @@ class Tokenizer:
         return toks, ts
 
     def decode(self, beatmap_token_ids: list[int]) -> BeatmapEvents:
-        return Decoder(
-            self.vocab,
-            [ self.vocab.tokens[tid] for tid in beatmap_token_ids ]
-        ).parse_beatmap_events()
+        return Decoder(self.vocab, beatmap_token_ids).parse_beatmap_events()
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
         assert self.vocab.x_min <= p[0] < self.vocab.x_max, p[0]

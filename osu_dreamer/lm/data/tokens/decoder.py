@@ -13,10 +13,10 @@ class Decoder:
     def __init__(
         self, 
         vocab: Vocab,
-        tokens: list[Token],
+        token_ids: list[int],
     ):
         self.vocab = vocab
-        self.tokens = iter(tokens)
+        self.tokens = iter([ vocab.tokens[tid] for tid in token_ids ])
         self.push_back_stack = []
         self.t = 0
 
