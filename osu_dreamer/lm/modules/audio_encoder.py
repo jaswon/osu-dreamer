@@ -1,40 +1,20 @@
 
 import torch.nn as nn
 
-from einops.layers.torch import Rearrange, Reduce
-
-class ResidualBlock(nn.Module):
-    def __init__(self, h_dim):
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(h_dim, h_dim, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(h_dim, h_dim, kernel_size=3, padding=1),
-        )
-        self.silu = nn.SiLU()
-
-    def forward(self, x):
-        return self.silu(x + self.conv(x))
+from einops.layers.torch import Rearrange
 
 class SimpleAudioEncoder(nn.Module):
-    def __init__(self, h_dim: int, num_layers: int = 4):
+    def __init__(self, h_dim: int):
         super().__init__()
         
-        layers = [
-            Rearrange('b d l -> b 1 d l'),
-            nn.Conv2d(1, h_dim, kernel_size=3, padding=1),
+        self.encoder = nn.Sequential(
+            Rearrange('b f l -> b 1 f l'),
+            nn.Conv2d(1, 1, (1, 7), (1,1), (1,3)),
             nn.SiLU(),
-        ]
-        
-        for i in range(num_layers):
-            layers.append(ResidualBlock(h_dim))
-            # Downsample by 2 in time and frequency every 2 layers
-            if i % 2 == 1:
-                layers.append(nn.Conv2d(h_dim, h_dim, kernel_size=3, stride=2, padding=1))
-            
-        layers.append(Reduce('b d f l -> b d l', 'mean'))
-
-        self.encoder = nn.Sequential(*layers)
+            nn.AdaptiveMaxPool2d((5, None)), # b 1 5 l
+            Rearrange('b 1 d l -> b d l'),
+            nn.Conv1d(5, h_dim, 1), # b h l
+        )
 
     def forward(self, x):
         return self.encoder(x)
