@@ -52,6 +52,8 @@ class Model(pl.LightningModule):
         # model components
         self.vocab = vocab
         vocab_size = len(vocab.tokens)
+        ctx_size = num_global_ctx + 1 + sum( p+f for p,f in vocab.context_radii)
+        self.ctx_embed = nn.Parameter(th.randn(ctx_size, ctx_dim))
         self.token_embed = nn.Embedding(vocab_size, emb_dim)
         self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
         self.token_head = nn.Linear(emb_dim, vocab_size)
@@ -83,7 +85,7 @@ class Model(pl.LightningModule):
         multi_scale_ctx = self.ctx_encoder(self.ctx_encoder.precompute(audio_features), frame_idxs) # B N T C
 
         expanded_global_ctx = global_ctx[None, None, ...].expand(tokens.size(0), timestamps.size(1), -1, -1)
-        ctx = th.cat([ expanded_global_ctx, multi_scale_ctx ], dim=2) # B N T+G C
+        ctx = self.ctx_embed + th.cat([ expanded_global_ctx, multi_scale_ctx ], dim=2) # B N T+G C
         
         embs = self.token_embed(tokens[:,:-1]) # B N D
         output, _ = self.decoder(embs, ctx=ctx)
@@ -205,11 +207,10 @@ class Model(pl.LightningModule):
                 multi_scale_ctx = self.ctx_encoder(multiscale_features, frame_idxs)
                 
                 expanded_global_ctx = global_ctx[None, None, ...].expand(1, 1, -1, -1)
-                ctx = th.cat([expanded_global_ctx, multi_scale_ctx], dim=2)
-
-                embs = self.token_embed(token_tensor)
+                ctx = self.ctx_embed + th.cat([expanded_global_ctx, multi_scale_ctx], dim=2)
 
                 # decode one step
+                embs = self.token_embed(token_tensor)
                 output, cache = self.decoder(embs, ctx=ctx, cache=cache)
                 logits = self.token_head(output)[0,0] # V
 
