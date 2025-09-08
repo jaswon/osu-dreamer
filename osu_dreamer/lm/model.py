@@ -88,7 +88,6 @@ class Model(pl.LightningModule):
         embs = self.token_embed(tokens[:,:-1]) # B N D
         output, _ = self.decoder(embs, ctx=ctx)
         logits = self.token_head(output) # B N V
-        logits.masked_fill_(~valid, -th.inf)
         
         return logits, tokens[:,1:]
     
