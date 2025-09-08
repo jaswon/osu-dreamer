@@ -38,8 +38,9 @@ class RotaryEmbedding(nn.Module):
         return (x * cos) + (rotate_half(x) * sin)
 
 class SelfAttention(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, dropout: float):
+    def __init__(self, d_model: int, n_heads: int, dropout: float, max_cache_len: int = 1024):
         super().__init__()
+        self.max_cache_len = max_cache_len
         self.n_heads = n_heads
         self.d_head = d_model // n_heads
         
@@ -73,6 +74,10 @@ class SelfAttention(nn.Module):
             past_k, past_v = cache
             k = th.cat([past_k, k], dim=2)
             v = th.cat([past_v, v], dim=2)
+
+            if k.shape[2] > self.max_cache_len:
+                k = k[:, :, -self.max_cache_len:]
+                v = v[:, :, -self.max_cache_len:]
 
         out = F.scaled_dot_product_attention(
             q, k, v,
