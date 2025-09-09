@@ -1,5 +1,5 @@
 
-from dataclasses import KW_ONLY, dataclass
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -106,17 +106,17 @@ class PerfectSlider(Slider):
 
         A = np.array(self.head)
         C = np.array(self.tail)
-        AC = C - A
 
+        AC = C - A
+        AC_R = np.array([ -AC[1], AC[0] ]) # rotated +pi/2
+
+        # r: |AB|/|AC|
         r = np.sin(self.deviation/2) / np.sin(self.deviation)
         r = min(r, 100/np.linalg.norm(AC))
 
         CAB = self.deviation - np.arcsin(r * np.sin(self.deviation))
-
-        AC_R = np.array([ -AC[1], AC[0] ]) # rotated +pi/2
-
-        AC = r * (np.cos(CAB)*AC + np.sin(CAB)*AC_R)
-        return tuple(np.round(A + AC).astype(int).tolist())
+        AB = r * (np.cos(CAB)*AC + np.sin(CAB)*AC_R)
+        return tuple(np.round(A + AB).astype(int).tolist())
     
     def length(self) -> float:
         a = np.array(self.head)
