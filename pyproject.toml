@@ -15,6 +15,7 @@ dependencies = [
     "scipy>=1.15.1",
     "tinytag>=2.0.0",
     "torch>=2.8.0",
+    "xformers>=0.0.32.post2",
 ]
 
 [dependency-groups]
@@ -26,3 +27,6 @@ dev = [
     "matplotlib>=3.10.0",
     "tensorboard>=2.18.0",
 ]
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu128"
