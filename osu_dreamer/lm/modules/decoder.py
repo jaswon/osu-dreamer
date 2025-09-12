@@ -6,7 +6,8 @@ from dataclasses import dataclass
 import torch as th
 from torch.utils.checkpoint import checkpoint
 from torch import nn, Tensor
-import torch.nn.functional as F
+
+import xformers.ops as xops
 
 
 @dataclass
@@ -58,30 +59,28 @@ class SelfAttention(nn.Module):
         
         q, k, v = self.qkv_proj(x).chunk(3, dim=-1)
         
-        q = q.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
-        k = k.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
-        v = v.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
+        q = q.view(B, N, self.n_heads, self.d_head)
+        k = k.view(B, N, self.n_heads, self.d_head)
+        v = v.view(B, N, self.n_heads, self.d_head)
         
         offset = 0
         if cache is not None:
             past_k, past_v = cache
-            offset = past_k.shape[2]
+            offset = past_k.shape[1]
+            k = th.cat([past_k, k], dim=1)
+            v = th.cat([past_v, v], dim=1)
 
-        q = self.rotary_emb(q, offset=offset)
-        k = self.rotary_emb(k, offset=offset)
+            if k.shape[1] > self.max_cache_len:
+                k = k[:, -self.max_cache_len:]
+                v = v[:, -self.max_cache_len:]
+
+        q = self.rotary_emb(q.transpose(1, 2), offset=offset).transpose(1, 2)  
+        k = self.rotary_emb(k.transpose(1, 2), offset=offset).transpose(1, 2)
+
+        attn_bias = xops.LowerTriangularMask() if cache is None else None
+        out = xops.memory_efficient_attention(q, k, v, attn_bias=attn_bias)
         
-        if cache is not None:
-            past_k, past_v = cache
-            k = th.cat([past_k, k], dim=2)
-            v = th.cat([past_v, v], dim=2)
-
-            if k.shape[2] > self.max_cache_len:
-                k = k[:, :, -self.max_cache_len:]
-                v = v[:, :, -self.max_cache_len:]
-
-        out = F.scaled_dot_product_attention(q, k, v, is_causal=cache is None)
-        
-        out = out.transpose(1, 2).contiguous().view(B, N, -1)
+        out = out.view(B, N, -1)
         
         return self.out_proj(out), (k, v)
 
@@ -108,45 +107,29 @@ class CrossAttention(nn.Module):
         
         # Project queries from x
         q = self.q_proj(x)  # B N D
-        q = q.view(B, N, self.n_heads, self.d_head).transpose(1, 2)  # B H N d
+        q = q.view(B, N, self.n_heads, self.d_head)  # B N H d
         
         # Project keys and values from context
-        kv = self.kv_proj(ctx)  # B L 2D
-        k, v = kv.chunk(2, dim=-1)  # B L D each
-        k = k.view(B, L, self.n_heads, self.d_head).transpose(1, 2)  # B H L d
-        v = v.view(B, L, self.n_heads, self.d_head).transpose(1, 2)  # B H L d
+        k, v = self.kv_proj(ctx).chunk(2, dim=-1)  # B L D each
+        k = k.view(B, L, self.n_heads, self.d_head)  # B L H d
+        v = v.view(B, L, self.n_heads, self.d_head)  # B L H d
         
-        # Attention
-        attn_out = F.scaled_dot_product_attention(q, k, v)  # B H N d
+        attn_out = xops.memory_efficient_attention(q, k, v)  # B N H d
         
         # Reshape and project output
-        attn_out = attn_out.transpose(1, 2).contiguous().view(B, N, D)  # B N D
+        attn_out = attn_out.view(B, N, D)  # B N D
         attn_out = self.out_proj(attn_out)
         
         # Apply gating
         gate_val = th.sigmoid(self.gate(x))
         return gate_val * attn_out
 
-class SwiGLU(nn.Module):
-    def __init__(self, d_model: int, h_dim: int | None = None):
-        super().__init__()
-        if h_dim is None:
-            h_dim = int(d_model * 8 / 3)
-            h_dim = (h_dim + 7) // 8 * 8
-            
-        self.w1 = nn.Linear(d_model, h_dim, bias=False)
-        self.w2 = nn.Linear(d_model, h_dim, bias=False)
-        self.w3 = nn.Linear(h_dim, d_model, bias=False)
-
-    def forward(self, x: Float[Tensor, "B N D"]) -> Float[Tensor, "B N D"]:
-        return self.w3(F.silu(self.w1(x)) * self.w2(x))
-
 class DecoderLayer(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
         super().__init__()
         self.self_attn = SelfAttention(d_model, n_heads, dropout)
         self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim)
-        self.ffn = SwiGLU(d_model)
+        self.ffn = xops.SwiGLU(d_model, (int(d_model * 8 / 3) + 7) // 8 * 8)
         
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)

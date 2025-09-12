@@ -38,8 +38,8 @@ trainer:
   check_val_every_n_epoch: null
 
 data:
-  context_size: 256
-  batch_size: 24
+  context_size: 512
+  batch_size: 32
   num_workers: 8
   val_size: 128
   data_path: ./data
@@ -63,12 +63,12 @@ model:
     warmup_init: 0.05
     decay_start: 15000
     
-  emb_dim: 256
-  ctx_dim: 192
+  emb_dim: 512
+  ctx_dim: 384
 
-  audio_h_dim: 192
+  audio_h_dim: 384
 
   decoder_args:
-    n_heads: 8
-    n_layers: 8
+    n_heads: 16
+    n_layers: 12
     dropout: 0.15
