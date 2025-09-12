@@ -3,7 +3,7 @@ from jaxtyping import Float, Int
 
 import torch as th
 import torch.nn.functional as F
-from torch import Tensor, nn
+from torch import Tensor
 
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -20,6 +20,7 @@ from .data.tokens.tokens import Vocab, Token, TokenType
 
 from .modules.audio_encoder import SimpleAudioEncoder
 from .modules.decoder import Decoder, DecoderArgs
+from .modules.head import TokenHead
 
 
 class Model(pl.LightningModule):
@@ -57,11 +58,8 @@ class Model(pl.LightningModule):
         
         # model components
         self.vocab = vocab
-        vocab_size = len(vocab.tokens)
-        self.token_embed = nn.Embedding(vocab_size, emb_dim)
         self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
-        self.token_head = nn.Linear(emb_dim, vocab_size)
-        self.criterion = nn.CrossEntropyLoss(ignore_index=0)  # 0 = PAD token
+        self.head = TokenHead(vocab, emb_dim)
         
         # audio encoder
         self.audio_encoder = SimpleAudioEncoder(ctx_dim)
@@ -72,30 +70,24 @@ class Model(pl.LightningModule):
         map_features: Float[Tensor, "B M"],
         audio: Float[Tensor, "B A L"],
         tokens: Int[Tensor, "B Np1"],
+        calc_accuracy: bool = False,
     ) -> tuple[
-        Float[Tensor, "B N V"], # pred logits
-        Int[Tensor, "B N"]      # true targets
+        Float[Tensor, ""],  # loss
+        dict[str, float],   # log dict
     ]:
         ctx = self.audio_encoder(audio) # B L D
-        embs = self.token_embed(tokens[:,:-1]) # B N D
+        embs = self.head.embed(tokens[:,:-1]) # B N D
         output, _ = self.decoder(embs, ctx=ctx)
-        logits = self.token_head(output) # B N V
-        
-        return logits, tokens[:,1:]
+        return self.head(output, tokens[:,1:], calc_accuracy)
     
     def training_step(self, batch: Batch, batch_idx: int):
         # Forward pass
-        pred_logits, target_tokens = self.forward(
+        loss, log_dict = self.forward(
             batch.map_features,
             batch.audio,
             batch.tokens,
         )
-        
-        loss = self.criterion(pred_logits.reshape(-1, pred_logits.size(-1)), target_tokens.reshape(-1))
-        
-        # Log metrics
-        self.log('train/loss', loss, batch_size=batch.tokens.size(0))
-        
+        self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
     
     def validation_step(self, batch: Batch, batch_idx: int):
@@ -114,23 +106,13 @@ class Model(pl.LightningModule):
             exp.add_text(f'sample', sample_text, global_step=self.global_step)
 
         # Forward pass
-        pred_logits, target_tokens = self.forward(
+        loss, log_dict = self.forward(
             batch.map_features,
             batch.audio,
             batch.tokens,
+            calc_accuracy=True,
         )
-        
-        # Calculate loss
-        loss = self.criterion(pred_logits.reshape(-1, pred_logits.size(-1)), target_tokens.reshape(-1))
-        
-        # Calculate accuracy
-        pred_tokens = pred_logits.argmax(dim=-1)
-        accuracy = (pred_tokens == target_tokens).float().mean()
-        
-        # Log metrics
-        self.log('val/loss', loss, batch_size=batch.tokens.size(0))
-        self.log('val/accuracy', accuracy, batch_size=batch.tokens.size(0))
-
+        self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
         return loss
     
     def configure_optimizers(self):
@@ -163,7 +145,7 @@ class Model(pl.LightningModule):
         # precompute audio features
         L = audio.size(-1)
         audio_features = self.audio_encoder(audio[None]) # 1 l h
-        frame_times = th.tensor(get_frame_times(L), device=audio.device)
+        frame_times = th.tensor(get_frame_times(L), device=self.device)
         audio_duration_ms = frame_times[-1].item()
 
         # precompute sampling params
@@ -190,16 +172,14 @@ class Model(pl.LightningModule):
             for i in itertools.count():
                 ctx_starts.append(ctx_start)
                 generated_tokens.append(token_id)
-                logit_mask = th.tensor(lp.advance(token_id), device=audio.device)
+                logit_mask = th.tensor(lp.advance(token_id), device=self.device)
 
                 # limit generation
                 if max_len > 0 and i >= max_len:
                     break
 
                 # decode one step
-                token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
                 ctx = audio_features[:,ctx_start:ctx_start+ctx_size]
-                embs = self.token_embed(token_tensor)
                 
                 # If cache has been invalidated, do full forward pass with context-adjusted tokens
                 if cache is None:
@@ -212,13 +192,15 @@ class Model(pl.LightningModule):
                     
                     # Do full forward pass with adjusted tokens
                     all_tokens = th.tensor([adjusted_tokens], device=self.device, dtype=th.long)
-                    all_embs = self.token_embed(all_tokens)
+                    all_embs = self.head.embed(all_tokens)
                     all_output, cache = self.decoder(all_embs, ctx=ctx, cache=None)
-                    logits = self.token_head(all_output)[0,-1] # Get logits for the last token
+                    logits = self.head.logits(all_output)[0,-1] # Get logits for the last token
                 else:
                     # Normal incremental decode
+                    token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
+                    embs = self.head.embed(token_tensor)
                     output, cache = self.decoder(embs, ctx=ctx, cache=cache)
-                    logits = self.token_head(output)[0,0] # V
+                    logits = self.head.logits(output)[0,0] # V
 
                 # mask grammatically incorrect tokens
                 logits = th.where(logit_mask, logits, -th.inf)
