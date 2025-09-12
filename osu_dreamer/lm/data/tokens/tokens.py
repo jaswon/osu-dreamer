@@ -141,3 +141,8 @@ class Vocab:
         )
 
         self.ids = { token: i for i, token in enumerate(self.tokens) }
+
+        # frequently used control tokens
+        self.PAD = self.ids[Token(TokenType.PAD)]
+        self.BOS = self.ids[Token(TokenType.BOS)]
+        self.EOS = self.ids[Token(TokenType.EOS)]

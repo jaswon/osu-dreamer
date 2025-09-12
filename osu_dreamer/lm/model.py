@@ -155,8 +155,7 @@ class Model(pl.LightningModule):
         ctx_shift_amount = round(self.context_shift_amount * ctx_size)
 
         # initialize sequence
-        bos_id = self.vocab.ids[Token(TokenType.BOS)]
-        token_id = bos_id
+        token_id = self.vocab.BOS
         generated_tokens: list[int] = []
         ctx_starts: list[int] = []
         ctx_start = 0
@@ -188,7 +187,7 @@ class Model(pl.LightningModule):
 
                     if len(adjusted_tokens) == 0:
                         # no token history, set to bos
-                        adjusted_tokens = [bos_id]
+                        adjusted_tokens = [self.vocab.BOS]
                     
                     # Do full forward pass with adjusted tokens
                     all_tokens = th.tensor([adjusted_tokens], device=self.device, dtype=th.long)

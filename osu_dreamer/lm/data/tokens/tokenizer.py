@@ -15,7 +15,7 @@ class Tokenizer:
         self.bm_tokens = list(self._tokenize_timed_objects(bm))
 
     def encode(self, start_frame: int) -> list[int]:
-        toks = []
+        toks = [self.vocab.BOS]
         encode = False
         end_frame = start_frame + self.vocab.time_bins
         for tok in self.bm_tokens:
@@ -31,6 +31,7 @@ class Tokenizer:
 
             if encode:
                 toks.append(self.vocab.ids[tok])
+        toks.append(self.vocab.EOS)
         return toks
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
