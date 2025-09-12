@@ -41,7 +41,6 @@ class Model(pl.LightningModule):
         
         # audio encoder hparams
         ctx_dim: int,
-        audio_h_dim: int,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -65,7 +64,7 @@ class Model(pl.LightningModule):
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)  # 0 = PAD token
         
         # audio encoder
-        self.audio_encoder = SimpleAudioEncoder(audio_h_dim)
+        self.audio_encoder = SimpleAudioEncoder(ctx_dim)
         
     
     def forward(
