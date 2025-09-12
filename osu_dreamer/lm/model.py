@@ -13,7 +13,7 @@ import itertools
 from osu_dreamer.lm.data.tokens.state import LogitProcessor
 from osu_dreamer.modules.muon import Muon
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
-from osu_dreamer.data.load_audio import MS_PER_FRAME, get_frame_times
+from osu_dreamer.data.load_audio import MS_PER_FRAME
 
 from .data.dataset import Batch
 from .data.tokens.tokens import Vocab, Token, TokenType
@@ -145,8 +145,6 @@ class Model(pl.LightningModule):
         # precompute audio features
         L = audio.size(-1)
         audio_features = self.audio_encoder(audio[None]) # 1 l h
-        frame_times = th.tensor(get_frame_times(L), device=self.device)
-        audio_duration_ms = frame_times[-1].item()
 
         # precompute sampling params
         ctx_size = self.vocab.time_bins
@@ -167,7 +165,7 @@ class Model(pl.LightningModule):
         # initialize logit processor
         lp = LogitProcessor(self.vocab)
 
-        with tqdm(total=int(audio_duration_ms), desc="sampling", disable=not show_progress) as pbar:
+        with tqdm(total=int(audio.size(-1)), desc="sampling", disable=not show_progress) as pbar:
             for i in itertools.count():
                 ctx_starts.append(ctx_start)
                 generated_tokens.append(token_id)
@@ -240,9 +238,9 @@ class Model(pl.LightningModule):
                     if cur_frame > ctx_shift_threshold:
                         advance_context = True
 
-                    cur_time = MS_PER_FRAME * (ctx_start + cur_frame)
-                    if cur_time > pbar.n:
-                        pbar.update(cur_time - pbar.n)
+                    cur_global_frame = (ctx_start + cur_frame)
+                    if cur_global_frame > pbar.n:
+                        pbar.update(cur_global_frame - pbar.n)
 
                 if advance_context:
                     # shift context forward, and invalidate cache
