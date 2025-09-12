@@ -60,10 +60,13 @@ class TokenHead(nn.Module):
         token_logits: Float[Tensor, "B N D"],
         time_logits: Float[Tensor, "B N T"],
     ) -> Float[Tensor, "B N V"]:
-        return th.cat([
-            token_logits[:,:,:-1],
-            time_logits + token_logits[:,:,-1:],
-        ], dim=-1)
+        token_probs = token_logits.softmax(dim=-1)
+
+        # P(time_i) = P(time_type) * P(time_i | time_type)
+        marginal_time_probs = token_probs[:,:,-1:] * time_logits.softmax(dim=-1)
+
+        combined_probs = th.cat([token_probs[:,:,:-1], marginal_time_probs], dim=-1)
+        return th.log(combined_probs + 1e-8)
 
     def forward(
         self,
@@ -83,6 +86,7 @@ class TokenHead(nn.Module):
             true_token_classes.reshape(-1),
         )
 
+        # continuous ranked probability loss
         pred_time_logits = self.time_head(pred_embs)
         pred_timing_cdf = pred_time_logits.softmax(dim=-1).cumsum(dim=-1)
         true_time_classes = th.clamp(true_tokens - self.t0, min=0)
