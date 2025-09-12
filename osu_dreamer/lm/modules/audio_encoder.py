@@ -11,10 +11,10 @@ class SimpleAudioEncoder(nn.Module):
         
         self.encoder = nn.Sequential(
             Rearrange('b f l -> b 1 f l'),
-            nn.Conv2d(1, 1, (1, 7), (1,1), (1,3)),
+            nn.Conv2d(1, 5, (1, 7), (1,1), (1,3)),
             nn.SiLU(),
-            nn.AdaptiveMaxPool2d((5, None)), # b 1 5 l
-            Rearrange('b 1 d l -> b d l'),
+            nn.AdaptiveMaxPool2d((1, None)), # b 5 1 l
+            Rearrange('b d 1 l -> b d l'),
             nn.Conv1d(5, h_dim, 1),
             Rearrange('b h l -> b l h'),
         )
