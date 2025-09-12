@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch as th
 from torch.utils.checkpoint import checkpoint
 from torch import nn, Tensor
+import math
 
 import xformers.ops as xops
 
@@ -15,6 +16,7 @@ class DecoderArgs:
     n_heads: int
     n_layers: int
     dropout: float
+    n_freqs: int = 64
     checkpoint: bool = True
 
 class RotaryEmbedding(nn.Module):
@@ -28,15 +30,33 @@ class RotaryEmbedding(nn.Module):
         t = th.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype) + offset
         freqs = th.einsum("i,j->ij", t, self.inv_freq)
         emb = th.cat((freqs, freqs), dim=-1)
-        
-        cos = emb.cos()
-        sin = emb.sin()
 
         def rotate_half(x: Tensor) -> Tensor:
             x1, x2 = x.chunk(2, dim=-1)
             return th.cat((-x2, x1), dim=-1)
 
-        return (x * cos) + (rotate_half(x) * sin)
+        return (x * emb.cos()) + (rotate_half(x) * emb.sin())
+
+class RandomFourierPositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, n_freqs: int = 64, max_len: float = 10000.0):
+        super().__init__()
+        self.d_model = d_model
+        self.n_freqs = n_freqs
+        
+        # Random frequencies sampled from log-uniform distribution
+        rff_freqs = th.exp(th.randn(n_freqs) * math.log(max_len))
+        self.register_buffer("rff_freqs", rff_freqs)
+        self.rff_freqs: Tensor
+        
+        # Linear projection from 2*n_freqs features to d_model
+        self.proj = nn.Linear(2 * n_freqs, d_model)
+        
+    def forward(self, x: Float[Tensor, "B N D"]) -> Float[Tensor, "B N D"]:
+        L = x.size(-2)
+        positions = th.arange(L, device=x.device, dtype=th.float32)
+        thetas = positions[:,None] * self.rff_freqs[None]  # [L, n_freqs]
+        features = th.cat([th.sin(thetas), th.cos(thetas)], dim=-1)
+        return x + self.proj(features)
 
 class SelfAttention(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dropout: float, max_cache_len: int = 1024):
@@ -85,7 +105,7 @@ class SelfAttention(nn.Module):
         return self.out_proj(out), (k, v)
 
 class CrossAttention(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
+    def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int, n_freqs: int):
         super().__init__()
         self.n_heads = n_heads
         self.d_head = d_model // n_heads
@@ -95,6 +115,9 @@ class CrossAttention(nn.Module):
         self.out_proj = nn.Linear(d_model, d_model)
         self.gate = nn.Linear(d_model, d_model)
         
+        self.q_pos_enc = RandomFourierPositionalEncoding(d_model, n_freqs)
+        self.k_pos_enc = RandomFourierPositionalEncoding(d_model, n_freqs)
+        
         self.dropout = dropout
         
     def forward(
@@ -102,22 +125,23 @@ class CrossAttention(nn.Module):
         x: Float[Tensor, "B N D"], 
         ctx: Float[Tensor, "B L C"]
     ) -> Float[Tensor, "B N D"]:
-        B, N, D = x.shape
-        B_ctx, L, C = ctx.shape
+        B = x.size(0)
         
-        # Project queries from x
-        q = self.q_proj(x)  # B N D
-        q = q.view(B, N, self.n_heads, self.d_head)  # B N H d
+        # Add positional encoding to queries and project
+        q = self.q_proj(x) # B N D
+        q = self.q_pos_enc(q) # B N D
         
-        # Project keys and values from context
-        k, v = self.kv_proj(ctx).chunk(2, dim=-1)  # B L D each
-        k = k.view(B, L, self.n_heads, self.d_head)  # B L H d
-        v = v.view(B, L, self.n_heads, self.d_head)  # B L H d
+        # Project context and add positional encoding to keys
+        kv = self.kv_proj(ctx)  # B L 2D
+        k, v = kv.chunk(2, dim=-1)  # B L D each
+        k = self.k_pos_enc(k)  # Add positional encoding to keys
+        
+        q = q.view(B, -1, self.n_heads, self.d_head)  # B N H d
+        k = k.view(B, -1, self.n_heads, self.d_head)  # B L H d
+        v = v.view(B, -1, self.n_heads, self.d_head)  # B L H d
         
         attn_out = xops.memory_efficient_attention(q, k, v)  # B N H d
-        
-        # Reshape and project output
-        attn_out = attn_out.view(B, N, D)  # B N D
+        attn_out = attn_out.flatten(-2, -1)  # B N D
         attn_out = self.out_proj(attn_out)
         
         # Apply gating
@@ -125,10 +149,10 @@ class CrossAttention(nn.Module):
         return gate_val * attn_out
 
 class DecoderLayer(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
+    def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float, n_freqs: int):
         super().__init__()
         self.self_attn = SelfAttention(d_model, n_heads, dropout)
-        self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim)
+        self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim, n_freqs)
         self.ffn = xops.SwiGLU(d_model, (int(d_model * 8 / 3) + 7) // 8 * 8)
         
         self.norm1 = nn.LayerNorm(d_model)
@@ -172,7 +196,7 @@ class Decoder(nn.Module):
             self.run_block = lambda block, *args: block(*args)
 
         self.layers = nn.ModuleList([
-            DecoderLayer(emb_dim, args.n_heads, args.dropout, ctx_dim)
+            DecoderLayer(emb_dim, ctx_dim, args.n_heads, args.dropout, args.n_freqs)
             for _ in range(args.n_layers)
         ])
 
