@@ -1,6 +1,8 @@
 
 import numpy as np
 
+from osu_dreamer.data.load_audio import MS_PER_FRAME
+
 from ..parse.beatmap import BeatmapEvents
 
 from ..timed import *
@@ -14,53 +16,59 @@ class Decoder:
         self, 
         vocab: Vocab,
         token_ids: list[int],
+        ctx_starts: list[int],
     ):
+        assert len(token_ids) == len(ctx_starts)
         self.vocab = vocab
-        self.tokens = iter([ vocab.tokens[tid] for tid in token_ids ])
-        self.push_back_stack = []
-        self.t = 0
+        self.tokens = [ vocab.tokens[tid] for tid in token_ids ]
+        self.ctx_starts = ctx_starts
+
+        self._idx = -1
 
     def next_token(self) -> Token:
-        if len(self.push_back_stack):
-            return self.push_back_stack.pop()
-        return next(self.tokens)
+        self._idx += 1
+        return self.tokens[self._idx]
     
-    def push_back(self, tok: Token):
-        self.push_back_stack.append(tok)
+    def push_back(self):
+        self._idx -= 1
+
+    @property
+    def ctx_start(self) -> int:
+        return self.ctx_starts[self._idx]
 
     def parse_token(self, T: TokenType):
         match self.next_token():
             case Token(typ) if typ is T:
                 return
-            case _ as tok:
-                raise self.UnexpectedToken(tok)
+            case _:
+                raise self.UnexpectedToken()
     
     def parse_token_value(self, T: TokenType):
         match self.next_token():
             case Token(typ, value) if typ is T:
                 return value
-            case _ as tok:
-                raise self.UnexpectedToken(tok)
+            case _:
+                raise self.UnexpectedToken()
 
     def parse_beatmap_events(self) -> BeatmapEvents:
         events: list[Timed] = []
-        self.t = 0
         self.parse_token(TokenType.BOS)
         while True:
             try:
                 self.parse_token(TokenType.EOS)
                 return BeatmapEvents(events)
-            except self.UnexpectedToken as e:
-                self.push_back(e.args[0])
+            except self.UnexpectedToken:
+                self.push_back()
 
-            self.parse_time_shift()
-            obj_time = self.t
+            t = self.parse_time()
             match self.next_token():
                 case Token(TokenType.BREAK):
-                    timed = Break(obj_time, self.parse_duration())
-                case _ as tok:
-                    self.push_back(tok)
-                    timed = self.parse_hit_object(obj_time)
+                    u = self.parse_release()
+                    assert u > t
+                    timed = Break(t, u)
+                case _:
+                    self.push_back()
+                    timed = self.parse_hit_object(t)
             events.append(timed)
     
     def parse_coordinate(self) -> tuple[int, int]:
@@ -77,24 +85,14 @@ class Decoder:
         
         return round(x), round(y)
 
-    def parse_time_shift(self) -> int:
-        time_shift = 0
-
-        while True:
-            match self.next_token():
-                case Token(TokenType.TIME_SHIFT, i):
-                    time_shift += self.vocab.time_shifts[i]
-                case _ as tok:
-                    self.push_back(tok)
-                    break
-                
-        self.t += time_shift
-        return time_shift
+    def parse_time(self) -> int:
+        time_bin = self.parse_token_value(TokenType.TIME)
+        return MS_PER_FRAME * (time_bin + self.ctx_start)
     
-    def parse_duration(self) -> int:
-        time_shift = self.parse_time_shift()
+    def parse_release(self) -> int:
+        time = self.parse_time()
         self.parse_token(TokenType.RELEASE)
-        return time_shift
+        return time
     
     def parse_deviation(self) -> float:
         deviation_bin = self.parse_token_value(TokenType.DEVIATION)
@@ -102,26 +100,27 @@ class Decoder:
         
     def parse_hit_object(self, t: int) -> Timed:
         new_combo, whistle, finish, clap = False, False, False, False
-        while True:
+        for _ in range(4):
             match self.next_token():
                 case Token(TokenType.NEW_COMBO): new_combo = True
                 case Token(TokenType.WHISTLE): whistle = True
                 case Token(TokenType.FINISH): finish = True
                 case Token(TokenType.CLAP): clap = True
-                case _ as tok:
-                    self.push_back(tok)
+                case _:
+                    self.push_back()
                     break
 
         hit_object_args = new_combo, whistle, finish, clap
 
         match self.next_token():
             case Token(TokenType.SPINNER):
-                u = t + self.parse_duration()
+                u = self.parse_release()
+                assert u > t
                 return Spinner(t, u, *hit_object_args)
             case Token(TokenType.HIT_CIRCLE):
                 return HitCircle(t, *hit_object_args, self.parse_coordinate())
             case Token(TokenType.SLIDER):
-                u = t + self.parse_duration()
+                u = self.parse_release()
                 assert u > t
                 slides: int = self.parse_token_value(TokenType.SLIDES)
                 head = self.parse_coordinate()
@@ -136,8 +135,8 @@ class Decoder:
                         while True:
                             try:
                                 vertices.append(self.parse_coordinate())
-                            except self.UnexpectedToken as e:
-                                self.push_back(e.args[0])
+                            except self.UnexpectedToken:
+                                self.push_back()
                                 break
                         return PolyLineSlider(*slider_args, vertices)
                     case Token(TokenType.BEZIER):
@@ -151,8 +150,8 @@ class Decoder:
                                     segments.append(self.parse_quadratic_segment(p))
                                 case Token(TokenType.CUBIC):
                                     segments.append(self.parse_cubic_segment(p))
-                                case _ as tok:
-                                    self.push_back(tok)
+                                case _:
+                                    self.push_back()
                                     break
                             p = segments[-1].ctrl[-1]
                         return BezierSlider(*slider_args, segments)

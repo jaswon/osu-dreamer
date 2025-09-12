@@ -1,36 +1,37 @@
 
 from typing import Iterator
 
-import bisect
-
 import numpy as np
 
-from .decoder import Decoder
+from osu_dreamer.data.load_audio import MS_PER_FRAME
+
 from ..parse.beatmap import BeatmapEvents
 from ..timed import *
 from .tokens import Token, TokenType, Vocab
 
 class Tokenizer:
-    def __init__(self, vocab: Vocab):
+    def __init__(self, vocab: Vocab, bm: BeatmapEvents):
         self.vocab = vocab
-        self.t = 0
+        self.bm_tokens = list(self._tokenize_timed_objects(bm))
 
-    def encode(self, bm: BeatmapEvents) -> tuple[
-        list[int], # beatmap tokens
-        list[int], # timestamp @ token
-    ]:
-        ts, toks = [0], []
-        for tok in self._tokenize_timed_objects(bm):
-            try:
+    def encode(self, start_frame: int) -> list[int]:
+        toks = []
+        encode = False
+        end_frame = start_frame + self.vocab.time_bins
+        for tok in self.bm_tokens:
+            if tok.typ == TokenType.TIME:
+                f = tok.value // MS_PER_FRAME
+                if f < start_frame:
+                    continue
+                if f >= end_frame:
+                    break
+
+                encode = True
+                tok = Token(TokenType.TIME, f - start_frame)
+
+            if encode:
                 toks.append(self.vocab.ids[tok])
-            except KeyError as e:
-                raise Exception(self.t) from e
-            ts.append(self.t)
-        ts.pop()
-        return toks, ts
-
-    def decode(self, beatmap_token_ids: list[int]) -> BeatmapEvents:
-        return Decoder(self.vocab, beatmap_token_ids).parse_beatmap_events()
+        return toks
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
         assert self.vocab.x_min <= p[0] < self.vocab.x_max, p[0]
@@ -47,20 +48,14 @@ class Tokenizer:
         fine_y_bin, _ = divmod(fine_y, coarse_y_bin_size // self.vocab.fine_y_bins)
         yield Token(TokenType.POS_FINE, (fine_x_bin, fine_y_bin))
 
-    def _tokenize_time_shift(self, ms: int) -> Iterator[Token]:
-        while ms > 0:
-            i = bisect.bisect_right(self.vocab.time_shifts, ms) - 1
-            if i < 0:
-                # remaining time is smaller than frame resolution, ignore
-                return
-            
-            time_shift = self.vocab.time_shifts[i]
-            self.t += time_shift
-            ms -= time_shift
-            yield Token(TokenType.TIME_SHIFT, i)
+    def _tokenize_time(self, t: int) -> Iterator[Token]:
+        # NOTE: this encodes the raw milliseconds into the token.
+        # for most t, these tokens do not have a corresponding id in the vocabulary,
+        # but they will be translated into tokens with valid ids in `self.encode`
+        yield Token(TokenType.TIME, t)
 
-    def _tokenize_duration(self, ms: int) -> Iterator[Token]:
-        yield from self._tokenize_time_shift(ms)
+    def _tokenize_release(self, u: int) -> Iterator[Token]:
+        yield from self._tokenize_time(u)
         yield Token(TokenType.RELEASE)
 
     def _tokenize_deviation(self, d: float) -> Iterator[Token]:
@@ -78,7 +73,7 @@ class Tokenizer:
         match event:
             case Spinner():
                 yield Token(TokenType.SPINNER)
-                yield from self._tokenize_duration(event.duration)
+                yield from self._tokenize_release(event.u)
 
             case HitCircle():
                 yield Token(TokenType.HIT_CIRCLE)
@@ -86,7 +81,7 @@ class Tokenizer:
 
             case Slider():
                 yield Token(TokenType.SLIDER)
-                yield from self._tokenize_duration(event.duration)
+                yield from self._tokenize_release(event.u)
                 yield Token(TokenType.SLIDES, min(event.slides, self.vocab.SLIDES_BINS - 1))
                 yield from self._tokenize_coordinate(event.head)
                 match event:
@@ -159,17 +154,13 @@ class Tokenizer:
         yield Token(TokenType.MAGNITUDE, b)
     
     def _tokenize_timed_objects(self, bm: BeatmapEvents) -> Iterator[Token]:
-        self.t = 0
         yield Token(TokenType.BOS)
         for event in bm.timed:
-            time_shift = event.t - self.t
-            if time_shift > 0:
-                yield from self._tokenize_time_shift(time_shift)
-
+            yield from self._tokenize_time(event.t)
             match event:
                 case Break():
                     yield Token(TokenType.BREAK)
-                    yield from self._tokenize_duration(event.duration)
+                    yield from self._tokenize_release(event.u)
                     
                 case HitObject():
                     try:

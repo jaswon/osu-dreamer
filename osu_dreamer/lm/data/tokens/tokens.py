@@ -3,8 +3,6 @@ from typing import NamedTuple, Any
 from dataclasses import dataclass
 from enum import Enum
 
-from osu_dreamer.data.load_audio import MS_PER_FRAME
-
 class CustomReprEnum(Enum):
     def __repr__(self):
         return self.name
@@ -40,8 +38,7 @@ TokenType = CustomReprEnum('TokenType', [
     'CLAP',
 
     # numerals
-    'TIME_SHIFT',
-    'TIME_SHIFT_MASK',
+    'TIME',
     'POS_COARSE',
     'POS_FINE',
 ])
@@ -56,7 +53,8 @@ class Token(NamedTuple):
 
 @dataclass
 class Vocab:
-    context_radii: tuple[tuple[int, int],...] = ( (4,4), (3,3), (1,3), (1,3), (1,3) )
+
+    time_bins: int = 2048
 
     x_min: int = 0-128
     x_max: int = 512+128
@@ -124,11 +122,6 @@ class Vocab:
 
             # numerals
             *[
-                Token(TokenType.TIME_SHIFT, i)
-                for i in range(sum(b for _,b in self.context_radii)) # one token for each future position
-            ],
-            Token(TokenType.TIME_SHIFT_MASK),
-            *[
                 Token(TokenType.POS_COARSE,(x,y))
                 for x in range(self.coarse_x_bins)
                 for y in range(self.coarse_y_bins)
@@ -138,17 +131,13 @@ class Vocab:
                 for x in range(self.fine_x_bins)
                 for y in range(self.fine_y_bins)
             ],
+
+            # NOTE: time tokens should be last to enable invariant
+            # token_id > self.ids[Token(TokenType.TIME_BIN, 0)] <=> time token
+            *[
+                Token(TokenType.TIME, i)
+                for i in range(self.time_bins)
+            ],
         )
 
         self.ids = { token: i for i, token in enumerate(self.tokens) }
-
-        # compute valid time shifts
-        self.time_shifts = []
-        stride = MS_PER_FRAME
-        for r_past, r_future in self.context_radii:
-            for i in range(r_future):
-                self.time_shifts.append(stride * (i+1))
-            stride *= 1 + r_past + r_future
-
-        # compute time shift ids
-        self.time_shift_ids = [ i for i,tok in enumerate(self.tokens) if tok.typ == TokenType.TIME_SHIFT ]

@@ -6,15 +6,15 @@ from .tokens import Vocab
 token_grammar = r"""
     start: "BOS" event* "EOS"
 
-    event: time_shift ( break | hit_object )
+    event: time ( break | hit_object )
 
-    break: "BREAK" duration
+    break: "BREAK" release
 
     hit_object: onset ( spinner | hit_circle | slider )
     onset: ["NEW_COMBO"] ["WHISTLE"] ["FINISH"] ["CLAP"]
-    spinner: "SPINNER" duration
+    spinner: "SPINNER" release
     hit_circle: "HIT_CIRCLE" coordinate
-    slider: "SLIDER" duration "SLIDES" coordinate ( perfect | polyline | bezier )
+    slider: "SLIDER" release "SLIDES" coordinate ( perfect | polyline | bezier )
     perfect: "PERFECT" coordinate "DEVIATION"
     polyline: "POLYLINE" coordinate+
     bezier: "BEZIER" ( linear | quadratic | cubic )+
@@ -22,8 +22,8 @@ token_grammar = r"""
     quadratic: "QUADRATIC" coordinate "DEVIATION" "MAGNITUDE"
     cubic: "CUBIC" coordinate "DEVIATION" "DEVIATION" "MAGNITUDE" "MAGNITUDE"
 
-    duration: time_shift "RELEASE"
-    time_shift: "TIME_SHIFT"*
+    release: time "RELEASE"
+    time: "TIME"
     coordinate: "POS_COARSE" "POS_FINE"
 """
 

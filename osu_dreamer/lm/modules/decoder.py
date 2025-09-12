@@ -79,15 +79,53 @@ class SelfAttention(nn.Module):
                 k = k[:, :, -self.max_cache_len:]
                 v = v[:, :, -self.max_cache_len:]
 
-        out = F.scaled_dot_product_attention(
-            q, k, v,
-            is_causal=cache is None,
-            dropout_p=self.dropout if self.training else 0.0,
-        )
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=cache is None)
         
         out = out.transpose(1, 2).contiguous().view(B, N, -1)
         
         return self.out_proj(out), (k, v)
+
+class CrossAttention(nn.Module):
+    def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.d_head = d_model // n_heads
+        
+        self.q_proj = nn.Linear(d_model, d_model)
+        self.kv_proj = nn.Linear(ctx_dim, d_model * 2)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.gate = nn.Linear(d_model, d_model)
+        
+        self.dropout = dropout
+        
+    def forward(
+        self, 
+        x: Float[Tensor, "B N D"], 
+        ctx: Float[Tensor, "B L C"]
+    ) -> Float[Tensor, "B N D"]:
+        B, N, D = x.shape
+        B_ctx, L, C = ctx.shape
+        
+        # Project queries from x
+        q = self.q_proj(x)  # B N D
+        q = q.view(B, N, self.n_heads, self.d_head).transpose(1, 2)  # B H N d
+        
+        # Project keys and values from context
+        kv = self.kv_proj(ctx)  # B L 2D
+        k, v = kv.chunk(2, dim=-1)  # B L D each
+        k = k.view(B, L, self.n_heads, self.d_head).transpose(1, 2)  # B H L d
+        v = v.view(B, L, self.n_heads, self.d_head).transpose(1, 2)  # B H L d
+        
+        # Attention
+        attn_out = F.scaled_dot_product_attention(q, k, v)  # B H N d
+        
+        # Reshape and project output
+        attn_out = attn_out.transpose(1, 2).contiguous().view(B, N, D)  # B N D
+        attn_out = self.out_proj(attn_out)
+        
+        # Apply gating
+        gate_val = th.sigmoid(self.gate(x))
+        return gate_val * attn_out
 
 class SwiGLU(nn.Module):
     def __init__(self, d_model: int, h_dim: int | None = None):
@@ -107,12 +145,7 @@ class DecoderLayer(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
         super().__init__()
         self.self_attn = SelfAttention(d_model, n_heads, dropout)
-        self.cross_attn = nn.MultiheadAttention(
-            d_model, n_heads, dropout=dropout,
-            kdim=ctx_dim, vdim=ctx_dim, batch_first=True,
-        )
-        self.ctx_kv = nn.Linear(ctx_dim, ctx_dim * 2)
-        self.cross_attn_gate = nn.Linear(d_model, d_model)
+        self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim)
         self.ffn = SwiGLU(d_model)
         
         self.norm1 = nn.LayerNorm(d_model)
@@ -124,27 +157,20 @@ class DecoderLayer(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B N D"], 
-        ctx: Float[Tensor, "B N M C"], 
+        ctx: Float[Tensor, "B L C"], 
         cache: tuple[Tensor, Tensor] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
+        # Self attention
         sa_out, new_cache = self.self_attn(self.norm1(x), cache=cache)
-
-        B, N, D = x.shape
-        M, C = ctx.shape[2], ctx.shape[3]
-
         x = x + self.dropout(sa_out)
-        q = self.norm2(x)
         
-        q = q.view(B * N, 1, D)
-        k, v = self.ctx_kv(ctx.view(B * N, M, C)).chunk(2, dim=-1)
+        # Cross attention
+        ca_out = self.cross_attn(self.norm2(x), ctx)
+        x = x + self.dropout(ca_out)
         
-        cross_attn_out, _ = self.cross_attn(q, k, v, need_weights=False)
-        cross_attn_out = cross_attn_out.view(B, N, D)
-        
-        gate = th.sigmoid(self.cross_attn_gate(x))
-        x = x + self.dropout(gate * cross_attn_out)
-        
-        x = x + self.dropout(self.ffn(self.norm3(x)))
+        # Feed forward
+        ffn_out = self.ffn(self.norm3(x))
+        x = x + self.dropout(ffn_out)
         
         return x, new_cache
 
@@ -170,7 +196,7 @@ class Decoder(nn.Module):
     def forward(
         self,
         embs: Float[Tensor, "B N D"],
-        ctx: Float[Tensor, "B N M C"],
+        ctx: Float[Tensor, "B L C"],
         cache: list[tuple[Tensor, Tensor]] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], list[tuple[Tensor, Tensor]]]:
         x = embs

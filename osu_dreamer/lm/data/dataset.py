@@ -1,6 +1,6 @@
 from typing import NamedTuple, Iterator
 from torch import Tensor
-from jaxtyping import Float, Bool
+from jaxtyping import Float
 
 import pickle
 import random
@@ -15,17 +15,14 @@ from torch.utils.data import IterableDataset
 import pytorch_lightning as pl
 
 from osu_dreamer.data.reclaim_memory import reclaim_memory
-from osu_dreamer.lm.data.tokens.state import LogitProcessor
 from osu_dreamer.lm.data.tokens.tokenizer import Tokenizer
-from osu_dreamer.lm.data.tokens.tokens import Vocab
+from osu_dreamer.lm.data.tokens.tokens import Token, TokenType, Vocab
 
 
 class Batch(NamedTuple):
-    audio: Float[Tensor, "A L"]         # Spectrogram
     map_features: Float[Tensor, "M"]    # Map features
+    audio: Float[Tensor, "B A L"]       # Spectrogram
     tokens: Float[Tensor, "B N+1"]      # token sequences
-    timestamps: Float[Tensor, "B N"]    # Token timestamps in ms
-    valid: Bool[Tensor, "B N V"]        # valid emissions for each position
 
 
 class Dataset(IterableDataset):
@@ -83,27 +80,27 @@ class Dataset(IterableDataset):
         ]).float()
 
         try:
-            beatmap_tokens, token_timestamps = Tokenizer(self.vocab).encode(ibm)
+            tokenizer = Tokenizer(self.vocab, ibm)
         except Exception as e:
             raise Exception(map_file) from e
 
-        if len(beatmap_tokens) < self.context_size:
-            return
-        
-        lp = LogitProcessor(self.vocab)
-        valid_list: list[th.Tensor] = []
-        for token_id in beatmap_tokens:
-            valid_list.append( th.tensor(lp.advance(token_id), dtype=th.bool) )
-        valid: Bool[th.Tensor, "N V"] = th.stack(valid_list)
+        tokens_list = []
+        audio_list = []
+        pad = self.vocab.ids[Token(TokenType.PAD)]
+        for start_idx in th.randperm(audio.size(-1) - self.vocab.time_bins - 1)[:self.batch_size]:
+            audio_list.append(audio[:, start_idx:start_idx + self.vocab.time_bins])
 
-        tokens_list, timestamps_list, valid_list = [], [], []
-        for start_idx in th.randperm(len(beatmap_tokens) - self.context_size - 1)[:self.batch_size]:
-            end_idx = start_idx + self.context_size
-            tokens_list.append(th.tensor(beatmap_tokens[start_idx:end_idx+1]).long())
-            timestamps_list.append(th.tensor(token_timestamps[start_idx:end_idx]).long())
-            valid_list.append(valid[start_idx:end_idx])
+            tokens_for_audio = tokenizer.encode(int(start_idx.item()))
+            if len(tokens_for_audio) < self.context_size:
+                # pad
+                tokens_for_audio.extend([pad] * (self.context_size - len(tokens_for_audio)))
+            elif len(tokens_for_audio) > self.context_size:
+                # random slice
+                i = random.randrange(len(tokens_for_audio) - self.context_size + 1)
+                tokens_for_audio = tokens_for_audio[i:i+self.context_size]
+            tokens_list.append(th.tensor(tokens_for_audio).long())
 
-        yield Batch(audio, map_features, th.stack(tokens_list), th.stack(timestamps_list), th.stack(valid_list))
+        yield Batch(map_features, th.stack(audio_list), th.stack(tokens_list))
 
 
 class Data(pl.LightningDataModule):
