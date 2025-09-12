@@ -70,7 +70,7 @@ class Model(pl.LightningModule):
     
     def forward(
         self,
-        map_features: Float[Tensor, "M"],
+        map_features: Float[Tensor, "B M"],
         audio: Float[Tensor, "B A L"],
         tokens: Int[Tensor, "B Np1"],
     ) -> tuple[
@@ -103,7 +103,7 @@ class Model(pl.LightningModule):
         
         # On the first validation batch of every epoch, generate a sample
         if batch_idx == 0 and self.global_rank == 0:
-            token_ids, ctx_starts = self.sample(batch.audio[0], batch.map_features, max_len=512, top_p=0.)
+            token_ids, ctx_starts = self.sample(batch.audio[0], batch.map_features[0], max_len=512, top_p=0.)
             generated_tokens = [
                 tok if tok.typ != TokenType.TIME else f"{MS_PER_FRAME * (tok.value + ctx_start) / 1000:.3f}"
                 for tid, ctx_start in zip(token_ids, ctx_starts) 

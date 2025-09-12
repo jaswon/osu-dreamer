@@ -20,7 +20,7 @@ from osu_dreamer.lm.data.tokens.tokens import Token, TokenType, Vocab
 
 
 class Batch(NamedTuple):
-    map_features: Float[Tensor, "M"]    # Map features
+    map_features: Float[Tensor, "B M"]  # Map features
     audio: Float[Tensor, "B A L"]       # Spectrogram
     tokens: Float[Tensor, "B N+1"]      # token sequences
 
@@ -31,7 +31,6 @@ class Dataset(IterableDataset):
         self.dataset = kwargs.pop("dataset")
         self.context_size: int = kwargs.pop("context_size")
         self.vocab: Vocab = kwargs.pop("vocab")
-        self.batch_size: int = kwargs.pop("batch_size")
             
         if len(kwargs):
             raise ValueError(f"unexpected kwargs: {kwargs}")
@@ -65,7 +64,7 @@ class Dataset(IterableDataset):
 
         audio = th.from_numpy(np.load(map_file.parent / "spec.pt")).float()
 
-        if audio.size(-1) > 2*60*1000/6:
+        if audio.size(-1) < self.vocab.time_bins:
             return
 
         with open(map_file, 'rb') as f:
@@ -84,11 +83,9 @@ class Dataset(IterableDataset):
         except Exception as e:
             raise Exception(map_file) from e
 
-        tokens_list = []
-        audio_list = []
         pad = self.vocab.ids[Token(TokenType.PAD)]
-        for start_idx in th.randperm(audio.size(-1) - self.vocab.time_bins - 1)[:self.batch_size]:
-            audio_list.append(audio[:, start_idx:start_idx + self.vocab.time_bins])
+        num_starts = audio.size(-1) - self.vocab.time_bins + 1
+        for start_idx in th.randperm(num_starts)[:1 + num_starts // self.vocab.time_bins]:
 
             tokens_for_audio = tokenizer.encode(int(start_idx.item()))
             if len(tokens_for_audio) < self.context_size:
@@ -98,9 +95,12 @@ class Dataset(IterableDataset):
                 # random slice
                 i = random.randrange(len(tokens_for_audio) - self.context_size + 1)
                 tokens_for_audio = tokens_for_audio[i:i+self.context_size]
-            tokens_list.append(th.tensor(tokens_for_audio).long())
 
-        yield Batch(map_features, th.stack(audio_list), th.stack(tokens_list))
+            yield Batch(
+                map_features = map_features, 
+                audio = audio[:, start_idx:start_idx + self.vocab.time_bins],
+                tokens = th.tensor(tokens_for_audio).long(),
+            )
 
 
 class Data(pl.LightningDataModule):
@@ -161,25 +161,23 @@ class Data(pl.LightningDataModule):
             dataset=self.train_set,
             context_size=self.context_size,
             vocab=self.vocab,
-            batch_size=self.batch_size,
         )
         self.val_dataset = Dataset(
             dataset=self.val_set,
             context_size=self.context_size,
             vocab=self.vocab,
-            batch_size=1,
         )
     
     def train_dataloader(self):
         return th.utils.data.DataLoader(
             self.train_dataset,
-            batch_size=None,
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
         )
     
     def val_dataloader(self):
         return th.utils.data.DataLoader(
             self.val_dataset,
-            batch_size=None,
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
         )
