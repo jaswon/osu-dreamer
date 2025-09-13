@@ -39,20 +39,21 @@ trainer:
 
 data:
   context_size: 512
-  batch_size: 32
+  batch_size: 24
   num_workers: 8
   val_size: 128
   data_path: ./data
 
   vocab:
-    time_bins: 2048 # * 6ms = 12.3s
+    time_bins: 6144 # * 6ms = 36.9s
 
 model:
 
   # training params
   opt_args:
-    lr: 3e-4
+    lr: .003
     weight_decay: 0.01
+  timing_jitter: 3 # * 6ms = 18ms
 
   # sampling params
   context_shift_threshold: 0.8

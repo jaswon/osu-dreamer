@@ -30,6 +30,7 @@ class Model(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
+        timing_jitter: int, 
 
         # sampling parameters
         context_shift_threshold: float,
@@ -49,6 +50,7 @@ class Model(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
+        self.timing_jitter = timing_jitter
 
         # sampling params
         assert 0 < context_shift_threshold < 1
@@ -76,7 +78,18 @@ class Model(pl.LightningModule):
         dict[str, float],   # log dict
     ]:
         ctx = self.audio_encoder(audio) # B L D
-        embs = self.head.embed(tokens[:,:-1]) # B N D
+
+        inp = tokens[:,:-1]
+
+        # jitter input time tokens to improve timing robustness
+        timing_jitter = th.randint_like(inp, -self.timing_jitter, self.timing_jitter+1)
+        inp = th.where(
+            inp >= self.vocab.T0,
+            th.clamp(inp + timing_jitter, min=self.vocab.T0, max=len(self.vocab.tokens)-1),
+            inp,
+        )
+
+        embs = self.head.embed(inp) # B N D
         output, _ = self.decoder(embs, ctx=ctx)
         return self.head(output, tokens[:,1:], calc_accuracy)
     
