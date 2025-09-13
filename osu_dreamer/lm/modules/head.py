@@ -7,7 +7,7 @@ import torch as th
 import torch.nn.functional as F
 from torch import nn, Tensor
 
-from osu_dreamer.lm.data.tokens.tokens import Token, TokenType, Vocab
+from osu_dreamer.lm.data.tokens.tokens import Vocab
     
 
 class TokenHead(nn.Module):
@@ -20,9 +20,8 @@ class TokenHead(nn.Module):
     ):
         super().__init__()
         self.time_loss_factor = time_loss_factor
-        self.vocab_size = len(vocab.tokens)
-        self.t0 = vocab.ids[Token(TokenType.TIME, 0)]
-        num_tokens = self.t0 + 1 # arbitrary for non-tokens + one time sentinel token
+        self.vocab = vocab
+        num_tokens = vocab.T0 + 1 # arbitrary for non-tokens + one time sentinel token
 
         ## embedding
         self.token_emb = nn.Embedding(num_tokens, emb_dim)
@@ -38,15 +37,15 @@ class TokenHead(nn.Module):
         self.time_head = nn.Linear(emb_dim, vocab.time_bins)
 
     def embed(self, ids: Int[Tensor, "B N"]) -> Float[Tensor, "B N D"]:
-        positions = th.clamp(ids - self.t0, min=0) # B N
+        positions = th.clamp(ids - self.vocab.T0, min=0) # B N
         thetas = positions[:,:,None] * self.rff_freqs[None,None]  # [B, N, n_freqs]
         features = th.cat([th.sin(thetas), th.cos(thetas)], dim=-1)
         time_embs = self.rff_proj(features) # B N D
 
         return th.where(
-            (ids >= self.t0)[:,:,None],
+            (ids >= self.vocab.T0)[:,:,None],
             time_embs,
-            self.token_emb(th.clamp(ids, max=self.t0)),
+            self.token_emb(th.clamp(ids, max=self.vocab.T0)),
         )
     
     def logits(self, pred_embs: Float[Tensor, "B N D"]) -> Float[Tensor, "B N V"]:
@@ -77,10 +76,10 @@ class TokenHead(nn.Module):
         Float[Tensor, ""],  # loss
         dict[str, float],   # log dict
     ]:
-        is_time = true_tokens >= self.t0
+        is_time = true_tokens >= self.vocab.T0
 
         pred_token_logits = self.token_head(pred_embs)
-        true_token_classes = th.clamp(true_tokens, max=self.t0)
+        true_token_classes = th.clamp(true_tokens, max=self.vocab.T0)
         token_loss = F.cross_entropy(
             pred_token_logits.reshape(-1, pred_token_logits.size(-1)), 
             true_token_classes.reshape(-1),
@@ -89,7 +88,7 @@ class TokenHead(nn.Module):
         # continuous ranked probability loss
         pred_time_logits = self.time_head(pred_embs)
         pred_timing_cdf = pred_time_logits.softmax(dim=-1).cumsum(dim=-1)
-        true_time_classes = th.clamp(true_tokens - self.t0, min=0)
+        true_time_classes = th.clamp(true_tokens - self.vocab.T0, min=0)
         domain = th.arange(pred_time_logits.size(-1)).to(true_tokens)
         true_timing_cdf = (domain >= true_time_classes[:,:,None]).float()
         time_loss = F.mse_loss(
