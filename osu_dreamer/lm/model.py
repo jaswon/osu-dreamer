@@ -18,7 +18,7 @@ from osu_dreamer.data.load_audio import MS_PER_FRAME
 from .data.dataset import Batch
 from .data.tokens.tokens import Vocab, Token, TokenType
 
-from .modules.audio_encoder import AudioEncoder
+from .modules.audio_encoder import AudioEncoder, AudioEncoderArgs
 from .modules.decoder import Decoder, DecoderArgs
 from .modules.head import TokenHead
 
@@ -43,6 +43,7 @@ class Model(pl.LightningModule):
         
         # audio encoder hparams
         ctx_dim: int,
+        audio_encoder_args: AudioEncoderArgs,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -64,7 +65,7 @@ class Model(pl.LightningModule):
         self.head = TokenHead(vocab, emb_dim)
         
         # audio encoder
-        self.audio_encoder = AudioEncoder(ctx_dim)
+        self.audio_encoder = AudioEncoder(ctx_dim, audio_encoder_args)
         
     
     def forward(

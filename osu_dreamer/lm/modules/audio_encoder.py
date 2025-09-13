@@ -1,33 +1,66 @@
 
 from jaxtyping import Float
+
+from dataclasses import dataclass
  
+import torch as th
 from torch import nn, Tensor
+from torch.utils.checkpoint import checkpoint
 
 from einops.layers.torch import Rearrange
-from osu_dreamer.modules.wavenet import WaveNet, WaveNetArgs
+
+import osu_dreamer.modules.mp as MP
+
+@dataclass
+class AudioEncoderArgs:
+    depth: int
+    checkpoint: bool = True
+    freq_bins: int = 6
 
 class AudioEncoder(nn.Module):
-    def __init__(self, h_dim: int):
+    def __init__(self, dim: int, args: AudioEncoderArgs):
         super().__init__()
         
         self.freq_proj = nn.Sequential(
             Rearrange('b f l -> b 1 f l'),
             nn.Conv2d(1, 1, (1, 7), (1,1), (1,3)),
             nn.SiLU(),
-            nn.AdaptiveMaxPool2d((5, None)), # b 1 5 l
+            nn.AdaptiveMaxPool2d((args.freq_bins, None)), # b 1 d l
             Rearrange('b 1 d l -> b d l'),
-            nn.Conv1d(5, h_dim, 1),
+            nn.Conv1d(args.freq_bins, dim, 1),
         )
-        
-        self.wavenet = WaveNet(
-            dim=h_dim,
-            args=WaveNetArgs(num_stacks=2, stack_depth=4),
-            block=lambda _: nn.SiLU(),
-        )
+
+        self.blocks = nn.ModuleList([ Block(dim) for _ in range(args.depth) ])
+        if args.checkpoint:
+            self.run_block = lambda block, x: checkpoint(block, x, use_reentrant=False)
+        else:
+            self.run_block = lambda block, x: block(x)
         
         self.final = Rearrange('b h l -> b l h')
 
     def forward(self, x: Float[Tensor, "B A L"]) -> Float[Tensor, "B L D"]:
         x = self.freq_proj(x)
-        x = self.wavenet(x)
+        
+        for block in self.blocks:
+            x = self.run_block(block, x) # type: ignore
+
         return self.final(x)
+    
+class Block(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.op = nn.Sequential(
+            MP.Conv1d(dim, dim, 7,1,3, groups=dim),
+            MP.Conv1d(dim, dim*2, 1),
+            nn.GLU(dim=1),
+        )
+        self.scale = nn.Parameter(th.zeros(dim, 1))
+        self.shift = nn.Parameter(th.zeros(dim, 1))
+        self.alpha = nn.Parameter(th.zeros(dim, 1))
+
+    def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
+        r = MP.pixel_norm(x)
+        r = r * (1+self.scale) + self.shift
+        r = self.op(r)
+        r = self.alpha * r
+        return x + r
