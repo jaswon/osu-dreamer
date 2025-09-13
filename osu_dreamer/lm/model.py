@@ -217,7 +217,7 @@ class Model(pl.LightningModule):
                 
                 # mask past time tokens
                 for token_idx, token in enumerate(self.vocab.tokens):
-                    if token.typ == TokenType.TIME and token.value < cur_frame:
+                    if token.typ == TokenType.TIME and token.value <= cur_frame:
                         logits[token_idx] = -th.inf
 
                 # sample next token
