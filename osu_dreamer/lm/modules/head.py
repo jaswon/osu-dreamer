@@ -79,7 +79,7 @@ class TokenHead(nn.Module):
         self,
         pred_embs: Float[Tensor, "B N D"],
         true_tokens: Int[Tensor, "B N"],
-        calc_accuracy: bool = False,
+        validation: bool = False,
     ) -> tuple[
         Float[Tensor, ""],  # loss
         dict[str, float],   # log dict
@@ -104,16 +104,52 @@ class TokenHead(nn.Module):
 
         loss = token_loss + self.time_loss_factor * time_loss
         log_dict = {
-            "token": token_loss.detach().item(),
-            "time": time_loss.detach().item(),
-            "loss": loss.detach().item(),
+            "loss/token": token_loss.detach().item(),
+            "loss/time": time_loss.detach().item(),
+            "loss/total": loss.detach().item(),
         }
 
-        if calc_accuracy:
+        if validation:
             with th.no_grad():
                 pred_logits = self._denormalized_logits(pred_token_scores, pred_time_scores)
-                pred_tokens = pred_logits.argmax(dim=-1)
-                accuracy = (pred_tokens == true_tokens).float().mean()
-                log_dict["accuracy"] = accuracy.item()
 
+                if is_time.any():
+                    # Time class MAE (Mean Absolute Error)
+                    pred_tokens = pred_logits.argmax(dim=-1)
+                    pred_time_classes = th.clamp(pred_tokens[is_time] - self.vocab.T0, min=0)
+                    true_time_classes_val = th.clamp(true_tokens[is_time] - self.vocab.T0, min=0)
+                    time_mae = (pred_time_classes - true_time_classes_val).abs().float().mean()
+                    log_dict["time_mae"] = time_mae.item()
+
+                    # Entropy of time predictions (higher = more uncertain)
+                    time_probs = pred_time_logits.softmax(dim=-1)
+                    time_entropy = -(time_probs * th.log(time_probs + 1e-8)).sum(dim=-1)
+                    avg_time_entropy = time_entropy[is_time].mean()
+                    log_dict["time_entropy"] = avg_time_entropy.item()
+                    
+                    # Timing bias: mean predicted time vs true time
+                    pred_time_mean = pred_time_classes.float().mean()
+                    true_time_mean = true_time_classes_val.float().mean()
+                    time_bias = pred_time_mean - true_time_mean
+                    log_dict["time_bias"] = time_bias.item()
+                
+                is_non_time = ~is_time
+
+                # Top-k accuracy
+                for k in [1, 5, 10]:
+                    top_k_preds = pred_logits.topk(k, dim=-1)[1]  # B N k
+                    top_k_matches = (top_k_preds == true_tokens.unsqueeze(-1)).any(dim=-1)
+                    top_k_accuracy = top_k_matches.float().mean()
+                    log_dict[f"acc/total/top_{k}"] = top_k_accuracy.item()
+
+                    # Token-specific accuracy (non-time tokens)
+                    if is_non_time.any():
+                        token_accuracy = top_k_matches[is_non_time].float().mean()
+                        log_dict[f"acc/token/top_{k}"] = token_accuracy.item()
+                    
+                    # Top-k accuracy for time tokens specifically
+                    if is_time.any():
+                        time_accuracy = top_k_matches[is_time].float().mean()
+                        log_dict[f"acc/time/top_{k}"] = time_accuracy.item()
+                
         return loss, log_dict

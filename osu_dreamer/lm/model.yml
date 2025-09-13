@@ -12,13 +12,13 @@ trainer:
       - # keep the best performing checkpoint
           class_path: pytorch_lightning.callbacks.ModelCheckpoint
           init_args:
-              monitor: val/loss
+              monitor: val/loss/total
               mode: min
               save_top_k: 1
       - # early stopping
           class_path: pytorch_lightning.callbacks.EarlyStopping
           init_args:
-              monitor: val/loss
+              monitor: val/loss/total
               mode: min
               patience: 5
       - # learning rate monitor
@@ -34,7 +34,7 @@ trainer:
   enable_progress_bar: true
   enable_model_summary: true
   log_every_n_steps: 1
-  val_check_interval: 1000
+  val_check_interval: 500
   check_val_every_n_epoch: null
 
 data:
@@ -64,13 +64,13 @@ model:
     warmup_init: 0.05
     decay_start: 15000
     
-  ctx_dim: 384
+  ctx_dim: 512
   audio_encoder_args:
-    depth: 8
+    depth: 12
     freq_bins: 16
 
-  emb_dim: 512
+  emb_dim: 768
   decoder_args:
-    n_heads: 16
+    n_heads: 24
     n_layers: 12
     dropout: 0.15

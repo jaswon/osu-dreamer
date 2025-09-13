@@ -73,7 +73,7 @@ class Model(pl.LightningModule):
         map_features: Float[Tensor, "B M"],
         audio: Float[Tensor, "B A L"],
         tokens: Int[Tensor, "B Np1"],
-        calc_accuracy: bool = False,
+        validation: bool = False,
         input_jitter: bool = True,
     ) -> tuple[
         Float[Tensor, ""],  # loss
@@ -94,7 +94,7 @@ class Model(pl.LightningModule):
 
         embs = self.head.embed(inp) # B N D
         output, _ = self.decoder(embs, ctx=ctx)
-        return self.head(output, tokens[:,1:], calc_accuracy)
+        return self.head(output, tokens[:,1:], validation)
     
     def training_step(self, batch: Batch, batch_idx: int):
         # Forward pass
@@ -126,7 +126,7 @@ class Model(pl.LightningModule):
             batch.map_features,
             batch.audio,
             batch.tokens,
-            calc_accuracy=True,
+            validation=True,
         )
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
         return loss
