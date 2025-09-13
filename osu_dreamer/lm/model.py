@@ -262,7 +262,9 @@ class Model(pl.LightningModule):
                     ctx_start += shift_size
                     cur_frame -= shift_size
                     cache = None
-        
+
+        ctx_starts.append(ctx_start)
+        generated_tokens.append(token_id)
         return (
             th.tensor(generated_tokens, device=self.device, dtype=th.long),
             th.tensor(ctx_starts, device=self.device, dtype=th.long),

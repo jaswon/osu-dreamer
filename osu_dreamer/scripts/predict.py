@@ -71,13 +71,13 @@ def predict(
         map_features = th.tensor(d, device=dev).float()
         
         with th.no_grad():
-            token_ids = model.sample(
+            token_ids, ctx_starts = model.sample(
                 audio, map_features,
                 max_len=-1,
                 show_progress=True,
             )
 
-        map_events = Decoder(model.vocab, token_ids.tolist()).parse_beatmap_events()
+        map_events = Decoder(model.vocab, token_ids.tolist(), ctx_starts.tolist()).parse_beatmap_events()
         map_diff = BeatmapDifficulty(
             hp_drain_rate=d[0],
             circle_size=d[1],

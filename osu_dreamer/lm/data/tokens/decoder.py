@@ -34,7 +34,7 @@ class Decoder:
 
     @property
     def ctx_start(self) -> int:
-        return self.ctx_starts[self._idx]
+        return self.ctx_starts[self._idx-1]
 
     def parse_token(self, T: TokenType):
         match self.next_token():
