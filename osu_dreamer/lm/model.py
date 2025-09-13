@@ -170,22 +170,20 @@ class Model(pl.LightningModule):
 
         # initialize sequence
         token_id = self.vocab.BOS
-        generated_tokens: list[int] = []
-        ctx_starts: list[int] = []
         ctx_start = 0
         cur_frame = 0
+        generated_tokens: list[int] = [token_id]
+        ctx_starts: list[int] = [ctx_start]
         
         # initialize kv cache
         cache = None
 
         # initialize logit processor
         lp = LogitProcessor(self.vocab)
+        logit_mask = th.tensor(lp.advance(token_id), device=self.device)
 
         with tqdm(total=int(audio.size(-1)), desc="sampling", disable=not show_progress) as pbar:
             for i in itertools.count():
-                ctx_starts.append(ctx_start)
-                generated_tokens.append(token_id)
-                logit_mask = th.tensor(lp.advance(token_id), device=self.device)
 
                 # limit generation
                 if max_len > 0 and i >= max_len:
@@ -219,9 +217,7 @@ class Model(pl.LightningModule):
                 logits = th.where(logit_mask, logits, -th.inf)
                 
                 # mask past time tokens
-                for token_idx, token in enumerate(self.vocab.tokens):
-                    if token.typ == TokenType.TIME and token.value <= cur_frame:
-                        logits[token_idx] = -th.inf
+                logits[self.vocab.T0:self.vocab.T0+cur_frame+1] = -th.inf
 
                 # sample next token
                 if top_p <= 0:
@@ -246,7 +242,6 @@ class Model(pl.LightningModule):
                     # check if we're done
                     if ctx_start >= max_ctx_start:
                         break
-
                     advance_context = True
                     
                 elif token.typ == TokenType.TIME:
@@ -254,7 +249,7 @@ class Model(pl.LightningModule):
                     if cur_frame > ctx_shift_threshold:
                         advance_context = True
 
-                    cur_global_frame = (ctx_start + cur_frame)
+                    cur_global_frame = ctx_start + cur_frame
                     if cur_global_frame > pbar.n:
                         pbar.update(cur_global_frame - pbar.n)
 
@@ -264,6 +259,14 @@ class Model(pl.LightningModule):
                     ctx_start += shift_size
                     cur_frame -= shift_size
                     cache = None
+
+                if token.typ == TokenType.EOS:
+                    # context has been advanced - don't commit EOS
+                    ctx_starts[-1] = ctx_start
+                else:
+                    ctx_starts.append(ctx_start)
+                    generated_tokens.append(token_id)
+                    logit_mask = th.tensor(lp.advance(token_id), device=self.device)
 
         ctx_starts.append(ctx_start)
         generated_tokens.append(token_id)
