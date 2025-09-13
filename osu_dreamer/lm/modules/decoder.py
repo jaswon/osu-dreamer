@@ -38,7 +38,7 @@ class RotaryEmbedding(nn.Module):
         return (x * emb.cos()) + (rotate_half(x) * emb.sin())
 
 class RandomFourierPositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, n_freqs: int = 64, max_len: float = 10000.0):
+    def __init__(self, d_model: int, n_freqs: int = 64, max_len: int = 2048):
         super().__init__()
         self.d_model = d_model
         self.n_freqs = n_freqs
@@ -182,6 +182,7 @@ class Decoder(nn.Module):
         emb_dim: int,
         ctx_dim: int,
         args: DecoderArgs,
+        ctx_size: int,
     ):
         super().__init__()
         
@@ -196,7 +197,7 @@ class Decoder(nn.Module):
         ])
         
         self.emb_pos_enc = RandomFourierPositionalEncoding(emb_dim, args.n_freqs)
-        self.ctx_pos_enc = RandomFourierPositionalEncoding(ctx_dim, args.n_freqs)
+        self.ctx_pos_enc = RandomFourierPositionalEncoding(ctx_dim, args.n_freqs, ctx_size)
 
     def forward(
         self,
