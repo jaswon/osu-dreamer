@@ -26,11 +26,10 @@ class TokenHead(nn.Module):
         ## embedding
         self.token_emb = nn.Embedding(num_tokens, emb_dim)
 
-        # RFF for time embeddings
-        rff_freqs = th.exp(th.randn(n_freqs) * math.log(vocab.time_bins))
-        self.register_buffer("rff_freqs", rff_freqs)
-        self.rff_freqs: Tensor
-        self.rff_proj = nn.Linear(2 * n_freqs, emb_dim)
+        # fourier feature embeddings for time tokens
+        self.ffe_freqs: th.Tensor
+        self.register_buffer('ffe_freqs', 2 * th.pi * 10 * th.randn(n_freqs))
+        self.ffe_proj = nn.Linear(2 * n_freqs, emb_dim)
 
         ## prediction head
         self.token_head = nn.Linear(emb_dim, num_tokens)
@@ -41,10 +40,10 @@ class TokenHead(nn.Module):
         ) # V[k] = log(P[k+1] / P[k]) (adjacent-category logit)
 
     def embed(self, ids: Int[Tensor, "B N"]) -> Float[Tensor, "B N D"]:
-        positions = th.clamp(ids - self.vocab.T0, min=0) # B N
-        thetas = positions[:,:,None] * self.rff_freqs[None,None]  # [B, N, n_freqs]
+        positions = th.clamp(ids - self.vocab.T0, min=0) / self.vocab.time_bins # B N
+        thetas = positions[:,:,None] * self.ffe_freqs[None,None]  # [B, N, n_freqs]
         features = th.cat([th.sin(thetas), th.cos(thetas)], dim=-1)
-        time_embs = self.rff_proj(features) # B N D
+        time_embs = self.ffe_proj(features) # B N D
 
         return th.where(
             (ids >= self.vocab.T0)[:,:,None],
