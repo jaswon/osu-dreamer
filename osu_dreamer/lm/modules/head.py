@@ -67,13 +67,15 @@ class TokenHead(nn.Module):
         # P(time_i+1) = ( P(time_i+1) / P(time_i) ) * P(time_i)
         time_logits = F.pad(time_scores.cumsum(dim=-1), (1,0))
 
-        token_probs = token_scores.softmax(dim=-1)
-        time_probs = time_logits.softmax(dim=-1)
+        token_log_probs = F.log_softmax(token_scores, dim=-1)
+        time_log_probs = F.log_softmax(time_logits, dim=-1)
         
         # P(time_i) = P(time_i | time_type) * P(time_type)
-        marginal_time_probs = token_probs[:,:,-1:] * time_probs
-        combined_probs = th.cat([token_probs[:,:,:-1], marginal_time_probs], dim=-1)
-        return th.log(combined_probs + 1e-8)
+        marginal_time_log_probs = token_log_probs[:,:,-1:] + time_log_probs
+        return th.cat([
+            token_log_probs[:,:,:-1],   # non-time tokens
+            marginal_time_log_probs,    # time tokens
+        ], dim=-1)
 
     def forward(
         self,
