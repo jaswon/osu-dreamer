@@ -105,7 +105,7 @@ class SelfAttention(nn.Module):
         return self.out_proj(out), (k, v)
 
 class CrossAttention(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int, n_freqs: int):
+    def __init__(self, d_model: int, n_heads: int, dropout: float, ctx_dim: int):
         super().__init__()
         self.n_heads = n_heads
         self.d_head = d_model // n_heads
@@ -114,9 +114,6 @@ class CrossAttention(nn.Module):
         self.kv_proj = nn.Linear(ctx_dim, d_model * 2)
         self.out_proj = nn.Linear(d_model, d_model)
         self.gate = nn.Linear(d_model, d_model)
-        
-        self.q_pos_enc = RandomFourierPositionalEncoding(d_model, n_freqs)
-        self.k_pos_enc = RandomFourierPositionalEncoding(d_model, n_freqs)
         
         self.dropout = dropout
         
@@ -129,12 +126,10 @@ class CrossAttention(nn.Module):
         
         # Add positional encoding to queries and project
         q = self.q_proj(x) # B N D
-        q = self.q_pos_enc(q) # B N D
         
         # Project context and add positional encoding to keys
         kv = self.kv_proj(ctx)  # B L 2D
         k, v = kv.chunk(2, dim=-1)  # B L D each
-        k = self.k_pos_enc(k)  # Add positional encoding to keys
         
         q = q.view(B, -1, self.n_heads, self.d_head)  # B N H d
         k = k.view(B, -1, self.n_heads, self.d_head)  # B L H d
@@ -149,10 +144,10 @@ class CrossAttention(nn.Module):
         return gate_val * attn_out
 
 class DecoderLayer(nn.Module):
-    def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float, n_freqs: int):
+    def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float):
         super().__init__()
         self.self_attn = SelfAttention(d_model, n_heads, dropout)
-        self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim, n_freqs)
+        self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim)
         self.ffn = xops.SwiGLU(d_model, (int(d_model * 8 / 3) + 7) // 8 * 8)
         
         self.norm1 = nn.LayerNorm(d_model)
@@ -196,17 +191,21 @@ class Decoder(nn.Module):
             self.run_block = lambda block, *args: block(*args)
 
         self.layers = nn.ModuleList([
-            DecoderLayer(emb_dim, ctx_dim, args.n_heads, args.dropout, args.n_freqs)
+            DecoderLayer(emb_dim, ctx_dim, args.n_heads, args.dropout)
             for _ in range(args.n_layers)
         ])
+        
+        self.emb_pos_enc = RandomFourierPositionalEncoding(emb_dim, args.n_freqs)
+        self.ctx_pos_enc = RandomFourierPositionalEncoding(ctx_dim, args.n_freqs)
 
     def forward(
         self,
-        embs: Float[Tensor, "B N D"],
+        emb: Float[Tensor, "B N D"],
         ctx: Float[Tensor, "B L C"],
         cache: list[tuple[Tensor, Tensor]] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], list[tuple[Tensor, Tensor]]]:
-        x = embs
+        ctx = self.ctx_pos_enc(ctx)
+        x = self.emb_pos_enc(emb)
         new_caches = []
         for i, layer in enumerate(self.layers):
             layer_cache = cache[i] if cache is not None else None
