@@ -30,5 +30,6 @@ def fit_lm(config: str, ckpt_path: Optional[str]):
     args = ['--config', config]
 
     cli = MyLightningCLI(Model, Data, save_config_callback=None, args=args, run=False)
-    cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt_path)
+    if ckpt_path is not None:
+        cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt_path)
     cli.trainer.fit(cli.model, cli.datamodule, ckpt_path=ckpt_path)
