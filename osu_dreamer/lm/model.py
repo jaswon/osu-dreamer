@@ -74,6 +74,7 @@ class Model(pl.LightningModule):
         audio: Float[Tensor, "B A L"],
         tokens: Int[Tensor, "B Np1"],
         calc_accuracy: bool = False,
+        input_jitter: bool = True,
     ) -> tuple[
         Float[Tensor, ""],  # loss
         dict[str, float],   # log dict
@@ -82,13 +83,14 @@ class Model(pl.LightningModule):
 
         inp = tokens[:,:-1]
 
-        # jitter input time tokens to improve timing robustness
-        timing_jitter = th.randint_like(inp, -self.timing_jitter, self.timing_jitter+1)
-        inp = th.where(
-            inp >= self.vocab.T0,
-            th.clamp(inp + timing_jitter, min=self.vocab.T0, max=len(self.vocab.tokens)-1),
-            inp,
-        )
+        if input_jitter:
+            # jitter input time tokens to improve timing robustness
+            timing_jitter = th.randint_like(inp, -self.timing_jitter, self.timing_jitter+1)
+            inp = th.where(
+                inp >= self.vocab.T0,
+                th.clamp(inp + timing_jitter, min=self.vocab.T0, max=len(self.vocab.tokens)-1),
+                inp,
+            )
 
         embs = self.head.embed(inp) # B N D
         output, _ = self.decoder(embs, ctx=ctx)
