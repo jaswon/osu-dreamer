@@ -1,12 +1,11 @@
 
-from typing import Callable, Optional
+from typing import Callable
 from jaxtyping import Float
 
 from dataclasses import dataclass
 
 import torch as th
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 class ResSkipNet(nn.Module):
     def __init__(
@@ -41,35 +40,19 @@ class WaveNet(ResSkipNet):
     def __init__(
         self,
         dim: int,
-        y_dim: Optional[int],
         args: WaveNetArgs,
         block: Callable[[int], nn.Module],
     ):
         class layer(nn.Module):
             def __init__(self, depth: int):
                 super().__init__()
-                self.proj_y = None
-                if y_dim is not None:
-                    self.proj_y = nn.Sequential(
-                        nn.Conv1d(y_dim, y_dim, 3,1,1, groups=y_dim),
-                        nn.Conv1d(y_dim, dim*2, 1),
-                    )
-
-                self.proj_x = nn.Conv1d(dim, dim*2, 3, dilation=2**depth, padding=2**depth)
+                self.proj_x = nn.Conv1d(dim, dim, 3, dilation=2**depth, padding=2**depth)
                 self.block = block(depth)
                 self.proj_out = nn.Conv1d(dim, 2*dim, 1)
 
-            def forward(
-                self, 
-                x: Float[Tensor, "B D L"], 
-                y: Optional[Float[Tensor, "B Y L"]],
-                *args, **kwargs,
-            ) -> Float[Tensor, "B D*2 L"]:
+            def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D*2 L"]:
                 h = self.proj_x(x)
-                if self.proj_y is not None:
-                    h = h + self.proj_y(y)
-                h = F.glu(h, dim=1)
-                h = self.block(h, *args, **kwargs)
+                h = self.block(h)
                 return self.proj_out(h)
 
         super().__init__(dim, [
