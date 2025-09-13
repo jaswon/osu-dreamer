@@ -16,7 +16,7 @@ class TokenHead(nn.Module):
         vocab: Vocab,
         emb_dim: int,
         n_freqs: int = 64,
-        time_loss_factor: float = 100.,
+        time_loss_factor: float = 1.,
     ):
         super().__init__()
         self.time_loss_factor = time_loss_factor
@@ -34,7 +34,11 @@ class TokenHead(nn.Module):
 
         ## prediction head
         self.token_head = nn.Linear(emb_dim, num_tokens)
-        self.time_head = nn.Linear(emb_dim, vocab.time_bins)
+        self.time_head = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, vocab.time_bins-1),
+        ) # V[k] = log(P[k+1] / P[k]) (adjacent-category logit)
 
     def embed(self, ids: Int[Tensor, "B N"]) -> Float[Tensor, "B N D"]:
         positions = th.clamp(ids - self.vocab.T0, min=0) # B N
@@ -56,14 +60,18 @@ class TokenHead(nn.Module):
         
     def _denormalized_logits(
         self,
-        token_logits: Float[Tensor, "B N D"],
-        time_logits: Float[Tensor, "B N T"],
+        token_scores: Float[Tensor, "B N D"],
+        time_scores: Float[Tensor, "B N Tm1"],
     ) -> Float[Tensor, "B N V"]:
-        token_probs = token_logits.softmax(dim=-1)
+        
+        # P(time_i+1) = ( P(time_i+1) / P(time_i) ) * P(time_i)
+        time_logits = F.pad(time_scores.cumsum(dim=-1), (1,0))
 
-        # P(time_i) = P(time_type) * P(time_i | time_type)
-        marginal_time_probs = token_probs[:,:,-1:] * time_logits.softmax(dim=-1)
-
+        token_probs = token_scores.softmax(dim=-1)
+        time_probs = time_logits.softmax(dim=-1)
+        
+        # P(time_i) = P(time_i | time_type) * P(time_type)
+        marginal_time_probs = token_probs[:,:,-1:] * time_probs
         combined_probs = th.cat([token_probs[:,:,:-1], marginal_time_probs], dim=-1)
         return th.log(combined_probs + 1e-8)
 
@@ -78,22 +86,20 @@ class TokenHead(nn.Module):
     ]:
         is_time = true_tokens >= self.vocab.T0
 
-        pred_token_logits = self.token_head(pred_embs)
+        pred_token_scores = self.token_head(pred_embs)
         true_token_classes = th.clamp(true_tokens, max=self.vocab.T0)
         token_loss = F.cross_entropy(
-            pred_token_logits.reshape(-1, pred_token_logits.size(-1)), 
+            pred_token_scores.reshape(-1, pred_token_scores.size(-1)), 
             true_token_classes.reshape(-1),
         )
 
-        # continuous ranked probability loss
-        pred_time_logits = self.time_head(pred_embs)
-        pred_timing_cdf = pred_time_logits.softmax(dim=-1).cumsum(dim=-1)
+        # adjacent-category ordinal regression
+        pred_time_scores = self.time_head(pred_embs)
+        pred_time_logits = F.pad(pred_time_scores.cumsum(dim=-1), (1,0))
         true_time_classes = th.clamp(true_tokens - self.vocab.T0, min=0)
-        domain = th.arange(pred_time_logits.size(-1)).to(true_tokens)
-        true_timing_cdf = (domain >= true_time_classes[:,:,None]).float()
-        time_loss = F.mse_loss(
-            pred_timing_cdf[is_time],
-            true_timing_cdf[is_time],
+        time_loss = F.cross_entropy(
+            pred_time_logits[is_time],
+            true_time_classes[is_time],
         )
 
         loss = token_loss + self.time_loss_factor * time_loss
@@ -105,7 +111,7 @@ class TokenHead(nn.Module):
 
         if calc_accuracy:
             with th.no_grad():
-                pred_logits = self._denormalized_logits(pred_token_logits, pred_time_logits)
+                pred_logits = self._denormalized_logits(pred_token_scores, pred_time_scores)
                 pred_tokens = pred_logits.argmax(dim=-1)
                 accuracy = (pred_tokens == true_tokens).float().mean()
                 log_dict["accuracy"] = accuracy.item()
