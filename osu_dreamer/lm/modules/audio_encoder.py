@@ -14,12 +14,14 @@ import osu_dreamer.modules.mp as MP
 @dataclass
 class AudioEncoderArgs:
     depth: int
+    expand: int = 1
     checkpoint: bool = True
     freq_bins: int = 6
 
 class AudioEncoder(nn.Module):
     def __init__(self, dim: int, args: AudioEncoderArgs):
         super().__init__()
+        h_dim = dim * args.expand
         
         self.freq_proj = nn.Sequential(
             Rearrange('b f l -> b 1 f l'),
@@ -27,16 +29,19 @@ class AudioEncoder(nn.Module):
             nn.SiLU(),
             nn.AdaptiveMaxPool2d((args.freq_bins, None)), # b 1 d l
             Rearrange('b 1 d l -> b d l'),
-            nn.Conv1d(args.freq_bins, dim, 1),
+            nn.Conv1d(args.freq_bins, h_dim, 1),
         )
 
-        self.blocks = nn.ModuleList([ Block(dim) for _ in range(args.depth) ])
+        self.blocks = nn.ModuleList([ Block(h_dim) for _ in range(args.depth) ])
         if args.checkpoint:
             self.run_block = lambda block, x: checkpoint(block, x, use_reentrant=False)
         else:
             self.run_block = lambda block, x: block(x)
         
-        self.final = Rearrange('b h l -> b l h')
+        self.final = nn.Sequential(
+            Rearrange('b h l -> b l h'),
+            nn.Identity() if args.expand == 1 else nn.Linear(h_dim, dim),
+        )
 
     def forward(self, x: Float[Tensor, "B A L"]) -> Float[Tensor, "B L D"]:
         x = self.freq_proj(x)
