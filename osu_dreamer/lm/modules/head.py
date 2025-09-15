@@ -36,11 +36,11 @@ class TokenHead(nn.Module):
         self.time_head = nn.Sequential(
             nn.Linear(emb_dim, emb_dim),
             nn.SiLU(),
-            nn.Linear(emb_dim, vocab.time_bins-1),
+            nn.Linear(emb_dim, vocab.time_bins),
         ) # V[k] = log(P[k+1] / P[k]) (adjacent-category logit)
 
     def embed(self, ids: Int[Tensor, "B N"]) -> Float[Tensor, "B N D"]:
-        positions = th.clamp(ids - self.vocab.T0, min=0) / self.vocab.time_bins # B N
+        positions = th.clamp(ids - self.vocab.T0, min=0) / (self.vocab.time_bins+1) # B N
         thetas = positions[:,:,None] * self.ffe_freqs[None,None]  # [B, N, n_freqs]
         features = th.cat([th.sin(thetas), th.cos(thetas)], dim=-1)
         time_embs = self.ffe_proj(features) # B N D

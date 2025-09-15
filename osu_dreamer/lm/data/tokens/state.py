@@ -23,7 +23,7 @@ token_grammar = r"""
     cubic: "CUBIC" coordinate "DEVIATION" "DEVIATION" "MAGNITUDE" "MAGNITUDE"
 
     release: time "RELEASE"
-    time: "TIME"
+    time: "EOS" | "TIME"
     coordinate: "POS_COARSE" "POS_FINE"
 """
 

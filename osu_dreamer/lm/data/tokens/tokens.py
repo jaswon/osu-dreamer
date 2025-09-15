@@ -88,7 +88,6 @@ class Vocab:
             # control
             Token(TokenType.PAD),
             Token(TokenType.BOS),
-            Token(TokenType.EOS),
 
             # event types
             Token(TokenType.BREAK),
@@ -138,6 +137,8 @@ class Vocab:
                 Token(TokenType.TIME, i)
                 for i in range(self.time_bins)
             ],
+            # EOS grammatically acts like a time token
+            Token(TokenType.EOS),
         )
 
         self.ids = { token: i for i, token in enumerate(self.tokens) }
