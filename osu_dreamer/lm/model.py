@@ -73,6 +73,7 @@ class Model(pl.LightningModule):
         map_features: Float[Tensor, "B M"],
         audio: Float[Tensor, "B A L"],
         tokens: Int[Tensor, "B Np1"],
+        timestamps: Int[Tensor, "B Np1"],
         validation: bool = False,
         input_jitter: bool = True,
     ) -> tuple[
@@ -93,7 +94,7 @@ class Model(pl.LightningModule):
             )
 
         embs = self.head.embed(inp) # B N D
-        output, _ = self.decoder(embs, ctx=ctx)
+        output, _ = self.decoder(embs, emb_t = timestamps[:,:-1], ctx=ctx)
         return self.head(output, tokens[:,1:], validation)
     
     def training_step(self, batch: Batch, batch_idx: int):
@@ -102,6 +103,7 @@ class Model(pl.LightningModule):
             batch.map_features,
             batch.audio,
             batch.tokens,
+            batch.timestamps,
         )
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
@@ -126,6 +128,7 @@ class Model(pl.LightningModule):
             batch.map_features,
             batch.audio,
             batch.tokens,
+            batch.timestamps,
             validation=True,
         )
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
@@ -195,22 +198,33 @@ class Model(pl.LightningModule):
                 # If cache has been invalidated, do full forward pass with context-adjusted tokens
                 if cache is None:
                     # Create adjusted token sequence where TIME tokens are translated to current context
-                    adjusted_tokens = self._get_time_shifted_tokens(generated_tokens, ctx_starts)
+                    adjusted_tokens, adjusted_timestamps = self._get_time_shifted_tokens(generated_tokens, ctx_starts)
 
                     if len(adjusted_tokens) == 0:
                         # no token history, set to bos
                         adjusted_tokens = [self.vocab.BOS]
+                        adjusted_timestamps = [0]
                     
                     # Do full forward pass with adjusted tokens
                     all_tokens = th.tensor([adjusted_tokens], device=self.device, dtype=th.long)
-                    all_embs = self.head.embed(all_tokens)
-                    all_output, cache = self.decoder(all_embs, ctx=ctx, cache=None)
+                    all_timestamps = th.tensor([adjusted_timestamps], device=self.device, dtype=th.long)
+                    all_output, cache = self.decoder(
+                        self.head.embed(all_tokens), 
+                        emb_t = all_timestamps, 
+                        ctx=ctx, 
+                        cache=None,
+                    )
                     logits = self.head.logits(all_output)[0,-1] # Get logits for the last token
                 else:
                     # Normal incremental decode
                     token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
-                    embs = self.head.embed(token_tensor)
-                    output, cache = self.decoder(embs, ctx=ctx, cache=cache)
+                    timestamp_tensor = th.tensor([[cur_frame]], device=self.device, dtype=th.long)
+                    output, cache = self.decoder(
+                        self.head.embed(token_tensor), 
+                        emb_t = timestamp_tensor, 
+                        ctx=ctx, 
+                        cache=cache,
+                    )
                     logits = self.head.logits(output)[0,0] # V
 
                 # mask grammatically incorrect tokens
@@ -279,11 +293,12 @@ class Model(pl.LightningModule):
         self, 
         tokens: list[int], 
         ctx_starts: list[int], 
-    ) -> list[int]:
+    ) -> tuple[list[int], list[int]]:
         """
         Adjust TIME tokens in a sequence to be relative to a new context start.
         """
-        adjusted = []
+        adjusted_tokens = []
+        adjusted_timestamps = []
         temp_buffer = []
         
         # Process tokens in reverse order
@@ -300,12 +315,13 @@ class Model(pl.LightningModule):
                 
                 if 0 <= new_time_bin < self.vocab.time_bins:
                     # time is valid- include them in return
-                    adjusted.extend(temp_buffer)
-                    adjusted.append(self.vocab.ids[Token(TokenType.TIME, new_time_bin)])
+                    adjusted_tokens.extend(temp_buffer)
+                    adjusted_tokens.append(self.vocab.ids[Token(TokenType.TIME, new_time_bin)])
+                    adjusted_timestamps.extend([new_time_bin] * (len(temp_buffer) + 1))
                     temp_buffer = []
                 else:
                     # TIME token before context window, exit early
                     break
                 
         # Reverse the final result since we built it backwards
-        return list(reversed(adjusted))
+        return list(reversed(adjusted_tokens)), list(reversed(adjusted_timestamps))

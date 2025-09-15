@@ -14,8 +14,9 @@ class Tokenizer:
         self.vocab = vocab
         self.bm_tokens = list(self._tokenize_timed_objects(bm))
 
-    def encode(self, start_frame: int) -> list[int]:
+    def encode(self, start_frame: int) -> tuple[list[int], list[int]]:
         toks = [self.vocab.BOS]
+        ts = [0]
         encode = False
         end_frame = start_frame + self.vocab.time_bins
         for tok in self.bm_tokens:
@@ -27,12 +28,15 @@ class Tokenizer:
                     break
 
                 encode = True
-                tok = Token(TokenType.TIME, f - start_frame)
+                t = f - start_frame
+                tok = Token(TokenType.TIME, t)
 
             if encode:
                 toks.append(self.vocab.ids[tok])
+                ts.append(t)
         toks.append(self.vocab.EOS)
-        return toks
+        ts.append(self.vocab.time_bins)
+        return toks, ts
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
         assert self.vocab.x_min <= p[0] < self.vocab.x_max, p[0]

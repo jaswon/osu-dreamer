@@ -94,13 +94,15 @@ class CrossAttention(nn.Module):
         self.kv_proj = nn.Linear(ctx_dim, d_model * 2)
         self.out_proj = nn.Linear(d_model, d_model)
         self.gate = nn.Linear(d_model, d_model)
+        self.rotary_emb = RotaryEmbedding(self.d_head)
         
         self.dropout = dropout
         
     def forward(
         self, 
         x: Float[Tensor, "B N D"], 
-        ctx: Float[Tensor, "B L C"]
+        emb_t: Int[Tensor, "B N"],
+        ctx: Float[Tensor, "B L C"],
     ) -> Float[Tensor, "B N D"]:
         q = self.q_proj(x) # B N D
         k, v = self.kv_proj(ctx).chunk(2, dim=-1)  # B L D
@@ -108,6 +110,9 @@ class CrossAttention(nn.Module):
         q = q.unflatten(2, (self.n_heads, -1)) # B N H d
         k = k.unflatten(2, (self.n_heads, -1)) # B L H d
         v = v.unflatten(2, (self.n_heads, -1)) # B L H d
+
+        q = self.rotary_emb(q, t=emb_t)
+        k = self.rotary_emb(k)
         
         attn_out = xops.memory_efficient_attention(q, k, v)  # B N H d
         attn_out = attn_out.flatten(-2, -1)  # B N D
@@ -133,6 +138,7 @@ class DecoderLayer(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B N D"], 
+        emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"], 
         cache: tuple[Tensor, Tensor] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
@@ -141,7 +147,7 @@ class DecoderLayer(nn.Module):
         x = x + self.dropout(sa_out)
         
         # Cross attention
-        ca_out = self.cross_attn(self.norm2(x), ctx)
+        ca_out = self.cross_attn(self.norm2(x), emb_t, ctx)
         x = x + self.dropout(ca_out)
         
         # Feed forward
@@ -172,6 +178,7 @@ class Decoder(nn.Module):
     def forward(
         self,
         emb: Float[Tensor, "B N D"],
+        emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"],
         cache: list[tuple[Tensor, Tensor]] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], list[tuple[Tensor, Tensor]]]:
@@ -179,7 +186,7 @@ class Decoder(nn.Module):
         new_caches = []
         for i, layer in enumerate(self.layers):
             layer_cache = cache[i] if cache is not None else None
-            x, new_layer_cache = self.run_block(layer, x, ctx, layer_cache) # type: ignore
+            x, new_layer_cache = self.run_block(layer, x, emb_t, ctx, layer_cache) # type: ignore
             new_caches.append(new_layer_cache)
             
         return x, new_caches

@@ -1,6 +1,6 @@
 from typing import NamedTuple, Iterator
 from torch import Tensor
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 import pickle
 import random
@@ -22,7 +22,8 @@ from osu_dreamer.lm.data.tokens.tokens import Token, TokenType, Vocab
 class Batch(NamedTuple):
     map_features: Float[Tensor, "B M"]  # Map features
     audio: Float[Tensor, "B A L"]       # Spectrogram
-    tokens: Float[Tensor, "B N+1"]      # token sequences
+    tokens: Int[Tensor, "B N+1"]        # token sequences
+    timestamps: Int[Tensor, "B N+1"]    # token timestamps
 
 
 class Dataset(IterableDataset):
@@ -87,19 +88,23 @@ class Dataset(IterableDataset):
         num_starts = audio.size(-1) - self.vocab.time_bins + 1
         for start_idx in th.randperm(num_starts)[:1 + num_starts // self.vocab.time_bins]:
 
-            tokens_for_audio = tokenizer.encode(int(start_idx.item()))
-            if len(tokens_for_audio) < self.context_size:
+            tokens, timestamps = tokenizer.encode(int(start_idx.item()))
+            if len(tokens) < self.context_size:
                 # pad
-                tokens_for_audio.extend([pad] * (self.context_size - len(tokens_for_audio)))
-            elif len(tokens_for_audio) > self.context_size:
+                num_pad = self.context_size - len(tokens)
+                tokens.extend([pad] * num_pad)
+                timestamps.extend([self.vocab.time_bins] * num_pad)
+            elif len(tokens) > self.context_size:
                 # random slice
-                i = random.randrange(len(tokens_for_audio) - self.context_size + 1)
-                tokens_for_audio = tokens_for_audio[i:i+self.context_size]
+                i = random.randrange(len(tokens) - self.context_size + 1)
+                tokens = tokens[i:i+self.context_size]
+                timestamps = timestamps[i:i+self.context_size]
 
             yield Batch(
                 map_features = map_features, 
                 audio = audio[:, start_idx:start_idx + self.vocab.time_bins],
-                tokens = th.tensor(tokens_for_audio).long(),
+                tokens = th.tensor(tokens).long(),
+                timestamps = th.tensor(timestamps).long(),
             )
 
 
