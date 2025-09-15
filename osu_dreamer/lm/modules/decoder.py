@@ -1,5 +1,6 @@
-from __future__ import annotations
-from jaxtyping import Float
+
+from typing import Optional
+from jaxtyping import Float, Int
 
 from dataclasses import dataclass
 
@@ -22,14 +23,18 @@ class DecoderArgs:
 class RotaryEmbedding(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
-        inv_freq = 1.0 / (10000 ** (th.arange(0, dim, 2).float() / dim))
-        self.register_buffer("inv_freq", inv_freq); self.inv_freq: Tensor
+        self.inv_freq = 1.0 / (10000 ** (th.arange(0, dim, 2).float() / dim))
 
-    def forward(self, x: Float[Tensor, "... N D"], offset: int = 0) -> Float[Tensor, "... N D"]:
-        seq_len = x.shape[-2]
-        t = th.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype) + offset
-        freqs = th.einsum("i,j->ij", t, self.inv_freq)
-        emb = th.cat((freqs, freqs), dim=-1)
+    def forward(
+        self, 
+        x: Float[Tensor, "B N H D"], 
+        t: Optional[Int[Tensor, "B N"]] = None,
+        offset: int = 0,
+    ) -> Float[Tensor, "B N H D"]:
+        if t is None:
+            t = th.arange(x.size(1), device=x.device, dtype=self.inv_freq.dtype)[None] + offset
+        freqs = th.einsum("bn,f->bnf", t, self.inv_freq.to(x.device))
+        emb = th.cat((freqs, freqs), dim=2)[:,:,None,:] # B N 1 D
 
         def rotate_half(x: Tensor) -> Tensor:
             x1, x2 = x.chunk(2, dim=-1)
@@ -75,13 +80,11 @@ class SelfAttention(nn.Module):
         x: Float[Tensor, "B N D"], 
         cache: tuple[Tensor, Tensor] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
-        B, N, _ = x.shape
-        
         q, k, v = self.qkv_proj(x).chunk(3, dim=-1)
         
-        q = q.view(B, N, self.n_heads, self.d_head)
-        k = k.view(B, N, self.n_heads, self.d_head)
-        v = v.view(B, N, self.n_heads, self.d_head)
+        q = q.unflatten(2, (self.n_heads, -1)) # B N H d
+        k = k.unflatten(2, (self.n_heads, -1)) # B L H d
+        v = v.unflatten(2, (self.n_heads, -1)) # B L H d
         
         offset = 0
         if cache is not None:
@@ -94,13 +97,12 @@ class SelfAttention(nn.Module):
                 k = k[:, -self.max_cache_len:]
                 v = v[:, -self.max_cache_len:]
 
-        q = self.rotary_emb(q.transpose(1, 2), offset=offset).transpose(1, 2)  
-        k = self.rotary_emb(k.transpose(1, 2), offset=offset).transpose(1, 2)
+        q = self.rotary_emb(q, offset=offset)  
+        k = self.rotary_emb(k, offset=offset)
 
         attn_bias = xops.LowerTriangularMask() if cache is None else None
         out = xops.memory_efficient_attention(q, k, v, attn_bias=attn_bias)
-        
-        out = out.view(B, N, -1)
+        out = out.flatten(-2, -1)  # B N D
         
         return self.out_proj(out), (k, v)
 
@@ -122,18 +124,12 @@ class CrossAttention(nn.Module):
         x: Float[Tensor, "B N D"], 
         ctx: Float[Tensor, "B L C"]
     ) -> Float[Tensor, "B N D"]:
-        B = x.size(0)
-        
-        # Add positional encoding to queries and project
         q = self.q_proj(x) # B N D
+        k, v = self.kv_proj(ctx).chunk(2, dim=-1)  # B L D
         
-        # Project context and add positional encoding to keys
-        kv = self.kv_proj(ctx)  # B L 2D
-        k, v = kv.chunk(2, dim=-1)  # B L D each
-        
-        q = q.view(B, -1, self.n_heads, self.d_head)  # B N H d
-        k = k.view(B, -1, self.n_heads, self.d_head)  # B L H d
-        v = v.view(B, -1, self.n_heads, self.d_head)  # B L H d
+        q = q.unflatten(2, (self.n_heads, -1)) # B N H d
+        k = k.unflatten(2, (self.n_heads, -1)) # B L H d
+        v = v.unflatten(2, (self.n_heads, -1)) # B L H d
         
         attn_out = xops.memory_efficient_attention(q, k, v)  # B N H d
         attn_out = attn_out.flatten(-2, -1)  # B N D
