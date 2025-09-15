@@ -1,5 +1,4 @@
 
-from typing import Optional
 from jaxtyping import Float, Int
 
 from dataclasses import dataclass
@@ -27,7 +26,7 @@ class RotaryEmbedding(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B N H D"], 
-        t: Optional[Int[Tensor, "B N"]] = None,
+        t: Int[Tensor, "B N"] | None = None,
         offset: int = 0,
     ) -> Float[Tensor, "B N H D"]:
         if t is None:
@@ -40,6 +39,11 @@ class RotaryEmbedding(nn.Module):
             return th.cat((-x2, x1), dim=-1)
 
         return (x * emb.cos()) + (rotate_half(x) * emb.sin())
+    
+AttnKVCache = tuple[
+    Float[Tensor, "B _ h d"],  # keys
+    Float[Tensor, "B _ h d"],  # values
+]
 
 class SelfAttention(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dropout: float, max_cache_len: int = 1024):
@@ -56,8 +60,8 @@ class SelfAttention(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B N D"], 
-        cache: tuple[Tensor, Tensor] | None = None,
-    ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
+        cache: AttnKVCache | None = None,
+    ) -> tuple[Float[Tensor, "B N D"], AttnKVCache]:
         q, k, v = self.qkv_proj(x).chunk(3, dim=-1)
         
         q = q.unflatten(2, (self.n_heads, -1)) # B N H d
@@ -103,16 +107,23 @@ class CrossAttention(nn.Module):
         x: Float[Tensor, "B N D"], 
         emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"],
-    ) -> Float[Tensor, "B N D"]:
-        q = self.q_proj(x) # B N D
-        k, v = self.kv_proj(ctx).chunk(2, dim=-1)  # B L D
+        cache: AttnKVCache | None = None,
+    ) -> tuple[Float[Tensor, "B N D"], AttnKVCache]:
         
+        q = self.q_proj(x) # B N D
         q = q.unflatten(2, (self.n_heads, -1)) # B N H d
-        k = k.unflatten(2, (self.n_heads, -1)) # B L H d
-        v = v.unflatten(2, (self.n_heads, -1)) # B L H d
-
         q = self.rotary_emb(q, t=emb_t)
-        k = self.rotary_emb(k)
+
+        if cache is not None:
+            k, v = cache
+        else:
+            # Compute k,v from context - this only happens once per sequence
+            k, v = self.kv_proj(ctx).chunk(2, dim=-1)  # B L D
+            
+            k = k.unflatten(2, (self.n_heads, -1)) # B L H d
+            v = v.unflatten(2, (self.n_heads, -1)) # B L H d
+
+            k = self.rotary_emb(k)
         
         attn_out = xops.memory_efficient_attention(q, k, v)  # B N H d
         attn_out = attn_out.flatten(-2, -1)  # B N D
@@ -120,7 +131,13 @@ class CrossAttention(nn.Module):
         
         # Apply gating
         gate_val = th.sigmoid(self.gate(x))
-        return gate_val * attn_out
+        return gate_val * attn_out, (k, v)
+    
+
+DecoderLayerKVCache = tuple[
+    AttnKVCache,    # self attention cache
+    AttnKVCache,    # cross attention cache
+]
 
 class DecoderLayer(nn.Module):
     def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float):
@@ -140,21 +157,27 @@ class DecoderLayer(nn.Module):
         x: Float[Tensor, "B N D"], 
         emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"], 
-        cache: tuple[Tensor, Tensor] | None = None,
-    ) -> tuple[Float[Tensor, "B N D"], tuple[Tensor, Tensor]]:
+        cache: DecoderLayerKVCache | None = None,
+    ) -> tuple[Float[Tensor, "B N D"], DecoderLayerKVCache]:
+        
+        if cache is not None:
+            sa_cache, ca_cache = cache
+        else:
+            sa_cache, ca_cache = None, None
+
         # Self attention
-        sa_out, new_cache = self.self_attn(self.norm1(x), cache=cache)
+        sa_out, sa_cache = self.self_attn(self.norm1(x), cache=sa_cache)
         x = x + self.dropout(sa_out)
         
         # Cross attention
-        ca_out = self.cross_attn(self.norm2(x), emb_t, ctx)
+        ca_out, ca_cache = self.cross_attn(self.norm2(x), emb_t, ctx, cache=ca_cache)
         x = x + self.dropout(ca_out)
         
         # Feed forward
         ffn_out = self.ffn(self.norm3(x))
         x = x + self.dropout(ffn_out)
         
-        return x, new_cache
+        return x, (sa_cache, ca_cache)
 
 class Decoder(nn.Module):
     def __init__(
@@ -180,8 +203,8 @@ class Decoder(nn.Module):
         emb: Float[Tensor, "B N D"],
         emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"],
-        cache: list[tuple[Tensor, Tensor]] | None = None,
-    ) -> tuple[Float[Tensor, "B N D"], list[tuple[Tensor, Tensor]]]:
+        cache: list[DecoderLayerKVCache] | None = None,
+    ) -> tuple[Float[Tensor, "B N D"], list[DecoderLayerKVCache]]:
         x = emb
         new_caches = []
         for i, layer in enumerate(self.layers):
