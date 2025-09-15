@@ -35,6 +35,32 @@ AttnKVCache = tuple[
 ]
 
 class SelfAttention(nn.Module):
+    def __init__(self, d_model: int, n_heads: int, dropout: float):
+        super().__init__()
+        self.n_heads = n_heads
+        self.d_head = d_model // n_heads
+        
+        self.qkv_proj = nn.Linear(d_model, d_model * 3)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.rotary_emb = RotaryEmbedding(self.d_head)
+        self.dropout = dropout
+
+    def forward(self, x: Float[Tensor, "B N D"]) -> Float[Tensor, "B N D"]:
+        q, k, v = self.qkv_proj(x).chunk(3, dim=-1)
+        
+        q = q.unflatten(2, (self.n_heads, -1)) # B N H d
+        k = k.unflatten(2, (self.n_heads, -1)) # B L H d
+        v = v.unflatten(2, (self.n_heads, -1)) # B L H d
+
+        q = self.rotary_emb(q)  
+        k = self.rotary_emb(k)
+
+        out = xops.memory_efficient_attention(q, k, v)
+        out = out.flatten(-2, -1)  # B N D
+        
+        return self.out_proj(out)
+
+class CausalSelfAttention(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dropout: float, max_cache_len: int = 1024):
         super().__init__()
         self.max_cache_len = max_cache_len

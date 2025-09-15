@@ -8,7 +8,7 @@ from torch import nn, Tensor
 
 import xformers.ops as xops
 
-from .attn import SelfAttention, CrossAttention, AttnKVCache
+from .attn import CausalSelfAttention, CrossAttention, AttnKVCache
 
 @dataclass
 class DecoderArgs:
@@ -27,7 +27,7 @@ DecoderLayerKVCache = tuple[
 class DecoderLayer(nn.Module):
     def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float):
         super().__init__()
-        self.self_attn = SelfAttention(d_model, n_heads, dropout)
+        self.self_attn = CausalSelfAttention(d_model, n_heads, dropout)
         self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim)
         self.ffn = xops.SwiGLU(d_model, (int(d_model * 8 / 3) + 7) // 8 * 8)
         
