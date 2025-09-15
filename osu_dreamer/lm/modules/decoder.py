@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import torch as th
 from torch.utils.checkpoint import checkpoint
 from torch import nn, Tensor
-import math
 
 import xformers.ops as xops
 
@@ -41,27 +40,6 @@ class RotaryEmbedding(nn.Module):
             return th.cat((-x2, x1), dim=-1)
 
         return (x * emb.cos()) + (rotate_half(x) * emb.sin())
-
-class RandomFourierPositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, n_freqs: int = 64, max_len: int = 2048):
-        super().__init__()
-        self.d_model = d_model
-        self.n_freqs = n_freqs
-        
-        # Random frequencies sampled from log-uniform distribution
-        rff_freqs = th.exp(th.randn(n_freqs) * math.log(max_len))
-        self.register_buffer("rff_freqs", rff_freqs)
-        self.rff_freqs: Tensor
-        
-        # Linear projection from 2*n_freqs features to d_model
-        self.proj = nn.Linear(2 * n_freqs, d_model)
-        
-    def forward(self, x: Float[Tensor, "B N D"]) -> Float[Tensor, "B N D"]:
-        L = x.size(-2)
-        positions = th.arange(L, device=x.device, dtype=th.float32)
-        thetas = positions[:,None] * self.rff_freqs[None]  # [L, n_freqs]
-        features = th.cat([th.sin(thetas), th.cos(thetas)], dim=-1)
-        return x + self.proj(features)
 
 class SelfAttention(nn.Module):
     def __init__(self, d_model: int, n_heads: int, dropout: float, max_cache_len: int = 1024):
@@ -178,7 +156,6 @@ class Decoder(nn.Module):
         emb_dim: int,
         ctx_dim: int,
         args: DecoderArgs,
-        ctx_size: int,
     ):
         super().__init__()
         
@@ -191,9 +168,6 @@ class Decoder(nn.Module):
             DecoderLayer(emb_dim, ctx_dim, args.n_heads, args.dropout)
             for _ in range(args.n_layers)
         ])
-        
-        self.emb_pos_enc = RandomFourierPositionalEncoding(emb_dim, args.n_freqs)
-        self.ctx_pos_enc = RandomFourierPositionalEncoding(ctx_dim, args.n_freqs, ctx_size)
 
     def forward(
         self,
@@ -201,8 +175,7 @@ class Decoder(nn.Module):
         ctx: Float[Tensor, "B L C"],
         cache: list[tuple[Tensor, Tensor]] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], list[tuple[Tensor, Tensor]]]:
-        ctx = self.ctx_pos_enc(ctx)
-        x = self.emb_pos_enc(emb)
+        x = emb
         new_caches = []
         for i, layer in enumerate(self.layers):
             layer_cache = cache[i] if cache is not None else None

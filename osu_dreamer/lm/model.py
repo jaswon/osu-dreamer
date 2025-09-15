@@ -61,7 +61,7 @@ class Model(pl.LightningModule):
         
         # model components
         self.vocab = vocab
-        self.decoder = Decoder(emb_dim, ctx_dim, decoder_args, ctx_size=vocab.time_bins)
+        self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
         self.head = TokenHead(vocab, emb_dim)
         
         # audio encoder
