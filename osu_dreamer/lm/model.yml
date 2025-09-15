@@ -64,13 +64,14 @@ model:
     warmup_init: 0.05
     decay_start: 15000
     
-  ctx_dim: 512
+  ctx_dim: 256
   audio_encoder_args:
-    depth: 12
+    expand: 2
+    depth: 6
     freq_bins: 16
 
-  emb_dim: 768
+  emb_dim: 256
   decoder_args:
-    n_heads: 24
+    n_heads: 16
     n_layers: 12
     dropout: 0.15
