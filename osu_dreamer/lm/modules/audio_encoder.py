@@ -10,6 +10,7 @@ from torch.utils.checkpoint import checkpoint
 from einops.layers.torch import Rearrange
 
 import osu_dreamer.modules.mp as MP
+from osu_dreamer.modules.mingru import MinGRU
 
 @dataclass
 class AudioEncoderArgs:
@@ -32,7 +33,13 @@ class AudioEncoder(nn.Module):
             nn.Conv1d(args.freq_bins, h_dim, 1),
         )
 
-        self.blocks = nn.ModuleList([ Block(h_dim) for _ in range(args.depth) ])
+        self.blocks = nn.ModuleList([
+            nn.Sequential(
+                AdaLNZero(h_dim, sequenceMixer(h_dim)),
+                AdaLNZero(h_dim, channelMixer(h_dim)),
+            )
+            for _ in range(args.depth)
+        ])
         if args.checkpoint:
             self.run_block = lambda block, x: checkpoint(block, x, use_reentrant=False)
         else:
@@ -51,14 +58,10 @@ class AudioEncoder(nn.Module):
 
         return self.final(x)
     
-class Block(nn.Module):
-    def __init__(self, dim: int):
+class AdaLNZero(nn.Module):
+    def __init__(self, dim: int, op: nn.Module):
         super().__init__()
-        self.op = nn.Sequential(
-            MP.Conv1d(dim, dim, 7,1,3, groups=dim),
-            MP.Conv1d(dim, dim*2, 1),
-            nn.GLU(dim=1),
-        )
+        self.op = op
         self.scale = nn.Parameter(th.zeros(dim, 1))
         self.shift = nn.Parameter(th.zeros(dim, 1))
         self.alpha = nn.Parameter(th.zeros(dim, 1))
@@ -69,3 +72,28 @@ class Block(nn.Module):
         r = self.op(r)
         r = self.alpha * r
         return x + r
+
+class sequenceMixer(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        h_dim = dim // 2
+        assert h_dim * 2 == dim
+        self.fore = MinGRU(dim, h_dim)
+        self.back = MinGRU(dim, h_dim)
+
+    def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
+        return MP.cat([
+            self.fore(x), 
+            self.back(x.flip(2)).flip(2),
+        ], dim=1)
+    
+class channelMixer(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.proj_h = MP.Conv1d(dim, dim, 1)
+        self.proj_g = MP.Conv1d(dim, dim, 1)
+        self.proj_out = MP.Conv1d(dim, dim, 1)
+
+    def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X L"]:
+        h,g = self.proj_h(x), self.proj_g(x)
+        return self.proj_out(h*MP.silu(g))
