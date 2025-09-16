@@ -65,7 +65,7 @@ class Model(pl.LightningModule):
         self.head = TokenHead(vocab, emb_dim)
         
         # audio encoder
-        self.audio_encoder = AudioEncoder(ctx_dim, audio_encoder_args)
+        self.audio_encoder = AudioEncoder(ctx_dim, audio_encoder_args, vocab.time_bins)
         
     
     def forward(
@@ -163,7 +163,6 @@ class Model(pl.LightningModule):
 
         # precompute audio features
         L = audio.size(-1)
-        audio_features = self.audio_encoder(audio[None]) # 1 l h
 
         # precompute sampling params
         ctx_size = self.vocab.time_bins
@@ -177,6 +176,7 @@ class Model(pl.LightningModule):
         cur_frame = 0
         generated_tokens: list[int] = [token_id]
         ctx_starts: list[int] = [ctx_start]
+        ctx = None
         
         # initialize kv cache
         cache = None
@@ -193,7 +193,8 @@ class Model(pl.LightningModule):
                     break
 
                 # decode one step
-                ctx = audio_features[:,ctx_start:ctx_start+ctx_size]
+                if ctx is None:
+                    ctx = self.audio_encoder(audio[None,:,ctx_start:ctx_start+ctx_size])
                 
                 # If cache has been invalidated, do full forward pass with context-adjusted tokens
                 if cache is None:
@@ -273,6 +274,7 @@ class Model(pl.LightningModule):
                     ctx_start += shift_size
                     cur_frame -= shift_size
                     cache = None
+                    ctx = None
 
                 if token.typ == TokenType.EOS:
                     # context has been advanced - don't commit EOS
