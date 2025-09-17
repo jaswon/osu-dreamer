@@ -2,7 +2,6 @@ from typing import Any
 from jaxtyping import Float, Int
 
 import torch as th
-import torch.nn.functional as F
 from torch import Tensor
 
 import pytorch_lightning as pl
@@ -209,38 +208,39 @@ class Model(pl.LightningModule):
                     # Do full forward pass with adjusted tokens
                     all_tokens = th.tensor([adjusted_tokens], device=self.device, dtype=th.long)
                     all_timestamps = th.tensor([adjusted_timestamps], device=self.device, dtype=th.long)
-                    all_output, cache = self.decoder(
+                    pred_embs, cache = self.decoder(
                         self.head.embed(all_tokens), 
-                        emb_t = all_timestamps, 
+                        emb_t=all_timestamps, 
                         ctx=ctx, 
                         cache=None,
                     )
-                    logits = self.head.logits(all_output)[0,-1] # Get logits for the last token
                 else:
                     # Normal incremental decode
                     token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
                     timestamp_tensor = th.tensor([[cur_frame]], device=self.device, dtype=th.long)
-                    output, cache = self.decoder(
+                    pred_embs, cache = self.decoder(
                         self.head.embed(token_tensor), 
-                        emb_t = timestamp_tensor, 
+                        emb_t=timestamp_tensor, 
                         ctx=ctx, 
                         cache=cache,
                     )
-                    logits = self.head.logits(output)[0,0] # V
+
+                # compute log-probabilities
+                log_probs = self.head.log_probs(pred_embs)[0,-1] # V
 
                 # mask grammatically incorrect tokens
-                logits = th.where(logit_mask, logits, -th.inf)
+                log_probs = th.where(logit_mask, log_probs, -th.inf)
                 
                 # mask past time tokens
-                logits[self.vocab.T0:self.vocab.T0+cur_frame+1] = -th.inf
+                log_probs[self.vocab.T0:self.vocab.T0+cur_frame+1] = -th.inf
 
                 # sample next token
                 if top_p <= 0:
                     # Greedy sampling
-                    sampled = th.argmax(logits, dim=-1)
+                    sampled = th.argmax(log_probs, dim=-1)
                 else:
                     # Nucleus sampling
-                    sorted_probs, sorted_indices = th.sort(F.softmax(logits, dim=-1), descending=True)
+                    sorted_probs, sorted_indices = th.sort(log_probs.exp(), descending=True)
                     cutoff = (th.cumsum(sorted_probs, dim=-1) > top_p).float().argmax().item() + 1
                     sampled_idx = th.multinomial(sorted_probs[:cutoff], num_samples=1)[0]
                     sampled = sorted_indices[sampled_idx]
