@@ -69,10 +69,11 @@ model:
     n_heads: 12
     expand: 1
     depth: 6
-    freq_bins: 16
+    freq_bins: 32
 
   emb_dim: 512
+  head_h_dim: 512
   decoder_args:
     n_heads: 16
-    n_layers: 8
+    n_layers: 12
     dropout: 0.15

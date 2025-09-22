@@ -4,7 +4,7 @@ import lark
 from .tokens import Vocab
 
 token_grammar = r"""
-    start: "BOS" event* "EOS"
+    start: "BOS" event*
 
     event: time ( break | hit_object )
 
@@ -23,8 +23,8 @@ token_grammar = r"""
     cubic: "CUBIC" coordinate "DEVIATION" "DEVIATION" "MAGNITUDE" "MAGNITUDE"
 
     release: time "RELEASE"
-    time: "EOS" | "TIME"
-    coordinate: "POS_COARSE" "POS_FINE"
+    time: "TIME"
+    coordinate: "POS"
 """
 
 class LogitProcessor:

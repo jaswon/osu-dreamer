@@ -40,7 +40,6 @@ class DecoderLayer(nn.Module):
     def forward(
         self, 
         x: Float[Tensor, "B N D"], 
-        emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"], 
         cache: DecoderLayerKVCache | None = None,
     ) -> tuple[Float[Tensor, "B N D"], DecoderLayerKVCache]:
@@ -55,7 +54,7 @@ class DecoderLayer(nn.Module):
         x = x + self.dropout(sa_out)
         
         # Cross attention
-        ca_out, ca_cache = self.cross_attn(self.norm2(x), emb_t, ctx, cache=ca_cache)
+        ca_out, ca_cache = self.cross_attn(self.norm2(x), ctx, cache=ca_cache)
         x = x + self.dropout(ca_out)
         
         # Feed forward
@@ -86,7 +85,6 @@ class Decoder(nn.Module):
     def forward(
         self,
         emb: Float[Tensor, "B N D"],
-        emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"],
         cache: list[DecoderLayerKVCache] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], list[DecoderLayerKVCache]]:
@@ -94,7 +92,7 @@ class Decoder(nn.Module):
         new_caches = []
         for i, layer in enumerate(self.layers):
             layer_cache = cache[i] if cache is not None else None
-            x, new_layer_cache = self.run_block(layer, x, emb_t, ctx, layer_cache) # type: ignore
+            x, new_layer_cache = self.run_block(layer, x, ctx, layer_cache) # type: ignore
             new_caches.append(new_layer_cache)
             
         return x, new_caches

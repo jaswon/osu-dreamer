@@ -14,49 +14,38 @@ class Tokenizer:
         self.vocab = vocab
         self.bm_tokens = list(self._tokenize_timed_objects(bm))
 
-    def encode(self, start_frame: int) -> tuple[list[int], list[int]]:
-        toks = [self.vocab.BOS]
-        ts = [0]
+    def encode(self, start_frame: int) -> list[tuple[int, int, int, int]]:
+        x,y,t = 256, 192, 0
+
+        seq: list[tuple[int, int, int, int]] = [(self.vocab.BOS, x, y, t)]
         encode = False
-        end_frame = start_frame + self.vocab.time_bins
         for tok in self.bm_tokens:
             if tok.typ == TokenType.TIME:
-                f = tok.value // MS_PER_FRAME
-                if f < start_frame:
+                t = tok.value // MS_PER_FRAME - start_frame
+                tok = Token(TokenType.TIME)
+                
+                if t < 0:
                     continue
-                if f >= end_frame:
+                if t >= self.vocab.time_bins:
                     break
-
                 encode = True
-                t = f - start_frame
-                tok = Token(TokenType.TIME, t)
+
+            if tok.typ == TokenType.POS:
+                x,y = tok.value
+                tok = Token(TokenType.POS)
 
             if encode:
-                toks.append(self.vocab.ids[tok])
-                ts.append(t)
-        toks.append(self.vocab.EOS)
-        ts.append(self.vocab.time_bins)
-        return toks, ts
+                seq.append((self.vocab.ids[tok], x, y, t))
+
+        seq.append((self.vocab.TIME, x, y, self.vocab.time_bins))
+        return seq
     
     def _tokenize_coordinate(self, p: tuple[int, int]) -> Iterator[Token]:
         assert self.vocab.x_min <= p[0] < self.vocab.x_max, p[0]
         assert self.vocab.y_min <= p[1] < self.vocab.y_max, p[1]
-
-        coarse_x_bin_size = (self.vocab.x_max - self.vocab.x_min) // self.vocab.coarse_x_bins
-        coarse_y_bin_size = (self.vocab.y_max - self.vocab.y_min) // self.vocab.coarse_y_bins
-
-        coarse_x_bin, fine_x = divmod(p[0] - self.vocab.x_min, coarse_x_bin_size)
-        coarse_y_bin, fine_y = divmod(p[1] - self.vocab.y_min, coarse_y_bin_size)
-        yield Token(TokenType.POS_COARSE, (coarse_x_bin, coarse_y_bin))
-
-        fine_x_bin, _ = divmod(fine_x, coarse_x_bin_size // self.vocab.fine_x_bins)
-        fine_y_bin, _ = divmod(fine_y, coarse_y_bin_size // self.vocab.fine_y_bins)
-        yield Token(TokenType.POS_FINE, (fine_x_bin, fine_y_bin))
+        yield Token(TokenType.POS, p)
 
     def _tokenize_time(self, t: int) -> Iterator[Token]:
-        # NOTE: this encodes the raw milliseconds into the token.
-        # for most t, these tokens do not have a corresponding id in the vocabulary,
-        # but they will be translated into tokens with valid ids in `self.encode`
         yield Token(TokenType.TIME, t)
 
     def _tokenize_release(self, u: int) -> Iterator[Token]:
@@ -159,7 +148,6 @@ class Tokenizer:
         yield Token(TokenType.MAGNITUDE, b)
     
     def _tokenize_timed_objects(self, bm: BeatmapEvents) -> Iterator[Token]:
-        yield Token(TokenType.BOS)
         for event in bm.timed:
             yield from self._tokenize_time(event.t)
             match event:
@@ -172,4 +160,3 @@ class Tokenizer:
                         yield from self._tokenize_hit_object(event)
                     except Exception as e:
                         raise Exception(event.t) from e
-        yield Token(TokenType.EOS)

@@ -113,21 +113,18 @@ class CrossAttention(nn.Module):
         self.kv_proj = nn.Linear(ctx_dim, d_model * 2)
         self.out_proj = nn.Linear(d_model, d_model)
         self.gate = nn.Linear(d_model, d_model)
-        self.rotary_emb = RotaryEmbedding(self.d_head)
         
         self.dropout = dropout
         
     def forward(
         self, 
         x: Float[Tensor, "B N D"], 
-        emb_t: Int[Tensor, "B N"],
         ctx: Float[Tensor, "B L C"],
         cache: AttnKVCache | None = None,
     ) -> tuple[Float[Tensor, "B N D"], AttnKVCache]:
         
         q = self.q_proj(x) # B N D
         q = q.unflatten(2, (self.n_heads, -1)) # B N H d
-        q = self.rotary_emb(q, t=emb_t)
 
         if cache is not None:
             k, v = cache
@@ -137,8 +134,6 @@ class CrossAttention(nn.Module):
             
             k = k.unflatten(2, (self.n_heads, -1)) # B L H d
             v = v.unflatten(2, (self.n_heads, -1)) # B L H d
-
-            k = self.rotary_emb(k)
         
         attn_out = xops.memory_efficient_attention(q, k, v)  # B N H d
         attn_out = attn_out.flatten(-2, -1)  # B N D

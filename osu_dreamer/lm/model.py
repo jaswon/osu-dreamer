@@ -19,7 +19,7 @@ from .data.tokens.tokens import Vocab, Token, TokenType
 
 from .modules.audio_encoder import AudioEncoder, AudioEncoderArgs
 from .modules.decoder import Decoder, DecoderArgs
-from .modules.head import TokenHead
+from .modules.head.head import DecoderHead
 
 
 class Model(pl.LightningModule):
@@ -38,6 +38,7 @@ class Model(pl.LightningModule):
         # model hparams
         vocab: Vocab,
         emb_dim: int,
+        head_h_dim: int,
         decoder_args: DecoderArgs,
         
         # audio encoder hparams
@@ -61,7 +62,7 @@ class Model(pl.LightningModule):
         # model components
         self.vocab = vocab
         self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
-        self.head = TokenHead(vocab, emb_dim)
+        self.head = DecoderHead(vocab, emb_dim, head_h_dim)
         
         # audio encoder
         self.audio_encoder = AudioEncoder(ctx_dim, audio_encoder_args, vocab.time_bins)
@@ -71,8 +72,7 @@ class Model(pl.LightningModule):
         self,
         map_features: Float[Tensor, "B M"],
         audio: Float[Tensor, "B A L"],
-        tokens: Int[Tensor, "B Np1"],
-        timestamps: Int[Tensor, "B Np1"],
+        seq: Int[Tensor, "B Np1 4"],
         validation: bool = False,
         input_jitter: bool = True,
     ) -> tuple[
@@ -81,28 +81,22 @@ class Model(pl.LightningModule):
     ]:
         ctx = self.audio_encoder(audio) # B L D
 
-        inp = tokens[:,:-1]
+        inp = seq[:,:-1]
 
         if input_jitter:
             # jitter input time tokens to improve timing robustness
-            timing_jitter = th.randint_like(inp, -self.timing_jitter, self.timing_jitter+1)
-            inp = th.where(
-                inp >= self.vocab.T0,
-                th.clamp(inp + timing_jitter, min=self.vocab.T0, max=len(self.vocab.tokens)-1),
-                inp,
-            )
+            timing_jitter = th.randint_like(inp[:,:,3], -self.timing_jitter, self.timing_jitter+1)
+            inp[:,:,3] = th.clamp(inp[:,:,3] + timing_jitter, min=0, max=self.vocab.time_bins)
 
-        embs = self.head.embed(inp) # B N D
-        output, _ = self.decoder(embs, emb_t = timestamps[:,:-1], ctx=ctx)
-        return self.head(output, tokens[:,1:], validation)
+        output, _ = self.decoder(self.head.embed(inp), ctx=ctx)
+        return self.head(output, seq[:,1:], validation)
     
     def training_step(self, batch: Batch, batch_idx: int):
         # Forward pass
         loss, log_dict = self.forward(
             batch.map_features,
             batch.audio,
-            batch.tokens,
-            batch.timestamps,
+            batch.seq,
         )
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
@@ -111,11 +105,14 @@ class Model(pl.LightningModule):
         
         # On the first validation batch of every epoch, generate a sample
         if batch_idx == 0 and self.global_rank == 0:
-            token_ids, ctx_starts = self.sample(batch.audio[0], batch.map_features[0], max_len=512, top_p=0.)
+            seq = self.sample(batch.audio[0], batch.map_features[0], max_len=512, top_p=0.)
             generated_tokens = [
-                tok if tok.typ != TokenType.TIME else f"{MS_PER_FRAME * (tok.value + ctx_start) / 1000:.3f}"
-                for tid, ctx_start in zip(token_ids, ctx_starts) 
-                for tok in [self.vocab.tokens[int(tid.item())]]
+                (
+                    f"{MS_PER_FRAME * t / 1000:.3f}" if i == self.vocab.TIME else
+                    f"({x},{y})" if i == self.vocab.POS else
+                    self.vocab.tokens[i]
+                )
+                for i,x,y,t in seq
             ]
 
             exp: SummaryWriter = self.logger.experiment # type: ignore
@@ -126,8 +123,7 @@ class Model(pl.LightningModule):
         loss, log_dict = self.forward(
             batch.map_features,
             batch.audio,
-            batch.tokens,
-            batch.timestamps,
+            batch.seq,
             validation=True,
         )
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
@@ -154,35 +150,31 @@ class Model(pl.LightningModule):
         max_len: int = -1,
         top_p: float = .9,
         show_progress: bool = False,
-    ) -> tuple[
-        Int[Tensor, "N"], # token ids
-        Int[Tensor, "N"], # ctx starts
-    ]:
+    ) -> list[tuple[int, int, int, int]]:
         self.eval()
-
-        # precompute audio features
-        L = audio.size(-1)
 
         # precompute sampling params
         ctx_size = self.vocab.time_bins
+        L = audio.size(-1)
         max_ctx_start = L - ctx_size
         ctx_shift_threshold = round(self.context_shift_threshold * ctx_size)
         ctx_shift_amount = round(self.context_shift_amount * ctx_size)
 
         # initialize sequence
-        token_id = self.vocab.BOS
+        cur_id = self.vocab.BOS
+        cur_x = 256
+        cur_y = 192
+        cur_t = 0
+        seq: list[tuple[int, int, int, int]] = [(cur_id, cur_x, cur_y, cur_t)]
+
         ctx_start = 0
-        cur_frame = 0
-        generated_tokens: list[int] = [token_id]
-        ctx_starts: list[int] = [ctx_start]
+        ctx_starts = [ctx_start]
         ctx = None
-        
-        # initialize kv cache
         cache = None
 
         # initialize logit processor
         lp = LogitProcessor(self.vocab)
-        logit_mask = th.tensor(lp.advance(token_id), device=self.device)
+        logit_mask = th.tensor(lp.advance(cur_id), device=self.device)
 
         with tqdm(total=int(audio.size(-1)), desc="sampling", disable=not show_progress) as pbar:
             for i in itertools.count():
@@ -197,133 +189,109 @@ class Model(pl.LightningModule):
                 
                 # If cache has been invalidated, do full forward pass with context-adjusted tokens
                 if cache is None:
-                    # Create adjusted token sequence where TIME tokens are translated to current context
-                    adjusted_tokens, adjusted_timestamps = self._get_time_shifted_tokens(generated_tokens, ctx_starts)
-
-                    if len(adjusted_tokens) == 0:
-                        # no token history, set to bos
-                        adjusted_tokens = [self.vocab.BOS]
-                        adjusted_timestamps = [0]
-                    
-                    # Do full forward pass with adjusted tokens
-                    all_tokens = th.tensor([adjusted_tokens], device=self.device, dtype=th.long)
-                    all_timestamps = th.tensor([adjusted_timestamps], device=self.device, dtype=th.long)
-                    pred_embs, cache = self.decoder(
-                        self.head.embed(all_tokens), 
-                        emb_t=all_timestamps, 
-                        ctx=ctx, 
-                        cache=None,
-                    )
+                    seq_tensor = self._get_seq_relative_to_ctx_start(seq, ctx_start) # 1 N 4
                 else:
-                    # Normal incremental decode
-                    token_tensor = th.tensor([[token_id]], device=self.device, dtype=th.long)
-                    timestamp_tensor = th.tensor([[cur_frame]], device=self.device, dtype=th.long)
-                    pred_embs, cache = self.decoder(
-                        self.head.embed(token_tensor), 
-                        emb_t=timestamp_tensor, 
-                        ctx=ctx, 
-                        cache=cache,
-                    )
+                    seq_tensor = th.tensor(seq[-1], device=self.device, dtype=th.long)[None,None] # 1 1 4
 
-                # compute log-probabilities
-                log_probs = self.head.log_probs(pred_embs)[0,-1] # V
+                pred_embs, cache = self.decoder(self.head.embed(seq_tensor), ctx=ctx, cache=cache)
+                sample = self.head.sample(pred_embs[0,-1], logit_mask, cur_t, top_p)
+                cur_id, sample_x, sample_y, sample_t = tuple[int,int,int,int](sample.tolist())
 
-                # mask grammatically incorrect tokens
-                log_probs = th.where(logit_mask, log_probs, -th.inf)
-                
-                # mask past time tokens
-                log_probs[self.vocab.T0:self.vocab.T0+cur_frame+1] = -th.inf
+                commit_sample = True
+                if cur_id == self.vocab.POS:
+                    cur_x, cur_y = sample_x, sample_y
 
-                # sample next token
-                if top_p <= 0:
-                    # Greedy sampling
-                    sampled = th.argmax(log_probs, dim=-1)
-                else:
-                    # Nucleus sampling
-                    sorted_probs, sorted_indices = th.sort(log_probs.exp(), descending=True)
-                    cutoff = (th.cumsum(sorted_probs, dim=-1) > top_p).float().argmax().item() + 1
-                    sampled_idx = th.multinomial(sorted_probs[:cutoff], num_samples=1)[0]
-                    sampled = sorted_indices[sampled_idx]
+                elif cur_id == self.vocab.TIME:
 
-                token_id = int(sampled.item())
-                token = self.vocab.tokens[token_id]
+                    advance_context = False
+                    if sample_t == self.vocab.time_bins:
+                        # eos - advance without committing
+                        advance_context = True
+                        commit_sample = False
+                    else:
+                        cur_t = sample_t
 
-                # context should be advanced if
-                # - emitted TIME is past context shift threshold
-                # - emitted EOS and context remains
-                advance_context = False
-
-                if token.typ == TokenType.EOS:
-                    # check if we're done
-                    if ctx_start >= max_ctx_start:
-                        break
-                    advance_context = True
-                    
-                elif token.typ == TokenType.TIME:
-                    cur_frame = token.value
-                    if cur_frame > ctx_shift_threshold:
+                    if cur_t > ctx_shift_threshold:
+                        # past shift threshold - advance
                         advance_context = True
 
-                    cur_global_frame = ctx_start + cur_frame
-                    if cur_global_frame > pbar.n:
-                        pbar.update(cur_global_frame - pbar.n)
+                        pbar_step = ctx_start + cur_t - pbar.n
+                        if pbar_step > 0:
+                            pbar.update(pbar_step)
 
-                if advance_context:
-                    # shift context forward, and invalidate cache
-                    shift_size = min(ctx_shift_amount, L - ctx_size - ctx_start)
-                    ctx_start += shift_size
-                    cur_frame -= shift_size
-                    cache = None
-                    ctx = None
+                    if advance_context:
+                        # check if we're done
+                        if ctx_start >= max_ctx_start:
+                            # check if incomplete event
+                            match self.vocab.tokens[seq[-1][0]].typ:
+                                case TokenType.SLIDER | TokenType.SPINNER | TokenType.BREAK:
+                                    # pop start of incomplete event
+                                    while True:
+                                        seq.pop()
+                                        ctx_starts.pop()
+                                        if seq[-1][0] == self.vocab.TIME:
+                                            seq.pop()
+                                            ctx_starts.pop()
+                                            break
+                            break
 
-                if token.typ == TokenType.EOS:
-                    # context has been advanced - don't commit EOS
-                    ctx_starts[-1] = ctx_start
-                else:
+                        # shift context forward, and invalidate cache
+                        shift_size = min(ctx_shift_amount, L - ctx_size - ctx_start)
+                        ctx_start += shift_size
+                        cur_t -= shift_size
+                        cache = None
+                        ctx = None
+
+                if commit_sample:
+                    seq.append((cur_id, cur_x, cur_y, cur_t))
                     ctx_starts.append(ctx_start)
-                    generated_tokens.append(token_id)
-                    logit_mask = th.tensor(lp.advance(token_id), device=self.device)
+                    logit_mask = th.tensor(lp.advance(cur_id), device=self.device)
+                ctx_starts[-1] = ctx_start
 
+        seq.append((self.vocab.EOS, cur_x, cur_y, cur_t))
         ctx_starts.append(ctx_start)
-        generated_tokens.append(token_id)
-        return (
-            th.tensor(generated_tokens, device=self.device, dtype=th.long),
-            th.tensor(ctx_starts, device=self.device, dtype=th.long),
-        )
+
+        return [
+            (i,x,y,ctx_start+t)
+            for (i,x,y,t), ctx_start in zip(seq, ctx_starts)
+        ]
     
-    def _get_time_shifted_tokens(
+    
+    def _get_seq_relative_to_ctx_start(
         self, 
-        tokens: list[int], 
-        ctx_starts: list[int], 
-    ) -> tuple[list[int], list[int]]:
+        seq: list[tuple[int, int, int, int]], 
+        ctx_start: int, 
+    ) -> Int[Tensor, "1 N 4"]:
         """
         Adjust TIME tokens in a sequence to be relative to a new context start.
         """
-        adjusted_tokens = []
-        adjusted_timestamps = []
+        new_seq = []
         temp_buffer = []
         
         # Process tokens in reverse order
-        for i in range(len(tokens) - 1, -1, -1):
-            token = self.vocab.tokens[tokens[i]]
+        for i in range(len(new_seq) - 1, -1, -1):
+            i_id, i_x, i_y, i_t = seq[i]
+            token = self.vocab.tokens[i_id]
             
             if token.typ != TokenType.TIME:
                 # collect non-TIME tokens in a temp buffer
-                temp_buffer.append(tokens[i])
+                temp_buffer.append((i_id, i_x, i_y, i_t - ctx_start))
             else:
                 # Hit a TIME token - evaluate the complete event we've collected
-                original_ctx = ctx_starts[i]
-                new_time_bin = token.value + (original_ctx - ctx_starts[-1])
+                time_bin = i_t - ctx_start
                 
-                if 0 <= new_time_bin < self.vocab.time_bins:
+                if 0 <= time_bin < self.vocab.time_bins:
                     # time is valid- include them in return
-                    adjusted_tokens.extend(temp_buffer)
-                    adjusted_tokens.append(self.vocab.ids[Token(TokenType.TIME, new_time_bin)])
-                    adjusted_timestamps.extend([new_time_bin] * (len(temp_buffer) + 1))
+                    new_seq.extend(temp_buffer)
+                    new_seq.append((i_id, i_x, i_y, time_bin))
                     temp_buffer = []
                 else:
                     # TIME token before context window, exit early
                     break
+
+        if len(new_seq) == 0:
+            # no history, return BOS
+            new_seq = [(self.vocab.BOS, 256, 192, 0)]
                 
         # Reverse the final result since we built it backwards
-        return list(reversed(adjusted_tokens)), list(reversed(adjusted_timestamps))
+        return th.tensor(list(reversed(new_seq)), device=self.device, dtype=th.long)[None]

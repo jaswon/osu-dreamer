@@ -39,8 +39,7 @@ TokenType = CustomReprEnum('TokenType', [
 
     # numerals
     'TIME',
-    'POS_COARSE',
-    'POS_FINE',
+    'POS',
 ])
 
 class Token(NamedTuple):
@@ -60,10 +59,6 @@ class Vocab:
     x_max: int = 512+128
     y_min: int = 0-96
     y_max: int = 384+96
-    coarse_x_bins: int = 16
-    coarse_y_bins: int = 16
-    fine_x_bins: int = 12
-    fine_y_bins: int = 9
 
     SLIDES_BINS: int = 16
     DEVIATION_BINS: int = 64
@@ -75,19 +70,12 @@ class Vocab:
     def __post_init__(self):
 
         assert self.DEVIATION_BINS % 2 == 0
-        
-        coarse_x_bin_size, rem = divmod(self.x_max - self.x_min, self.coarse_x_bins)
-        assert rem == 0
-        assert coarse_x_bin_size % self.fine_x_bins == 0
-
-        coarse_y_bin_size, rem = divmod(self.y_max - self.y_min, self.coarse_y_bins)
-        assert rem == 0
-        assert coarse_y_bin_size % self.fine_y_bins == 0
 
         self.tokens: tuple[Token, ...] = (
             # control
             Token(TokenType.PAD),
             Token(TokenType.BOS),
+            Token(TokenType.EOS),
 
             # event types
             Token(TokenType.BREAK),
@@ -120,25 +108,8 @@ class Vocab:
             Token(TokenType.CLAP),
 
             # numerals
-            *[
-                Token(TokenType.POS_COARSE,(x,y))
-                for x in range(self.coarse_x_bins)
-                for y in range(self.coarse_y_bins)
-            ],
-            *[
-                Token(TokenType.POS_FINE,(x,y))
-                for x in range(self.fine_x_bins)
-                for y in range(self.fine_y_bins)
-            ],
-
-            # NOTE: time tokens should be last to enable invariant
-            # token_id > self.ids[Token(TokenType.TIME_BIN, 0)] <=> time token
-            *[
-                Token(TokenType.TIME, i)
-                for i in range(self.time_bins)
-            ],
-            # EOS grammatically acts like a time token
-            Token(TokenType.EOS),
+            Token(TokenType.POS),   # position sentinel
+            Token(TokenType.TIME),  # time sentinel
         )
 
         self.ids = { token: i for i, token in enumerate(self.tokens) }
@@ -147,4 +118,5 @@ class Vocab:
         self.PAD = self.ids[Token(TokenType.PAD)]
         self.BOS = self.ids[Token(TokenType.BOS)]
         self.EOS = self.ids[Token(TokenType.EOS)]
-        self.T0 = self.ids[Token(TokenType.TIME, 0)]
+        self.TIME = self.ids[Token(TokenType.TIME)]
+        self.POS = self.ids[Token(TokenType.POS)]

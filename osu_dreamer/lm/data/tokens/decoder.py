@@ -15,26 +15,27 @@ class Decoder:
     def __init__(
         self, 
         vocab: Vocab,
-        token_ids: list[int],
-        ctx_starts: list[int],
+        seq: list[tuple[int, int, int, int]],
     ):
-        assert len(token_ids) == len(ctx_starts)
         self.vocab = vocab
-        self.tokens = [ vocab.tokens[tid] for tid in token_ids ]
-        self.ctx_starts = ctx_starts
+        self.seq = seq
 
         self._idx = -1
 
     def next_token(self) -> Token:
         self._idx += 1
-        return self.tokens[self._idx]
+        return self.vocab.tokens[self.seq[self._idx][0]]
     
     def push_back(self):
         self._idx -= 1
 
-    @property
-    def ctx_start(self) -> int:
-        return self.ctx_starts[self._idx-1]
+    def parse_time(self) -> int:
+        self.parse_token(TokenType.TIME)
+        return MS_PER_FRAME * self.seq[self._idx][3]
+    
+    def parse_coordinate(self) -> tuple[int, int]:
+        self.parse_token(TokenType.POS)
+        return self.seq[self._idx][1:3]
 
     def parse_token(self, T: TokenType):
         match self.next_token():
@@ -70,24 +71,6 @@ class Decoder:
                     self.push_back()
                     timed = self.parse_hit_object(t)
             events.append(timed)
-    
-    def parse_coordinate(self) -> tuple[int, int]:
-        coarse_x_bin, coarse_y_bin = self.parse_token_value(TokenType.POS_COARSE)
-        fine_x_bin, fine_y_bin = self.parse_token_value(TokenType.POS_FINE)
-
-        coarse_x_bin_size = (self.vocab.x_max - self.vocab.x_min) // self.vocab.coarse_x_bins
-        coarse_y_bin_size = (self.vocab.y_max - self.vocab.y_min) // self.vocab.coarse_y_bins
-        fine_x_bin_size = coarse_x_bin_size // self.vocab.fine_x_bins
-        fine_y_bin_size = coarse_y_bin_size // self.vocab.fine_y_bins
-
-        x = self.vocab.x_min + coarse_x_bin * coarse_x_bin_size + (fine_x_bin + .5) * fine_x_bin_size
-        y = self.vocab.y_min + coarse_y_bin * coarse_y_bin_size + (fine_y_bin + .5) * fine_y_bin_size
-        
-        return round(x), round(y)
-
-    def parse_time(self) -> int:
-        time_bin = self.parse_token_value(TokenType.TIME)
-        return MS_PER_FRAME * (time_bin + self.ctx_start)
     
     def parse_release(self) -> int:
         time = self.parse_time()
