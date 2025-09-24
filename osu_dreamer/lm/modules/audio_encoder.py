@@ -2,7 +2,9 @@
 from jaxtyping import Float
 
 from dataclasses import dataclass
- 
+
+import math
+  
 import torch as th
 from torch import nn, Tensor
 from torch.utils.checkpoint import checkpoint
@@ -11,7 +13,17 @@ from einops.layers.torch import Rearrange
 
 import xformers.ops as xops
 
+from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.lm.modules.attn import SelfAttention
+
+
+def create_sinusoidal_embeddings(length: int, dim: int) -> Float[Tensor, "{length} {dim}"]:
+    pos_emb = th.zeros(length, dim)
+    positions = th.arange(0, length, dtype=th.float).unsqueeze(1)
+    div_term = th.exp(th.arange(0, dim, 2, dtype=th.float) * -(math.log(10000.0) / dim))
+    pos_emb[:, 0::2] = th.sin(positions * div_term)
+    pos_emb[:, 1::2] = th.cos(positions * div_term)
+    return pos_emb
 
 @dataclass
 class AudioEncoderArgs:
@@ -20,25 +32,28 @@ class AudioEncoderArgs:
     dropout: float = 0.
     expand: int = 1
     checkpoint: bool = True
-    freq_bins: int = 6
 
 class AudioEncoder(nn.Module):
     def __init__(self, dim: int, args: AudioEncoderArgs, context_size: int):
         super().__init__()
         h_dim = dim * args.expand
+
+        self.pos_emb: th.Tensor
+        self.register_buffer('pos_emb', create_sinusoidal_embeddings(context_size, h_dim))
         
-        self.freq_proj = nn.Sequential(
-            Rearrange('b f l -> b 1 f l'),
-            nn.Conv2d(1, 1, (1, 7), (1,1), (1,3)),
-            nn.SiLU(),
-            nn.AdaptiveMaxPool2d((args.freq_bins, None)), # b 1 d l
-            Rearrange('b 1 d l -> b l d'),
-            nn.Linear(args.freq_bins, h_dim),
+        self.stem = nn.Sequential(
+            nn.Conv1d(A_DIM, A_DIM, 3,1,1, groups=A_DIM),
+            nn.Conv1d(A_DIM, h_dim, 1),
+            nn.GELU(),
+            nn.Conv1d(h_dim, h_dim, 3,1,1, groups=h_dim),
+            nn.Conv1d(h_dim, h_dim, 1),
+            nn.GELU(),
+            Rearrange('b d l -> b l d'),
         )
 
         self.blocks = nn.ModuleList([
             nn.Sequential(
-                AdaLNZero(h_dim, sequenceMixer(h_dim, args.n_heads, args.dropout, context_size)),
+                AdaLNZero(h_dim, sequenceMixer(h_dim, args.n_heads, args.dropout)),
                 AdaLNZero(h_dim, channelMixer(h_dim)),
             )
             for _ in range(args.depth)
@@ -51,7 +66,8 @@ class AudioEncoder(nn.Module):
         self.final = nn.Identity() if args.expand == 1 else nn.Linear(h_dim, dim)
 
     def forward(self, x: Float[Tensor, "B A L"]) -> Float[Tensor, "B L D"]:
-        x = self.freq_proj(x)
+        x = self.stem(x)
+        x = x + self.pos_emb[:x.size(1)]
         
         for block in self.blocks:
             x = self.run_block(block, x) # type: ignore
@@ -75,7 +91,7 @@ class AdaLNZero(nn.Module):
         return x + r
 
 class sequenceMixer(nn.Module):
-    def __init__(self, dim: int, n_heads: int, dropout: float, ctx_size: int):
+    def __init__(self, dim: int, n_heads: int, dropout: float):
         super().__init__()
         self.attn = SelfAttention(dim, n_heads, dropout)
 

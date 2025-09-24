@@ -1,8 +1,9 @@
 
-from jaxtyping import Float, Int
+from jaxtyping import Float
 
 from dataclasses import dataclass
 
+import torch as th
 from torch.utils.checkpoint import checkpoint
 from torch import nn, Tensor
 
@@ -69,8 +70,10 @@ class Decoder(nn.Module):
         emb_dim: int,
         ctx_dim: int,
         args: DecoderArgs,
+        context_size: int,
     ):
         super().__init__()
+        self.pos_emb = nn.Embedding(context_size, emb_dim)
         
         if args.checkpoint:
             self.run_block = lambda block, *args: checkpoint(block, *args, use_reentrant=False)
@@ -88,7 +91,7 @@ class Decoder(nn.Module):
         ctx: Float[Tensor, "B L C"],
         cache: list[DecoderLayerKVCache] | None = None,
     ) -> tuple[Float[Tensor, "B N D"], list[DecoderLayerKVCache]]:
-        x = emb
+        x = emb + self.pos_emb(th.arange(emb.size(1), device=emb.device))
         new_caches = []
         for i, layer in enumerate(self.layers):
             layer_cache = cache[i] if cache is not None else None

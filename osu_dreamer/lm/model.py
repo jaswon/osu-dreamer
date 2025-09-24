@@ -15,7 +15,7 @@ from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 from osu_dreamer.data.load_audio import MS_PER_FRAME
 
 from .data.dataset import Batch
-from .data.tokens.tokens import Vocab, Token, TokenType
+from .data.tokens.tokens import Vocab, TokenType
 
 from .modules.audio_encoder import AudioEncoder, AudioEncoderArgs
 from .modules.decoder import Decoder, DecoderArgs
@@ -36,7 +36,8 @@ class Model(pl.LightningModule):
         context_shift_amount: float,
         
         # model hparams
-        vocab: Vocab,
+        vocab: Vocab,       # set from config.data
+        context_size: int,  # set from config.data
         emb_dim: int,
         head_h_dim: int,
         decoder_args: DecoderArgs,
@@ -61,7 +62,8 @@ class Model(pl.LightningModule):
         
         # model components
         self.vocab = vocab
-        self.decoder = Decoder(emb_dim, ctx_dim, decoder_args)
+        self.context_size = context_size
+        self.decoder = Decoder(emb_dim, ctx_dim, decoder_args, context_size)
         self.head = DecoderHead(vocab, emb_dim, head_h_dim)
         
         # audio encoder
@@ -285,6 +287,10 @@ class Model(pl.LightningModule):
                     new_seq.extend(temp_buffer)
                     new_seq.append((i_id, i_x, i_y, time_bin))
                     temp_buffer = []
+
+                    if len(new_seq) >= self.context_size:
+                        new_seq = new_seq[:self.context_size]
+                        break
                 else:
                     # TIME token before context window, exit early
                     break

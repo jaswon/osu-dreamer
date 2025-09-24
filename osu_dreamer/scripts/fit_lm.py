@@ -15,6 +15,9 @@ file_option_type = click.Path(exists=True, dir_okay=False)
 default_config_path = './osu_dreamer/lm/model.yml'
 
 class MyLightningCLI(LightningCLI):
+    def add_arguments_to_parser(self, parser):
+        parser.link_arguments('data.context_size', 'model.context_size')
+
     def before_instantiate_classes(self) -> None:
         # Manually link the vocab from the data module to the model.
         # This is a workaround for a limitation in LightningCLI's link_arguments with nested class arguments.

@@ -69,7 +69,6 @@ model:
     n_heads: 12
     expand: 1
     depth: 6
-    freq_bins: 32
 
   emb_dim: 512
   head_h_dim: 512
