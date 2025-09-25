@@ -27,7 +27,7 @@ class DecoderHead(nn.Module):
 
         self.token_head = TokenHead(vocab, emb_dim)
         self.pos_head = PositionHead(vocab, emb_dim, h_dim)
-        self.time_head = TimeHead(vocab, emb_dim, h_dim)
+        self.time_head = TimeHead(vocab, emb_dim)
 
     def embed(self, seq: Int[Tensor, "*B 4"]) -> Float[Tensor, "*B D"]:
         embs = self.token_head.embed(seq[...,0]) # *B D

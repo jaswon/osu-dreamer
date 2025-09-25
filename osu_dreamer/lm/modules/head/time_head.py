@@ -14,7 +14,6 @@ class TimeHead(nn.Module):
         self, 
         vocab: Vocab,
         emb_dim: int, 
-        h_dim: int,
     ):
         super().__init__()
         self.n_classes = 1+vocab.time_bins # last class is EOS
