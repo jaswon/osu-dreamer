@@ -7,8 +7,19 @@ import torch.nn.functional as F
 
 from osu_dreamer.lm.data.tokens.tokens import Vocab
 
-from .ffe import FourierFeatureEmbedding
 from .sample import sample
+    
+class FourierFeatureEmbedding(nn.Module):
+    def __init__(self, dim: int, n_freqs: int, sigma: float = 10.):
+        super().__init__()
+        self.ffe_freqs: th.Tensor
+        self.register_buffer('ffe_freqs', 2 * th.pi * sigma * th.randn(dim, n_freqs))
+
+    def forward(self, x: Float[Tensor, "*B D"]) -> Float[Tensor, "*B F"]:
+        assert (x >= 0).all()
+        assert (x <= 1).all()
+        thetas = x @ self.ffe_freqs.to(x.device)  # [*B, n_freqs]
+        return th.cat([th.sin(thetas), th.cos(thetas)], dim=-1)
 
 class PositionHead(nn.Module):
     def __init__(
@@ -40,10 +51,11 @@ class PositionHead(nn.Module):
         )
 
     def _coord_features(self, coord: Int[Tensor, "*B 2"]) -> Float[Tensor, "*B F"]:
-        D = coord.device
         x_min, x_max, y_min, y_max = self.domain
-        norm_coord = (coord - th.tensor([x_min, y_min], device=D)) / th.tensor([x_max - x_min, y_max - y_min], device=D)
-        return self.ffe(norm_coord)
+        return self.ffe(th.stack([
+            (coord[...,0] - x_min) / (x_max - x_min),
+            (coord[...,1] - y_min) / (y_max - y_min),
+        ], dim=-1))
 
     def embed(self, coord: Int[Tensor, "*B 2"]) -> Float[Tensor, "*B D"]:
         return self.emb_net(self._coord_features(coord))
@@ -58,9 +70,10 @@ class PositionHead(nn.Module):
     
     def _sample_noise_coords(self, size: tuple[int, ...], d: th.device) -> Int[Tensor, "*B 2"]:
         x_min, x_max, y_min, y_max = self.domain
-        noise_x = (x_max - x_min) * th.rand(size, device=d) + x_min
-        noise_y = (y_max - y_min) * th.rand(size, device=d) + y_min
-        return th.stack([noise_x, noise_y], dim=-1).round().long()
+        return th.stack([
+            th.randint(x_min, x_max, size, device=d),
+            th.randint(y_min, y_max, size, device=d),
+        ], dim=-1)
     
     @th.no_grad()
     def _log_probs_grid(
