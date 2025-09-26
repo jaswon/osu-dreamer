@@ -73,6 +73,7 @@ model:
   emb_dim: 512
   head_h_dim: 512
   decoder_args:
+    h_dim: 1024
     n_heads: 16
     n_layers: 12
     dropout: 0.15

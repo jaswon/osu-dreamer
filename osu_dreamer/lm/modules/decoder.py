@@ -13,6 +13,7 @@ from .attn import CausalSelfAttention, CrossAttention, AttnKVCache
 
 @dataclass
 class DecoderArgs:
+    h_dim: int
     n_heads: int
     n_layers: int
     dropout: float
@@ -26,11 +27,11 @@ DecoderLayerKVCache = tuple[
 ]
 
 class DecoderLayer(nn.Module):
-    def __init__(self, d_model: int, ctx_dim: int, n_heads: int, dropout: float):
+    def __init__(self, d_model: int, ctx_dim: int, h_dim: int, n_heads: int, dropout: float):
         super().__init__()
         self.self_attn = CausalSelfAttention(d_model, n_heads, dropout)
         self.cross_attn = CrossAttention(d_model, n_heads, dropout, ctx_dim)
-        self.ffn = xops.SwiGLU(d_model, (int(d_model * 8 / 3) + 7) // 8 * 8)
+        self.ffn = xops.SwiGLU(d_model, h_dim)
         
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -81,7 +82,7 @@ class Decoder(nn.Module):
             self.run_block = lambda block, *args: block(*args)
 
         self.layers = nn.ModuleList([
-            DecoderLayer(emb_dim, ctx_dim, args.n_heads, args.dropout)
+            DecoderLayer(emb_dim, ctx_dim, args.h_dim, args.n_heads, args.dropout)
             for _ in range(args.n_layers)
         ])
 
