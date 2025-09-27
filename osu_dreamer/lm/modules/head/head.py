@@ -96,6 +96,6 @@ class DecoderHead(nn.Module):
     ) -> Int[Tensor, "4"]:
         return th.cat([
             self.token_head.sample(embs, top_p, mask_ids),
-            self.pos_head.sample(embs, 4,4, top_p),
+            self.pos_head.sample(embs, top_p),
             self.time_head.sample(embs, top_p, th.tensor(mask_before_time, device=embs.device)),
         ], dim=-1)

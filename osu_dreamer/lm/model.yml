@@ -39,7 +39,7 @@ trainer:
 
 data:
   context_size: 512
-  batch_size: 16
+  batch_size: 12
   num_workers: 8
   val_size: 128
   data_path: ./data
@@ -70,8 +70,8 @@ model:
     expand: 1
     depth: 6
 
-  emb_dim: 512
-  head_h_dim: 512
+  emb_dim: 384
+  head_h_dim: 192
   decoder_args:
     h_dim: 1024
     n_heads: 16
