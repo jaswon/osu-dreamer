@@ -13,7 +13,7 @@ import pytorch_lightning as pl
 
 from .reclaim_memory import reclaim_memory
 from .load_audio import A_DIM, read_spec
-from .beatmap.encode import X_DIM, NUM_LABELS, read_beatmap
+from .beatmap.encode import X_DIM, NUM_LABELS, BeatmapEncoding, read_beatmap
 
 
 class Batch(NamedTuple):
@@ -137,4 +137,12 @@ class BatchedSignalDataset(SignalDataset):
             return
         offset_start = th.randint(0, min(self.seq_len, offset_end), ()).item()
         for i in th.arange(offset_start, offset_end, self.seq_len):
-            yield Batch(audio[...,i:i+self.seq_len], chart[...,i:i+self.seq_len],labels)
+            chart_window = chart[...,i:i+self.seq_len].clone()
+            
+            # flip augment
+            if th.rand(()) < 0.5:
+                chart_window[BeatmapEncoding.X].mul_(-1).add_(1)
+            if th.rand(()) < 0.5:
+                chart_window[BeatmapEncoding.Y].mul_(-1).add_(1)
+
+            yield Batch(audio[...,i:i+self.seq_len], chart_window, labels)
