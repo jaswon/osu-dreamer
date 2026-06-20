@@ -9,14 +9,14 @@ trainer:
     max_epochs: -1
     
     devices: 1
-    precision: 16-mixed
+    precision: bf16-mixed
 
     enable_checkpointing: true
     callbacks:
         - # keep the best performing checkpoint
             class_path: pytorch_lightning.callbacks.ModelCheckpoint
             init_args:
-                monitor: val/l2_rec
+                monitor: val/loss
                 mode: min
                 save_top_k: 1
         - # learning rate monitor
@@ -30,56 +30,47 @@ trainer:
             name: latent
 
     enable_progress_bar: true
-    log_every_n_steps: 1
+    log_every_n_steps: 4
     enable_model_summary: true
 
-    val_check_interval: 1000
-    check_val_every_n_epoch: null
+    # val_check_interval: { "minutes": 10 }
+    # check_val_every_n_epoch: null
+
+    gradient_clip_val: 1.
     
 data:
     # length of each training subsequence
-    seq_len: 1024 # * 6ms/frame ~= 12.3s
+    seq_len: 1024 # * 6ms/frame ~= 6.1s
     
     # size of training batch
-    batch_size: 16
+    batch_size: 64
     
     # number of workers to use for data loading
-    num_workers: 6
+    num_workers: 13
     
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
-    val_size: 128
-    # val_split: .1
+    val_size: 256
     
 model:
     # training parameters
     opt_args:
-        lr: .002
-        weight_decay: 0.
-    grad_accum_steps: 1
-    critic_steps_per_gen: 1
-    gp_factor: 10.
-    gan_factor: 5e-3
-    fm_factor: 1.
-    pixel_factor: 0.
-    kl_factor: .0001
+        lr: .001
+        weight_decay: 0.01
+    schedule_args:
+        warmup_init: .1
+        warmup_steps: 2000
 
     # model hyperparameters
     emb_dim: 32
-    h_dim: 360
-    audio_h_dim: 32
-    ae_args:
-        strides: [2, 3, 3]
-        layer_args:
-            num_stacks: 1
-            stack_depth: 4
-
-    critic_args:
-        spec_features: 32
-        scales: 3
-        convs:
-            - [  16, 3, 1,  1]
-            - [  64, 5, 3,  4]
-            - [ 256, 5, 3, 16]
-            - [1024, 5, 2, 64]
-            - [ 512, 3, 1,  1]
+    n_downs: 3
+    stride: 3
+    latent_args:
+        fsq_levels: 7
+        a_dim: 16
+        ae_args:
+            h_dim: 128
+            n_layers: 3
+        label_args:
+            h_dim: 256
+            grad_factor: .1

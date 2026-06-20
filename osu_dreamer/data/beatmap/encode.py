@@ -1,4 +1,5 @@
 
+from typing import BinaryIO
 from jaxtyping import Float
 
 import numpy as np
@@ -46,8 +47,28 @@ CURSOR_DIM = len(CursorSignals)
 
 EncodedBeatmap = Float[ndarray, str(f"{X_DIM} L")]
 
-def encode_beatmap(bm: Beatmap, frame_times: FrameTimes) -> EncodedBeatmap:
+NUM_LABELS = 5
+Labels = Float[np.ndarray, f'{NUM_LABELS}']
+
+def write_beatmap(f: BinaryIO, bm: Beatmap, frame_times: FrameTimes):
+    hit = hit_signal(bm, frame_times)
+    xy = cursor_signal(bm, frame_times)
+    xy_min = xy.min(axis=1, keepdims=True)
+    xy_rng = xy.max(axis=1, keepdims=True) - xy_min
+    xy_rng[xy_rng == 0.] = 1.
+    xy_norm = (xy - xy_min) / xy_rng
+    np.savez(f, allow_pickle=False,
+        hit = (hit * (2**8-1) + .5).astype(np.uint8),
+        xy = (xy_norm * (2**8-1) + .5).astype(np.uint8),
+        xy_min = xy_min,
+        xy_rng = xy_rng,
+        labels = np.array([bm.sr, bm.ar, bm.od, bm.cs, bm.hp]),
+    )
+
+def read_beatmap(f: BinaryIO) -> tuple[EncodedBeatmap, Labels]:
+    with np.load(f) as npz:
+        hit, xy, xy_min, xy_rng, labels = npz['hit'], npz['xy'], npz['xy_min'], npz['xy_rng'], npz['labels']
     return np.concatenate([
-        hit_signal(bm, frame_times),
-        cursor_signal(bm, frame_times),
-    ], axis=0)
+        hit.astype(float) / (2**8-1),
+        xy.astype(float) / (2**8-1) * xy_rng + xy_min ,
+    ]), labels

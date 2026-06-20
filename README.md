@@ -26,26 +26,6 @@ uv sync [--group dev]
 
 This will install `osu-dreamer`'s dependencies
 
-## Generate your own maps locally
-
-```
-$ uv run python -m osu_dreamer.model predict --help
-Usage: python -m osu_dreamer.model predict [OPTIONS]
-
-  generate osu!std maps from raw audio
-
-Options:
-  --model_path FILE       trained model (.ckpt)
-  --audio_file FILE       audio file to map
-  --sample-steps INTEGER  number of diffusion steps to sample
-  --num_samples INTEGER   number of maps to generate
-  --title TEXT            Song title - required if it cannot be determined
-                          from the audio metadata
-  --artist TEXT           Song artist - required if it cannot be determined
-                          from the audio metadata
-  --help                  Show this message and exit.
-```
-
 ## Model training
 
 ### Generate dataset
@@ -61,17 +41,81 @@ where `[MAPS_DIR]` is the path to eg. your `osu!/Songs` directory
 
 ### Training
 
-after the dataset generation completes, you can start training
+after the dataset generation completes, you can start training. Training occurs in two stages:
+
+#### Latent Model
 
 ```
-$ uv run python -m osu_dreamer.model fit
+$ uv run python -m osu_dreamer.model fit-latent
 ```
 
-See `osu_dreamer/model/model.yml` for all training parameters.
+See `osu_dreamer/latent_model/model.yml` for all latent model training parameters.
 
-At the end of every epoch, the model parameters will be checkpointed to `lightning_logs/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt-path [PATH TO CHECKPOINT]` to the `fit` command.
+At the end of every epoch, the model parameters will be checkpointed to `runs/latent/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt-path [PATH TO CHECKPOINT]` to the `fit-latent` command.
 
-run `tensorboard --logdir=lightning_logs/` in a new window to track training progress in Tensorboard
+run `tensorboard --logdir=runs/latent` in a new window to track training progress in Tensorboard
+
+After training, copy/link the final checkpoint to the repo root:
+
+```
+ln runs/latent/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt latent.ckpt
+```
+
+Afterwards, proceed to the next training stage
+
+#### Flow Model
+
+```
+$ uv run python -m osu_dreamer.model fit-denoiser
+```
+
+See `osu_dreamer/diffusion_model/model.yml` for all latent model training parameters.
+
+At the end of every epoch, the model parameters will be checkpointed to `runs/denoiser/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt-path [PATH TO CHECKPOINT]` to the `fit-denoiser` command.
+
+run `tensorboard --logdir=runs/denoiser` in a new window to track training progress in Tensorboard
+
+After training, copy/link the final checkpoint to the repo root:
+
+```
+ln runs/denoiser/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt denoiser.ckpt
+```
+
+After obtaining both training checkpoints, you must create an inference artifcat
+
+## Model Inference
+
+### Inference artifact
+
+```
+# uv run python -m osu_dreamer export-inference
+```
+
+this will create an `inference.pt` file in the repo root.
+
+### Generate mapset
+
+```
+$ uv run python -m osu_dreamer predict --help
+Usage: python -m osu_dreamer predict [OPTIONS]
+
+  generate osu!std maps from raw audio.
+
+Options:
+  --model-path FILE               inference artifact (.pt)  [required]
+  --audio-file FILE               audio file to map  [required]
+  --diff <FLOAT FLOAT FLOAT FLOAT FLOAT>...
+                                  difficulty conditioning (sr, ar, od, cs, hp)
+  --sample-steps INTEGER          number of diffusion steps to sample
+  --title TEXT                    Song title - required if it cannot be
+                                  determined from the audio metadata
+  --artist TEXT                   Song artist - required if it cannot be
+                                  determined from the audio metadata
+  --help                          Show this message and exit.
+```
+
+you may specify `--diff` multiple times to generate multiple diffs at once. 
+
 
 ### visual validation
 

@@ -5,8 +5,6 @@ import torch as th
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-import osu_dreamer.modules.mp as MP
-
 def complex_log(float_input: Float[Tensor, "..."], eps=1e-6) -> Complex[Tensor, "..."]:
     real = th.clamp_min(float_input.abs(), eps).log()
     imag = (float_input < 0) * th.pi
@@ -56,9 +54,9 @@ class MinGRU(nn.Module):
     def __init__(self, dim: int, out_dim: int | None = None):
         super().__init__()
         out_dim = out_dim or dim
-        self.conv = MP.Conv1d(dim, dim, 5,1,2, groups=dim)
-        self.h = MP.Conv1d(dim, out_dim, 1)
-        self.g = MP.Conv1d(dim, out_dim-2, 1)
+        self.conv = nn.Conv1d(dim, dim, 5,1,2, groups=dim)
+        self.h = nn.Conv1d(dim, out_dim, 1)
+        self.g = nn.Conv1d(dim, out_dim-2, 1)
 
     def _polarize(self, g: Float[Tensor, "B D L"]) -> Float[Tensor, "B D+2 L"]:
         """https://arxiv.org/abs/2501.00658"""

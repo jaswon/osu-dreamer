@@ -6,11 +6,9 @@ from jaxtyping import Float, Int
 import numpy as np
 from numpy import ndarray
 
-from osu_dreamer.data.labels import NUM_LABELS
-
 from .fit_bezier import fit_bezier
 from ..load_audio import get_frame_times
-from .encode import EncodedBeatmap, BeatmapEncoding, HitSignals
+from .encode import EncodedBeatmap, BeatmapEncoding, HitSignals, NUM_LABELS
 from .hit import decode_hit_signal
 
 @dataclass
@@ -85,7 +83,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     frame_times = get_frame_times(enc.shape[1]).round().astype(int)
 
     cursor_signal = enc[[BeatmapEncoding.X, BeatmapEncoding.Y]]
-    cursor_signal = (cursor_signal+1) * np.array([[256],[192]])
+    cursor_signal = cursor_signal * np.array([[512],[384]])
 
     hits = decode_hit_signal(enc[HitSignals])
     

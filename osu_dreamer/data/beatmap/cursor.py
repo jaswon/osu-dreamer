@@ -36,28 +36,30 @@ def cursor_signal(bm: Beatmap, frame_times: FrameTimes) -> CursorSignal:
     sig = np.zeros((frame_times.shape[0], 2))
 
     for cur, nxt in zip(hos, hos[1:] + [None]):
+        cur_end_t = cur.end_time()
 
         # hit current object
-        cur_i = (frame_times >= cur.t) & (frame_times < cur.end_time())
+        cur_i = (frame_times >= cur.t) & (frame_times < cur_end_t)
         if isinstance(cur, Spinner):
             sig[cur_i] = cur.start_pos()
         elif isinstance(cur, Slider):
             cur_f = ((frame_times[cur_i] - cur.t) / cur.slide_duration) % 2
             sig[cur_i] = cur.lerp(np.where(cur_f < 1, cur_f, 2 - cur_f))
 
+        cur_end_pos = cur.end_pos()
         if nxt is None:
             # end of map
-            sig[frame_times >= cur.end_time()] = cur.end_pos()
+            sig[frame_times >= cur_end_t] = cur_end_pos
             break
 
         # current object hit, wait for next object to appear
-        wait_t = (frame_times >= cur.end_time()) & (frame_times < nxt.t - preempt)
-        sig[wait_t] = cur.end_pos()
+        approach_start_time = max(cur_end_t, nxt.t - preempt)
+        wait_t = (frame_times >= cur_end_t) & (frame_times < approach_start_time)
+        sig[wait_t] = cur_end_pos
 
         # approach next hit object
-        approach_start_time = max(cur.end_time(), nxt.t - preempt)
         approach_i = (frame_times >= approach_start_time) & (frame_times < nxt.t)
         approach_f = (frame_times[approach_i] - approach_start_time) / (nxt.t - approach_start_time)
-        sig[approach_i] = (1 - approach_f[:,None]) * cur.end_pos() + approach_f[:,None] * nxt.start_pos()
+        sig[approach_i] = (1 - approach_f[:,None]) * cur_end_pos + approach_f[:,None] * nxt.start_pos()
         
-    return (np.array(sig) / np.array([256,192])).T - 1
+    return (np.array(sig) / np.array([512,384])).T

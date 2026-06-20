@@ -6,6 +6,7 @@ __pycache__/
 lightning_logs*/
 runs*/
 *.ckpt
+*.pt
 *.ipynb
 build/
 osu_dreamer/models

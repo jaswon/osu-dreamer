@@ -10,19 +10,19 @@ import torch as th
 
 import click
 
-from osu_dreamer.data.load_audio import load_audio
+from osu_dreamer.data.load_audio import make_spec
 from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
 
-from osu_dreamer.diffusion_model.model import Model
-    
+from osu_dreamer.inference.artifact import load_inference
+
 
 file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 
 @click.command()
-@click.option('--model-path',   type=file_option_type, required=True, help='trained model (.ckpt)')
+@click.option('--model-path',   type=file_option_type, required=True, help='inference artifact (.pt)')
 @click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
 @click.option('--diff',         type=(float, float, float, float, float), multiple=True, help='difficulty conditioning (sr, ar, od, cs, hp)')
-@click.option('--sample-steps', type=int, default=32, help='number of diffusion steps to sample')
+@click.option('--sample-steps', type=int, default=4, help='number of diffusion steps to sample')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
 @click.option('--artist',       type=str, help='Song artist - required if it cannot be determined from the audio metadata')
 def predict(
@@ -53,7 +53,7 @@ def predict(
             
     # load model
     # ======
-    model = Model.load_from_checkpoint(model_path).eval()
+    model = load_inference(model_path)
     
     if th.cuda.is_available():
         print('using GPU accelerated inference')
@@ -64,19 +64,19 @@ def predict(
     # load audio
     # ======
     dev = next(model.parameters()).device
-    audio = th.tensor(load_audio(audio_file), device=dev).float()
+    audio = th.tensor(make_spec(audio_file), device=dev).float()
     labels = th.tensor(diff, device=dev)
     
     # generate maps
     # ======
     with th.no_grad():
-        pred_signals = model.sample(
+        pred_signals, pred_labels = model.sample(
             audio, labels,
             num_steps=sample_steps, 
             show_progress=True,
         )
         pred_signals = pred_signals.cpu().numpy()
-        labels = labels.cpu().numpy()
+        pred_labels = pred_labels.cpu().numpy()
 
     # package mapset
     # ======
@@ -90,12 +90,12 @@ def predict(
     with ZipFile(mapset, 'x') as mapset_archive:
         mapset_archive.write(audio_file, audio_file.name)
         
-        for i, (label, pred_signal) in enumerate(zip(labels, pred_signals)):
+        for i, (pred_label, pred_signal) in enumerate(zip(pred_labels, pred_signals)):
             mapset_archive.writestr(
                 f"{artist} - {title} (osu!dreamer) [version {i}].osu",
                 decode_beatmap(
                     Metadata(audio_file.name, title, artist, f"version {i}"),
-                    label, pred_signal,
+                    pred_label, pred_signal,
                 ),
             )
     

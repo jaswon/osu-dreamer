@@ -6,6 +6,8 @@ from jaxtyping import Float
 from numpy import ndarray
 
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 
 @contextmanager
 def plot_signals(

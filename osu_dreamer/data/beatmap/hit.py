@@ -16,23 +16,14 @@ Real = Union[int, float]
 
 # == events ==
 
-def events(ts: list[Real], frame_times: FrameTimes) -> Float[ndarray, "L"]:
-    """returns time (in log ms) since last event, scaled+shifted to [0,1]"""
-    MIN_TIME = 4    # intervals shorter than 2^MIN_TIME milliseconds get aliased to 0
-    MAX_TIME = 11   # intervals longer  than 2^MAX_TIME milliseconds get aliased to 1
-
-    time_since_last_event = np.full_like(frame_times, 2**MAX_TIME)
-    for t in ts:
-        time_since_event = frame_times - t
-        region = (time_since_event >= 0) & (time_since_event <= 2**MAX_TIME)
-        time_since_last_event[region] = time_since_event[region]
-
-    log_time = np.log2(time_since_last_event + 2**MIN_TIME).clip(MIN_TIME, MAX_TIME)
-    return (log_time - MIN_TIME) / (MAX_TIME - MIN_TIME)
+def events(ts: list[Real], frame_times: FrameTimes, sigma: Real = 10) -> Float[ndarray, "L"]:
+    if len(ts) == 0:
+        return np.zeros_like(frame_times)
+    return np.exp(-.5 / sigma**2 * (np.array(ts)[None] - frame_times[:,None]) ** 2).max(axis=1)
 
 def decode_events(events: Float[ndarray, "L"]) -> list[int]:
-    events_pp = events[2:] + events[:-2] - 2 * events[1:-1]
-    return (np.nonzero(events_pp > .5)[0] + 1).tolist()
+    import scipy.signal
+    return scipy.signal.find_peaks(events, height=.7)[0].tolist()
 
 # == extents ==
 
@@ -44,8 +35,8 @@ def extents(regions: list[tuple[Real, Real]], frame_times: FrameTimes) -> Float[
     return holds
 
 def decode_extents(extents: Float[ndarray, "L"]) -> tuple[list[int], list[int]]:
-    before_below = extents[:-1] <= 0
-    after_below  = extents[1:]  <= 0
+    before_below = extents[:-1] <= .5
+    after_below  = extents[1:]  <= .5
 
     start_idxs = sorted(np.argwhere(before_below & ~after_below)[:,0].tolist())
     end_idxs   = sorted(np.argwhere(~before_below & after_below)[:,0].tolist())
@@ -61,31 +52,6 @@ def decode_extents(extents: Float[ndarray, "L"]) -> tuple[list[int], list[int]]:
     cursor += 1
 
     return start_idxs[:cursor], end_idxs[:cursor]
-
-def slides(bm: Beatmap, frame_times: FrameTimes) -> Float[ndarray, "L"]:
-    slides = np.zeros_like(frame_times)
-
-    for ho in bm.hit_objects:
-        if not isinstance(ho, Slider):
-            continue
-
-        t = (frame_times - ho.t) / ho.slide_duration
-        region = (t >= 0) & (t <= ho.slides)
-        slides[region] = abs((t[region]+1)%2-1)
-
-    return slides
-
-def decode_slides(slides: Float[ndarray, "L"]) -> Float[ndarray, "L"]:
-    before_below = slides[:-1] <= 0
-    after_below  = slides[1:]  <= 0
-
-    fore_idxs = np.argwhere(before_below & ~after_below)[:,0]
-    back_idxs = np.argwhere(~before_below & after_below)[:,0]
-    
-    slide_locs = np.zeros_like(slides)
-    slide_locs[fore_idxs+1] = 1
-    slide_locs[back_idxs+1] = 1
-    return slide_locs
 
 # == hit signal ==
 
@@ -107,23 +73,21 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
     returns an array encoding a beatmap's hits:
     0. onsets
     1. new combos
-    2. slider progress
+    2. first slide
     3. sustains (both sliders and spinners)
     4. whistle hit sound
     5. finish hit sound
     6. clap hit sound
     """
 
-    slide_times = []
-    for ho in bm.hit_objects:
-        if not isinstance(ho, Slider):
-            continue
-        slide_times.extend([ ho.t + ho.slide_duration * (i+1) for i in range(ho.slides) ])
-
     return np.stack([
         events([ ho.t for ho in bm.hit_objects                 ], frame_times), # onsets
         events([ ho.t for ho in bm.hit_objects if ho.new_combo ], frame_times), # new combos
-        slides(bm, frame_times), # slides
+        extents([
+            (ho.t, ho.t + ho.slide_duration)
+            for ho in bm.hit_objects
+            if isinstance(ho, Slider)
+        ], frame_times), # first slide
         extents([
             (ho.t, ho.end_time())
             for ho in bm.hit_objects
@@ -132,7 +96,7 @@ def hit_signal(bm: Beatmap, frame_times: FrameTimes) -> HitSignal:
         events([ ho.t for ho in bm.hit_objects if ho.whistle ], frame_times), # whistles
         events([ ho.t for ho in bm.hit_objects if ho.finish ], frame_times), # finishes
         events([ ho.t for ho in bm.hit_objects if ho.clap ], frame_times), # claps
-    ]) * 2 - 1
+    ])
 
 Hit = Union[
     tuple[int, bool, bool, bool, bool],           #  hit(t, new_combo, whistle, finish, clap)
@@ -164,10 +128,15 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             continue
         sustain_ends[onset_idx] = sustain_end
 
-    slide_locs = decode_slides(hit_signal[HitEncoding.SLIDE])
+    slide_ends = [-1] * len(onset_idxs)
+    for slide_start, slide_end in zip(*decode_extents(hit_signal[HitEncoding.SLIDE])):
+        onset_idx = onset_idx_map[slide_start]
+        if onset_idx == -1:
+            continue
+        slide_ends[onset_idx] = slide_end
 
     hits: list[Hit] = []
-    for onset_loc, onset_prop, sustain_end in zip(onset_idxs, onset_props, sustain_ends):
+    for onset_loc, onset_prop, sustain_end, slide_end in zip(onset_idxs, onset_props, sustain_ends, slide_ends):
         hit = (onset_loc, *onset_prop.tolist())
 
         if sustain_end == -1 or sustain_end - onset_loc < 4:
@@ -175,7 +144,11 @@ def decode_hit_signal(hit_signal: HitSignal) -> list[Hit]:
             hits.append(hit)
             continue
 
-        num_slides = int(slide_locs[onset_loc:sustain_end+1].sum())
+        if slide_end == -1:
+            # spinner
+            num_slides = 0
+        else:
+            num_slides = round((sustain_end - onset_loc) / (slide_end - onset_loc))
         hits.append((*hit, sustain_end, num_slides))
     
     return hits

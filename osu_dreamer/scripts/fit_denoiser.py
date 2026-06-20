@@ -2,14 +2,13 @@
 from typing import Union, Optional
 
 import warnings
-
 import click
 
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from pytorch_lightning import Trainer
 
-from osu_dreamer.diffusion_model.data.module import Data
-from osu_dreamer.diffusion_model.model import Model
+from osu_dreamer.data.module import BeatmapDataModule
+from osu_dreamer.diffusion_model.train import DiffusionTrainer
 
 file_option_type = click.Path(exists=True, dir_okay=False)
 
@@ -23,11 +22,11 @@ def fit_denoiser(config: str, ckpt_path: Optional[str]):
 
     parser = LightningArgumentParser()
     parser.add_argument('seed_everything', type=Union[int, bool])
-    parser.add_lightning_class_args(Model, 'model')
-    parser.add_lightning_class_args(Data, 'data')
+    parser.add_lightning_class_args(DiffusionTrainer, 'model')
+    parser.add_lightning_class_args(BeatmapDataModule, 'data')
     parser.add_lightning_class_args(Trainer, 'trainer')
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        cli = LightningCLI(Model, Data, args=parser.parse_path(config), run=False)
+        cli = LightningCLI(DiffusionTrainer, BeatmapDataModule, args=parser.parse_path(config), run=False)
     cli.trainer.fit(cli.model, cli.datamodule, ckpt_path=ckpt_path)

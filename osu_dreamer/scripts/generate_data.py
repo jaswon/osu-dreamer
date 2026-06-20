@@ -1,16 +1,14 @@
 
 from pathlib import Path
-import pickle
 from functools import partial
 from torch.multiprocessing import Pool, set_start_method
-
-import numpy as np
 
 from tqdm import tqdm
 
 from osu_dreamer.osu.beatmap import Beatmap
 from osu_dreamer.data.reclaim_memory import reclaim_memory
-from osu_dreamer.data.load_audio import load_audio
+from osu_dreamer.data.load_audio import make_spec, write_spec, read_spec, get_frame_times
+from osu_dreamer.data.beatmap.encode import write_beatmap
 
 import click
 
@@ -60,17 +58,20 @@ def process_mapset(kv: tuple[Path, list[Path]], force: bool):
             continue
 
         audio_dir = mapset_dir / "_".join(bm.audio_filename.name.split('.'))
-        map_path = audio_dir / f"{map_file.stem}.map.pkl"
+        map_path = audio_dir / f"{map_file.stem}.map.npy"
         if not force and map_path.exists():
             continue
 
         audio_map.setdefault((audio_dir, bm.audio_filename), []).append((bm, map_path))
 
     for (audio_dir, audio_file), bms in audio_map.items():
-        spec_path = audio_dir / "spec.pt"
-        if not spec_path.exists():
+        spec_path = audio_dir / "spec.npy"
+        if spec_path.exists():
+            with open(spec_path, "rb") as f:
+                spec = read_spec(f)
+        else:
             try:
-                spec = load_audio(audio_file)
+                spec = make_spec(audio_file)
             except Exception as e:
                 print(f"{audio_file}: {e}")
                 return
@@ -78,8 +79,9 @@ def process_mapset(kv: tuple[Path, list[Path]], force: bool):
             # save spectrogram
             spec_path.parent.mkdir(parents=True, exist_ok=True)
             with open(spec_path, "wb") as f:
-                np.save(f, spec, allow_pickle=False)
+                write_spec(f, spec)
 
+        spec_frame_times = get_frame_times(spec.shape[1])
         for bm, map_path in bms:
             try:
                 bm.parse_map_data()
@@ -88,4 +90,4 @@ def process_mapset(kv: tuple[Path, list[Path]], force: bool):
                 continue
 
             with open(map_path, "wb") as f:
-                pickle.dump(bm, f)
+                write_beatmap(f, bm, spec_frame_times)

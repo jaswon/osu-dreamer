@@ -9,7 +9,7 @@ trainer:
     max_epochs: -1
     
     devices: 1
-    precision: 16-mixed
+    precision: bf16-mixed
 
     enable_checkpointing: true
     callbacks:
@@ -19,12 +19,6 @@ trainer:
                 monitor: val/loss
                 mode: min
                 save_top_k: 1
-        - # early stopping
-            class_path: pytorch_lightning.callbacks.EarlyStopping
-            init_args:
-                monitor: val/loss
-                mode: min
-                patience: 5
         - # learning rate monitor
             class_path: pytorch_lightning.callbacks.LearningRateMonitor
 
@@ -34,48 +28,65 @@ trainer:
             save_dir: runs
             name: denoiser
 
-    accumulate_grad_batches: 3
+    accumulate_grad_batches: 1
     enable_progress_bar: true
-    log_every_n_steps: 1
+    log_every_n_steps: 5
     enable_model_summary: true
 
-    val_check_interval: 1000
-    check_val_every_n_epoch: null
+    # val_check_interval: { 'minutes': 10 }
+    # check_val_every_n_epoch: 1
+
+    gradient_clip_val: 1.
     
 data:
     # length of each training subsequence
     seq_len: 4096 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 8
+    batch_size: 32
     
     # number of workers to use for data loading
-    num_workers: 6
+    num_workers: 13
     
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
-    val_size: 128
-    # val_split: .1
+    val_size: 256
     
 model:
     # validation parameters
-    val_steps: 32
-    val_batches: 64
+    val_steps: 16
+    val_batches: 8
 
     # training parameters
     opt_args:
-        lr: .003
-        weight_decay: 0.001
+        lr: .001
+        weight_decay: 0.01
+    schedule_args:
+        warmup_init: .1
+        warmup_steps: 2000
+    label_drop_prob: .2
+    kl_factor: .001
 
     # model hyperparameters
     latent_model_ckpt: latent.ckpt
-    a_h_dim: 256
-    encoder_args:
-        h_dim: 96
+    flow_latent_dim: 16
+    posterior_args:
+        backbone_dim: 512
+        backbone_args: 
+            head_dim: 64
+            depth: 4
+            expand: 4
 
-    denoiser_args:
-        h_dim: 512
-        f_dim: 256
+    diffusion_args:
         noise_level_features: 256
-        depth: 24
-        expand: 2
+        n_audio_features: 256
+        global_cond_h: 512
+        global_cond_dim: 256
+        backbone_dim: 512
+        backbone_args:
+            head_dim: 64
+            depth: 16
+            expand: 4
+        audio_encoder_args: 
+            h_dim: 256
+            n_layers: 3
