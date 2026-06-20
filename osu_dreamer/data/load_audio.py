@@ -64,8 +64,12 @@ def make_spec(file_name: str | Path) -> Float[np.ndarray, "F L"]:
     sig = np.clip(sig, a_min=0, a_max=1)
     return sig
 
+### DISK FORMAT
+
+SPEC_DTYPE = np.uint8
+
 def write_spec(f: BinaryIO, spec: Float[np.ndarray, "F L"]):
-    np.save(f, (spec * (2**8-1) + .5).astype(np.uint8))
+    np.save(f, (spec * np.iinfo(SPEC_DTYPE).max + .5).astype(SPEC_DTYPE))
 
 def read_spec(f: BinaryIO) -> Float[np.ndarray, "F L"]:
-    return np.load(f).astype(float) / (2**8-1)
+    return np.load(f).astype(float) / np.iinfo(SPEC_DTYPE).max

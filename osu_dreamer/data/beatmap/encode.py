@@ -50,6 +50,14 @@ EncodedBeatmap = Float[ndarray, str(f"{X_DIM} L")]
 NUM_LABELS = 5
 Labels = Float[np.ndarray, f'{NUM_LABELS}']
 
+def get_labels(bm: Beatmap) -> Labels:
+    return np.array([bm.sr, bm.ar, bm.od, bm.cs, bm.hp])
+
+### DISK FORMAT
+
+HIT_DTYPE = np.uint8
+XY_DTYPE = np.uint16
+
 def write_beatmap(f: BinaryIO, bm: Beatmap, frame_times: FrameTimes):
     hit = hit_signal(bm, frame_times)
     xy = cursor_signal(bm, frame_times)
@@ -58,17 +66,17 @@ def write_beatmap(f: BinaryIO, bm: Beatmap, frame_times: FrameTimes):
     xy_rng[xy_rng == 0.] = 1.
     xy_norm = (xy - xy_min) / xy_rng
     np.savez(f, allow_pickle=False,
-        hit = (hit * (2**8-1) + .5).astype(np.uint8),
-        xy = (xy_norm * (2**8-1) + .5).astype(np.uint8),
+        hit = np.round(hit * np.iinfo(HIT_DTYPE).max).astype(HIT_DTYPE),
+        xy = np.round(xy_norm * np.iinfo(XY_DTYPE).max).astype(XY_DTYPE),
         xy_min = xy_min,
         xy_rng = xy_rng,
-        labels = np.array([bm.sr, bm.ar, bm.od, bm.cs, bm.hp]),
+        labels = get_labels(bm),
     )
 
 def read_beatmap(f: BinaryIO) -> tuple[EncodedBeatmap, Labels]:
     with np.load(f) as npz:
         hit, xy, xy_min, xy_rng, labels = npz['hit'], npz['xy'], npz['xy_min'], npz['xy_rng'], npz['labels']
     return np.concatenate([
-        hit.astype(float) / (2**8-1),
-        xy.astype(float) / (2**8-1) * xy_rng + xy_min ,
+        hit.astype(float) / np.iinfo(HIT_DTYPE).max,
+        xy.astype(float) / np.iinfo(XY_DTYPE).max * xy_rng + xy_min ,
     ]), labels
