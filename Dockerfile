@@ -23,5 +23,5 @@ COPY data data
 # project source
 RUN git init . \
     && git remote add origin https://github.com/jaswon/osu-dreamer \
-    && git pull origin latent \
-    && git checkout latent
+    && git pull origin main \
+    && git checkout main
