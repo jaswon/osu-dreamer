@@ -7,40 +7,33 @@ import torch.nn.functional as F
 
 from einops import rearrange
 
+_rope_cache: dict[tuple[int, th.device], Float[Tensor, "N d"]] = {}
 
-class RoPE(nn.Module):
-    def __init__(self, head_dim: int):
-        super().__init__()
-        self.head_dim = head_dim
-        self.register_buffer("freqs", th.empty(()), persistent=False)
-        self.freqs: Float[th.Tensor, "N D"]
-        self._init_freq(2048)
+def rope(x: Float[Tensor, "B H N D"]) -> Float[Tensor, "B H N D"]:
+    _,_,N,D = x.size()
+    assert D % 2 == 0, "head_dim must be even"
 
-    def _init_freq(self, n):
-        inv_freq = 10000 ** (th.arange(0, self.head_dim, 2).float() / -self.head_dim)
-        t = th.arange(n, dtype=th.float32)
-        self.freqs = th.outer(t, inv_freq)
+    key = (D, x.device)
+    if key not in _rope_cache or _rope_cache[key].size(0) < N:
+        inv_freq = 10000 ** (th.arange(0, D, 2).float() / -D)
+        t = th.arange(N, dtype=th.float32)
+        _rope_cache[key] = th.outer(t, inv_freq).to(x.device)
+    freqs = _rope_cache[key][:x.size(2)]
 
-    def forward(self, x: Float[Tensor, "B H N D"]) -> Float[Tensor, "B H N D"]:
-        if self.freqs.size(0) < x.size(2):
-            self._init_freq(x.size(2))
-        freqs = self.freqs[None,None,:x.size(2)].to(x.device)
-        x1, x2 = x.chunk(2, dim=-1)
-        cos = freqs.cos()
-        sin = freqs.sin()
-        return th.cat([
-            x1 * cos - x2 * sin, 
-            x1 * sin + x2 * cos,
-        ], dim=-1)
-
+    x1, x2 = x.chunk(2, dim=-1)
+    cos = freqs.cos().to(x.dtype)
+    sin = freqs.sin().to(x.dtype)
+    return th.cat([
+        x1 * cos - x2 * sin, 
+        x1 * sin + x2 * cos,
+    ], dim=-1)
 
 class LInfSA(nn.Module):
 
-    def __init__(self, d_model: int, head_dim: int, rope: RoPE, gamma: float = 0.7):
+    def __init__(self, d_model: int, head_dim: int, gamma: float = 0.7):
         super().__init__()
         assert d_model % head_dim == 0
         self.head_dim = head_dim
-        self.rope = rope
         self.gamma = gamma
 
         self.qk_proj = nn.Conv1d(d_model, d_model, 1, bias=False)
@@ -51,7 +44,7 @@ class LInfSA(nn.Module):
         qk = rearrange(self.qk_proj(x), 'b (h d) n -> b h n d', d=self.head_dim)
         v = rearrange(self.v_proj(x), 'b (h d) n -> b h n d', d=self.head_dim)
 
-        qk = self.rope(qk)
+        qk = rope(qk)
 
         energies = th.norm(qk, p=2, dim=-1, keepdim=True)
         alpha = energies / (eps + energies.sum(dim=-2, keepdim=True))
@@ -67,11 +60,10 @@ class LInfSA(nn.Module):
 
 
 class SDPSA(nn.Module):
-    def __init__(self, d_model: int, head_dim: int, rope: RoPE):
+    def __init__(self, d_model: int, head_dim: int):
         super().__init__()
         assert d_model % head_dim == 0
         self.head_dim = head_dim
-        self.rope = rope
 
         self.qkv_proj = nn.Conv1d(d_model, 3*d_model, 1, bias=False)
         self.out_proj = nn.Conv1d(d_model, d_model, 1, bias=False)
@@ -85,8 +77,8 @@ class SDPSA(nn.Module):
         q = self.q_norm(q)
         k = self.k_norm(k)
 
-        q = self.rope(q)
-        k = self.rope(k)
+        q = rope(q)
+        k = rope(k)
         y = F.scaled_dot_product_attention(q, k, v)
 
         # xsa

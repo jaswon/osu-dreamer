@@ -5,7 +5,7 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
-from .attn import SDPSA, RoPE
+from .attn import SDPSA
 from .derf import Derf
 from .drop_path import DropPath
 from .swiglu import SwiGLU
@@ -26,9 +26,8 @@ class Backbone(nn.Module):
         args: BackboneArgs,
     ):
         super().__init__()
-        rope = RoPE(args.head_dim)
         sublayers = [
-            lambda: SDPSA(x_dim, args.head_dim, rope), 
+            lambda: SDPSA(x_dim, args.head_dim), 
             lambda: SwiGLU(x_dim, args.expand, args.dropout, radius=0),
         ]
         self.layers = nn.ModuleList([
@@ -77,7 +76,7 @@ class BackboneLayer(nn.Module):
         *,
         cond_l: Float[Tensor, "B Cl L"] | None = None,
         cond_g: Float[Tensor, "B Cg"] | None = None,
-    ) -> Float[Tensor, "B D L"]:
+    ) -> Float[Tensor, "B X L"]:
         if cond_g is None:
             scale_global, shift_global = 0, 0
         else:
