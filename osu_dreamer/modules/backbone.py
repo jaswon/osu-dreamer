@@ -5,6 +5,8 @@ from jaxtyping import Float
 import torch as th
 from torch import nn, Tensor
 
+from osu_dreamer.modules.res import Res
+
 from .attn import SDPSA
 from .derf import Derf
 from .drop_path import DropPath
@@ -31,7 +33,7 @@ class Backbone(nn.Module):
             lambda: SwiGLU(x_dim, args.expand, args.dropout, radius=0),
         ]
         self.layers = nn.ModuleList([
-            BackboneLayer(x_dim, local_cond_dim, global_cond_dim, sublayers[i%len(sublayers)]())
+            BackboneLayer(x_dim, local_cond_dim, global_cond_dim, args.expand, sublayers[i%len(sublayers)]())
             for i in range(len(sublayers)*args.depth)
         ])
         self.dropouts = nn.ModuleList([
@@ -52,12 +54,24 @@ class Backbone(nn.Module):
         return self.out_norm(x)
     
 
+def resnext(dim: int, expand: int, group_channels: int = 8, radius: int = 2):
+    h_dim = dim * expand
+    return Res(nn.Sequential(
+        Derf(dim, 1),
+        nn.Conv1d(dim, h_dim, 1),
+        nn.SiLU(),
+        nn.Conv1d(h_dim, h_dim, 1+2*radius,1,radius, groups=h_dim // group_channels),
+        nn.SiLU(),
+        nn.Conv1d(h_dim, dim, 1),
+    ))
+
 class BackboneLayer(nn.Module):
     def __init__(
         self, 
         dim: int,
         local_cond_dim: int,
         global_cond_dim: int, 
+        expand: int,
         op: nn.Module,
     ):
         super().__init__()
@@ -67,7 +81,10 @@ class BackboneLayer(nn.Module):
             self.ssg_global = nn.Linear(global_cond_dim, 3*dim)
 
         if local_cond_dim > 0:
-            self.ssg_local = nn.Conv1d(local_cond_dim, 3*dim, 1)
+            self.ssg_local = nn.Sequential(
+                resnext(local_cond_dim, expand),
+                nn.Conv1d(local_cond_dim, 3*dim, 1),
+            )
 
     def forward(
         self,
