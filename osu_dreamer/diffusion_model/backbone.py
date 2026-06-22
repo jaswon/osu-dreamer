@@ -7,10 +7,10 @@ from torch import nn, Tensor
 
 from osu_dreamer.modules.res import Res
 
-from .attn import SDPSA
-from .derf import Derf
-from .drop_path import DropPath
-from .swiglu import SwiGLU
+from osu_dreamer.modules.attn import SDPSA
+from osu_dreamer.modules.derf import Derf
+from osu_dreamer.modules.drop_path import DropPath
+from osu_dreamer.modules.swiglu import SwiGLU
 
 @dataclass
 class BackboneArgs:

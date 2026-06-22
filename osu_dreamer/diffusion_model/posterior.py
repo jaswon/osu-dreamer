@@ -4,7 +4,7 @@ from jaxtyping import Float
 
 from torch import nn, Tensor
 
-from osu_dreamer.modules.backbone import Backbone, BackboneArgs
+from .backbone import Backbone, BackboneArgs
 
 @dataclass
 class FlowPosteriorArgs:

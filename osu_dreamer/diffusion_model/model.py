@@ -16,8 +16,9 @@ from osu_dreamer.data.beatmap.encode import NUM_LABELS
 
 from osu_dreamer.modules.spec_features import SpecFeatures
 from osu_dreamer.modules.ae import AEArgs, Encoder
-from osu_dreamer.modules.backbone import Backbone, BackboneArgs
 from osu_dreamer.modules.fourier_features import FourierFeatures
+
+from .backbone import Backbone, BackboneArgs
 
 @dataclass
 class DiffusionModelArgs:
