@@ -55,20 +55,19 @@ class Backbone(nn.Module):
 class BackboneLayer(nn.Module):
     def __init__(
         self, 
-        x_dim: int,
+        dim: int,
         local_cond_dim: int,
         global_cond_dim: int, 
         op: nn.Module,
     ):
         super().__init__()
         self.op = op
-        self.norm = Derf(x_dim, 1)
+        self.norm = Derf(dim, 1)
         if global_cond_dim > 0:
-            self.ss_global = nn.Linear(global_cond_dim, 2*x_dim)
+            self.ssg_global = nn.Linear(global_cond_dim, 3*dim)
 
         if local_cond_dim > 0:
-            self.ss_local = nn.Conv1d(local_cond_dim, 2*x_dim, 1)
-        self.alpha = nn.Parameter(th.randn(x_dim, 1))
+            self.ssg_local = nn.Conv1d(local_cond_dim, 3*dim, 1)
 
     def forward(
         self,
@@ -78,16 +77,16 @@ class BackboneLayer(nn.Module):
         cond_g: Float[Tensor, "B Cg"] | None = None,
     ) -> Float[Tensor, "B X L"]:
         if cond_g is None:
-            scale_global, shift_global = 0, 0
+            scale_g, shift_g, gate_g = 0, 0, 0
         else:
-            scale_global, shift_global = self.ss_global(cond_g)[:,:,None].chunk(2, dim=1)
+            scale_g, shift_g, gate_g = self.ssg_global(cond_g)[:,:,None].chunk(3, dim=1)
 
         if cond_l is None:
-            scale_local, shift_local = 0, 0
+            scale_l, shift_l, gate_l = 0, 0, 0
         else:
-            scale_local, shift_local = self.ss_local(cond_l).chunk(2, dim=1)
+            scale_l, shift_l, gate_l = self.ssg_local(cond_l).chunk(3, dim=1)
             
-        x = self.norm(x) * (1 + scale_local + scale_global) + (shift_local + shift_global)
+        x = self.norm(x) * (1 + scale_l + scale_g) + (shift_l + shift_g)
         x = self.op(x)
-        x = x * self.alpha
+        x = x * (1 + gate_l + gate_g)
         return x
