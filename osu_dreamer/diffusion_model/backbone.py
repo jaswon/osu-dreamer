@@ -2,14 +2,12 @@
 from dataclasses import dataclass
 from jaxtyping import Float
 
-import torch as th
 from torch import nn, Tensor
 
 from osu_dreamer.modules.res import Res
 
 from osu_dreamer.modules.attn import SDPSA
 from osu_dreamer.modules.derf import Derf
-from osu_dreamer.modules.drop_path import DropPath
 from osu_dreamer.modules.swiglu import SwiGLU
 
 @dataclass
@@ -18,43 +16,8 @@ class BackboneArgs:
     expand: int
     head_dim: int
     dropout: float = 0.
-
-class Backbone(nn.Module):
-    def __init__(
-        self,
-        x_dim: int,
-        local_cond_dim: int,
-        global_cond_dim: int,
-        args: BackboneArgs,
-    ):
-        super().__init__()
-        sublayers = [
-            lambda: SDPSA(x_dim, args.head_dim), 
-            lambda: SwiGLU(x_dim, args.expand, args.dropout, radius=0),
-        ]
-        self.layers = nn.ModuleList([
-            BackboneLayer(x_dim, local_cond_dim, global_cond_dim, args.expand, sublayers[i%len(sublayers)]())
-            for i in range(len(sublayers)*args.depth)
-        ])
-        self.dropouts = nn.ModuleList([
-            DropPath(p)
-            for p in th.linspace(0., args.dropout, len(sublayers)*args.depth).tolist()
-        ])
-        self.out_norm = Derf(x_dim, 1)
-
-    def forward(
-        self,
-        x: Float[Tensor, "B D L"],
-        *,
-        cond_l: Float[Tensor, "B Cl L"] | None = None,
-        cond_g: Float[Tensor, "B Cg"] | None = None,
-    ) -> Float[Tensor, "B D L"]:
-        for layer, dropout in zip(self.layers, self.dropouts):
-            x = x + dropout(layer(x,cond_l=cond_l, cond_g=cond_g))
-        return self.out_norm(x)
     
-
-def resnext(dim: int, expand: int, group_channels: int = 8, radius: int = 2, dilation: int = 2):
+def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1, dilation: int = 1):
     h_dim = dim * expand
     return Res(nn.Sequential(
         Derf(dim, 1),
@@ -65,26 +28,57 @@ def resnext(dim: int, expand: int, group_channels: int = 8, radius: int = 2, dil
         nn.Conv1d(h_dim, dim, 1),
     ))
 
+class Backbone(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        cond_l_dim: int,
+        cond_g_dim: int,
+        args: BackboneArgs,
+    ):
+        super().__init__()
+        if cond_l_dim > 0:
+            self.cond_tower = nn.ModuleList([ resnext(cond_l_dim) for _ in range(args.depth) ])
+        self.attns = nn.ModuleList([
+            BackboneLayer(dim, cond_l_dim, cond_g_dim, SDPSA(dim, args.head_dim))
+            for _ in range(args.depth)
+        ])
+        self.mlps = nn.ModuleList([
+            BackboneLayer(dim, cond_l_dim, cond_g_dim, SwiGLU(dim, args.expand, args.dropout, radius=0))
+            for _ in range(args.depth)
+        ])
+        self.out_norm = Derf(dim, 1)
+
+    def forward(
+        self,
+        x: Float[Tensor, "B D L"],
+        *,
+        cond_l: Float[Tensor, "B Cl L"] | None = None,
+        cond_g: Float[Tensor, "B Cg"] | None = None,
+    ) -> Float[Tensor, "B D L"]:
+        for i, (attn, mlp) in enumerate(zip(self.attns, self.mlps)):
+            if cond_l is not None:
+                cond_l = self.cond_tower[i](cond_l)
+            x = attn(x, cond_l=cond_l, cond_g=cond_g)
+            x = mlp(x, cond_l=cond_l, cond_g=cond_g)
+        return self.out_norm(x)
+
 class BackboneLayer(nn.Module):
     def __init__(
         self, 
         dim: int,
-        local_cond_dim: int,
-        global_cond_dim: int, 
-        expand: int,
+        cond_l_dim: int,
+        cond_g_dim: int, 
         op: nn.Module,
     ):
         super().__init__()
         self.op = op
         self.norm = Derf(dim, 1)
-        if global_cond_dim > 0:
-            self.ssg_global = nn.Linear(global_cond_dim, 3*dim)
+        if cond_g_dim > 0:
+            self.ssg_global = nn.Linear(cond_g_dim, 3*dim)
 
-        if local_cond_dim > 0:
-            self.ssg_local = nn.Sequential(
-                resnext(local_cond_dim, expand),
-                nn.Conv1d(local_cond_dim, 3*dim, 1),
-            )
+        if cond_l_dim > 0:
+            self.ssg_local = nn.Conv1d(cond_l_dim, 3*dim, 1)
 
     def forward(
         self,
@@ -93,6 +87,7 @@ class BackboneLayer(nn.Module):
         cond_l: Float[Tensor, "B Cl L"] | None = None,
         cond_g: Float[Tensor, "B Cg"] | None = None,
     ) -> Float[Tensor, "B X L"]:
+        res = x
         if cond_g is None:
             scale_g, shift_g, gate_g = 0, 0, 0
         else:
@@ -106,4 +101,4 @@ class BackboneLayer(nn.Module):
         x = self.norm(x) * (1 + scale_l + scale_g) + (shift_l + shift_g)
         x = self.op(x)
         x = x * (1 + gate_l + gate_g)
-        return x
+        return res + x
