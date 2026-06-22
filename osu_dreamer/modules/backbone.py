@@ -54,13 +54,13 @@ class Backbone(nn.Module):
         return self.out_norm(x)
     
 
-def resnext(dim: int, expand: int, group_channels: int = 8, radius: int = 2):
+def resnext(dim: int, expand: int, group_channels: int = 8, radius: int = 2, dilation: int = 2):
     h_dim = dim * expand
     return Res(nn.Sequential(
         Derf(dim, 1),
         nn.Conv1d(dim, h_dim, 1),
         nn.SiLU(),
-        nn.Conv1d(h_dim, h_dim, 1+2*radius,1,radius, groups=h_dim // group_channels),
+        nn.Conv1d(h_dim, h_dim, 1+2*radius, 1, radius*dilation, dilation, groups=h_dim // group_channels),
         nn.SiLU(),
         nn.Conv1d(h_dim, dim, 1),
     ))
