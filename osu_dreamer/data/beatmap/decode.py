@@ -7,6 +7,7 @@ import numpy as np
 from numpy import ndarray
 
 from .fit_bezier import fit_bezier
+from .fit_arc import fit_arc
 from ..load_audio import get_frame_times
 from .encode import EncodedBeatmap, BeatmapEncoding, HitSignals, NUM_LABELS
 from .hit import decode_hit_signal
@@ -58,7 +59,7 @@ def decode_slider(
     start_idx: int, 
     end_idx: int, 
     num_repeats: int,
-) -> tuple[float, list[Int[ndarray, "2"]]]:
+) -> tuple[str, float, list[Int[ndarray, "2"]]]:
     """
     returns the slider's length and control points defined by
     the cursor signal, start+end indices, and number of repeats
@@ -66,17 +67,22 @@ def decode_slider(
 
     first_slide_idx = round(start_idx + (end_idx-start_idx) / num_repeats)
 
+    points = cursor_signal[:,start_idx:first_slide_idx+1]
+    arc = fit_arc(points, max_err=5.)
+    if arc is not None:
+        length, ctrl_pts = arc
+        return "P", length, ctrl_pts
+
     ctrl_pts: list[Int[ndarray, "2"]] = []
     length = 0.
-    # TODO: try fit circular arc before bezier
-    path = fit_bezier(cursor_signal[:,start_idx:first_slide_idx+1], max_err=5.)
+    path = fit_bezier(points, max_err=5.)
     for i, seg in enumerate(path):
         if (i==0 or i==len(path)-1) and seg.length < 15:
             continue
         ctrl_pts.extend(seg.p.T.round().astype(int))
         length += seg.length
     
-    return length, ctrl_pts
+    return "B", length, ctrl_pts
 
 def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap) -> str:
 
@@ -125,7 +131,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
             last_end_time = u
             continue
 
-        length, ctrl_pts = decode_slider(cursor_signal, i, j, num_slides)
+        curve_type, length, ctrl_pts = decode_slider(cursor_signal, i, j, num_slides)
 
         if length == 0:
             # zero length
@@ -135,7 +141,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
 
         x1,y1 = ctrl_pts[0]
         curve_pts = "|".join(f"{x}:{y}" for x,y in ctrl_pts[1:])
-        hos.append(f"{x1},{y1},{t},{2**1 + combo_bit},{hitsound},B|{curve_pts},{num_slides},{length}")
+        hos.append(f"{x1},{y1},{t},{2**1 + combo_bit},{hitsound},{curve_type}|{curve_pts},{num_slides},{length}")
         last_end_time = u
 
         slider_ts.append(t)
