@@ -59,13 +59,13 @@ model:
 
     # training parameters
     opt_args:
-        lr: .001
+        lr: .0007
         weight_decay: 0.01
     schedule_args:
         warmup_init: .1
         warmup_steps: 2000
     label_drop_prob: .2
-    kl_factor: .001
+    kl_factor: .01
 
     # model hyperparameters
     latent_model_ckpt: latent.ckpt
