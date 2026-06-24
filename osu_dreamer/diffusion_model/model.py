@@ -115,6 +115,7 @@ class DiffusionModel(nn.Module):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         num_steps: int,
         show_progress: bool = False,
+        schedule_std: float = 1.,
     ) -> Float[Tensor, "B E l"]:
         num_samples = labels.size(0)
 
@@ -131,11 +132,21 @@ class DiffusionModel(nn.Module):
             )
         )
 
+        # non-uniform time schedule: warp a uniform grid through the inverse CDF of
+        # the logit-normal(0, schedule_std) distribution used during training, placing
+        # smaller steps near t=0.5 (where the model is trained most) and larger steps
+        # near the extremes. schedule_std=1 matches the training distribution exactly;
+        # as schedule_std -> inf the schedule approaches equidistant steps.
+        u = th.linspace(0, 1, num_steps + 1, device=audio.device)
+        t_nodes = (schedule_std * 2 ** 0.5 * th.special.erfinv(2 * u - 1)).sigmoid()
+        dt = t_nodes[1:] - t_nodes[:-1]
+
         # euler step
-        for t in tqdm.tqdm(
-            repeat(th.arange(num_steps, device=audio.device) / num_steps, 'n -> n b', b=x.size(0)),
+        for t, step in tqdm.tqdm(
+            zip(repeat(t_nodes[:-1], 'n -> n b', b=x.size(0)), dt),
+            total=num_steps,
             disable=not show_progress,
         ):
-            x = x + denoiser(x, t) / num_steps
+            x = x + denoiser(x, t) * step
 
         return x
