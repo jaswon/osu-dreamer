@@ -6,9 +6,12 @@ from numpy import ndarray
 
 def fit_arc(
     points: Float[ndarray, "2 L"],
-    max_err: float,
-) -> tuple[float, list[Int[ndarray, "2"]]] | None:
-    """fits an arc to points evenly spaced in time"""
+) -> tuple[float, float, list[Int[ndarray, "2"]]] | None:
+    """
+    fits an arc to points evenly spaced in time, returning its sum of squared
+    residuals, length and control points, or None if the points do not form a
+    valid (renderable) arc.
+    """
 
     if points.shape[1] < 3:
         return None
@@ -28,9 +31,6 @@ def fit_arc(
 
     center = np.array([cx, cy])
     radius = r_squared ** .5
-    radial_err = np.linalg.norm(points - center[:,None], axis=0) - radius
-    if (radial_err**2).max() > max_err:
-        return None
 
     start = points[:,0]
     end = points[:,-1]
@@ -49,9 +49,12 @@ def fit_arc(
     if np.count_nonzero(np.sign(deltas) != np.sign(sweep)) > len(deltas) * .25:
         return None
 
+    radial_err = np.linalg.norm(points - center[:,None], axis=0) - radius
+    sse = float((radial_err**2).sum())
+
     mid_angle = angles[0] + sweep / 2
     mid = center + radius * np.array([np.cos(mid_angle), np.sin(mid_angle)])
     length = abs(sweep) * radius
     ctrl_pts = np.column_stack([start, mid, end]).T.round().astype(int)
 
-    return length, list(ctrl_pts)
+    return sse, length, list(ctrl_pts)

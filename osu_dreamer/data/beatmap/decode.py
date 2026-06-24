@@ -1,16 +1,17 @@
 
 from dataclasses import dataclass, asdict
 
-from jaxtyping import Float, Int
+from jaxtyping import Float
+
+from tqdm import tqdm
 
 import numpy as np
-from numpy import ndarray
 
-from .fit_bezier import fit_bezier
-from .fit_arc import fit_arc
 from ..load_audio import get_frame_times
+
 from .encode import EncodedBeatmap, BeatmapEncoding, HitSignals, NUM_LABELS
 from .hit import decode_hit_signal
+from .slider.decode_slider import decode_slider
 
 @dataclass
 class Metadata:
@@ -54,36 +55,6 @@ SliderTickRate: 1
 {{hit_objects}}
 """      
 
-def decode_slider(
-    cursor_signal: Float[ndarray, "2 L"], 
-    start_idx: int, 
-    end_idx: int, 
-    num_repeats: int,
-) -> tuple[str, float, list[Int[ndarray, "2"]]]:
-    """
-    returns the slider's length and control points defined by
-    the cursor signal, start+end indices, and number of repeats
-    """
-
-    first_slide_idx = round(start_idx + (end_idx-start_idx) / num_repeats)
-
-    points = cursor_signal[:,start_idx:first_slide_idx+1]
-    arc = fit_arc(points, max_err=5.)
-    if arc is not None:
-        length, ctrl_pts = arc
-        return "P", length, ctrl_pts
-
-    ctrl_pts: list[Int[ndarray, "2"]] = []
-    length = 0.
-    path = fit_bezier(points, max_err=5.)
-    for i, seg in enumerate(path):
-        if (i==0 or i==len(path)-1) and seg.length < 15:
-            continue
-        ctrl_pts.extend(seg.p.T.round().astype(int))
-        length += seg.length
-    
-    return "B", length, ctrl_pts
-
 def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABELS}")], enc: EncodedBeatmap) -> str:
 
     frame_times = get_frame_times(enc.shape[1]).round().astype(int)
@@ -101,7 +72,7 @@ def decode_beatmap(metadata: Metadata, labels: Float[np.ndarray, str(f"{NUM_LABE
     slider_ts = []
     slider_vels = []
 
-    for hit in hits:
+    for hit in tqdm(hits):
         i, new_combo, whistle, finish, clap, *rest = hit
         t = frame_times[i]
         combo_bit = 2**2 if new_combo else 0
