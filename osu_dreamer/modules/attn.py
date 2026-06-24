@@ -74,8 +74,8 @@ class SDPSA(nn.Module):
     def forward(self, x: Float[Tensor, "B D L"], *args, **kwargs) -> Float[Tensor, "B D L"]:
         q,k,v = rearrange(self.qkv_proj(x), 'b (h d) n -> b h n d', d=self.head_dim).chunk(3, dim=1)
 
-        q = self.q_norm(q)
-        k = self.k_norm(k)
+        q = self.q_norm(q.float()).type_as(q)
+        k = self.k_norm(k.float()).type_as(k)
 
         q = rope(q)
         k = rope(k)
