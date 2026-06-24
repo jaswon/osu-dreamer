@@ -42,8 +42,7 @@ class Encoder(nn.Module):
                     nn.Conv1d(args.h_dim, args.h_dim, 2+stride,stride,1),
                 ]
             ),
-            nn.Conv1d(args.h_dim, d_emb, 1) if args.h_dim != d_emb else nn.Identity(),
-            nn.GroupNorm(1, d_emb, affine=False),
+            nn.Conv1d(args.h_dim, d_emb, 1) if d_emb > 0 else nn.Identity(),
         )
 
     def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B E l"]:

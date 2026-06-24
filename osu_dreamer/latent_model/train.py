@@ -36,6 +36,7 @@ class LatentTrainer(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
+        kl_weight: float,
 
         # model hparams
         emb_dim: int,
@@ -50,13 +51,14 @@ class LatentTrainer(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
+        self.kl_weight = kl_weight
 
         self.latent = LatentModel(emb_dim, n_downs, stride, latent_args)
     
     def forward(self, batch: Batch):
 
         audio, true_chart, true_labels = batch
-        pred_chart_logits, pred_labels = self.latent(audio, true_chart)
+        pred_chart_logits, pred_labels, kl_loss = self.latent(audio, true_chart)
 
         hit_loss = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
@@ -93,9 +95,10 @@ class LatentTrainer(pl.LightningModule):
         label_loss = F.mse_loss(pred_labels, true_labels, reduction='none').mean()
 
         losses = th.stack([ *hit_loss.unbind(), pos_loss, vel_loss, acc_loss, label_loss ])
-        loss = losses.sum()
+        loss = losses.sum() + self.kl_weight * kl_loss
         return loss, {
             **{ name: loss.detach() for name, loss in zip(LOSS_COMPONENTS, losses) },
+            "kl": kl_loss.detach(),
             "loss": loss.detach(),
         }
 
