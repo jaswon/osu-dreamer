@@ -78,6 +78,7 @@ class DiffusionTrainer(pl.LightningModule):
         xt = th.lerp(x0,x1,t[:,None,None])
 
         flow_mu, flow_logvar = self.posterior(true_flow)
+        flow_logvar = flow_logvar.clamp(-30., 20.)
         flow_latent = flow_mu + th.exp(0.5 * flow_logvar) * th.randn_like(flow_mu)
         kl_loss = (0.5 * (flow_mu.pow(2) + flow_logvar.exp() - 1.0 - flow_logvar)).sum(dim=1).mean()
 
