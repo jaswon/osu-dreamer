@@ -30,11 +30,13 @@ class BeatmapDataModule(pl.LightningDataModule):
         num_workers: int,
         val_size: float | int,
         data_path: str = "./data",
+        shuffle_buffer_size: int = 1,
     ):
         super().__init__()
         self.batch_size = batch_size
         self.seq_len = seq_len
         self.num_workers = num_workers
+        self.shuffle_buffer_size = shuffle_buffer_size
         
         # check if data dir exists
         self.data_dir = Path(data_path)
@@ -62,13 +64,13 @@ class BeatmapDataModule(pl.LightningDataModule):
         self.val_size = val_size
         
     def make_train_set(self, split) -> Dataset:
-        return BatchedSignalDataset(self.seq_len, split)
+        return BatchedSignalDataset(self.seq_len, split, self.shuffle_buffer_size)
     
     def make_val_set(self, split) -> Dataset:
         return SignalDataset(split)
             
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, persistent_workers=True)
+        return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, persistent_workers=True, drop_last=True)
     
     def val_dataloader(self):
         return DataLoader(self.val_set, batch_size=1, num_workers=self.num_workers, pin_memory=True, persistent_workers=True)
@@ -86,10 +88,22 @@ class BeatmapDataModule(pl.LightningDataModule):
     
 
 class SignalDataset(IterableDataset):
-    def __init__(self, dataset):
+    def __init__(self, dataset, shuffle_buffer_size: int = 1):
         super().__init__()
         self.dataset = dataset
-        
+        self.shuffle_buffer_size = shuffle_buffer_size
+
+    def _sample_stream(self, num_workers: int, worker_id: int) -> Iterator[Batch]:
+        dataset = sorted(self.dataset)
+        for i, map_file in random.sample(list(enumerate(dataset)), int(len(dataset))):
+            if i % num_workers != worker_id:
+                continue
+
+            try:
+                yield from self.make_samples(map_file, i)
+            finally:
+                reclaim_memory()
+
     def __iter__(self):
         worker_info = th.utils.data.get_worker_info() # type: ignore
         if worker_info is None:  
@@ -105,15 +119,22 @@ class SignalDataset(IterableDataset):
         
         random.seed(seed)
         
-        dataset = sorted(self.dataset)
-        for i, map_file in random.sample(list(enumerate(dataset)), int(len(dataset))):
-            if i % num_workers != worker_id:
+        stream = self._sample_stream(num_workers, worker_id)
+        if self.shuffle_buffer_size <= 1:
+            yield from stream
+            return
+
+        # shuffle buffer
+        buffer: list[Batch] = []
+        for sample in stream:
+            if len(buffer) < self.shuffle_buffer_size:
+                buffer.append(sample)
                 continue
-                
-            try:
-                yield from self.make_samples(map_file, i)
-            finally:
-                reclaim_memory()
+            j = random.randrange(len(buffer))
+            yield buffer[j]
+            buffer[j] = sample
+        random.shuffle(buffer)
+        yield from buffer
 
     def make_samples(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
         with open(map_file.parent / "spec.npy", "rb") as f:
@@ -126,8 +147,8 @@ class SignalDataset(IterableDataset):
 
 
 class BatchedSignalDataset(SignalDataset):
-    def __init__(self, seq_len: int, dataset):
-        super().__init__(dataset)
+    def __init__(self, seq_len: int, dataset, shuffle_buffer_size: int = 1):
+        super().__init__(dataset, shuffle_buffer_size)
         self.seq_len = seq_len
 
     def make_samples(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
@@ -145,4 +166,5 @@ class BatchedSignalDataset(SignalDataset):
             if th.rand(()) < 0.5:
                 chart_window[BeatmapEncoding.Y].mul_(-1).add_(1)
 
-            yield Batch(audio[...,i:i+self.seq_len], chart_window, labels)
+            # clone the audio window so the buffer doesn't pin the full spec
+            yield Batch(audio[...,i:i+self.seq_len].clone(), chart_window, labels)

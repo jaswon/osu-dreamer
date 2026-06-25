@@ -51,6 +51,10 @@ data:
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
     val_size: 256
+
+    # per-worker shuffle buffer (in windows); >1 decorrelates consecutive
+    # windows emitted from the same beatmap. 1 disables buffering.
+    shuffle_buffer_size: 512
     
 model:
     # validation parameters
