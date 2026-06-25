@@ -10,6 +10,7 @@ from osu_dreamer.data.load_audio import A_DIM
 
 from osu_dreamer.modules.spec_features import SpecFeatures
 from osu_dreamer.modules.ae import AEArgs, Encoder, Decoder
+from osu_dreamer.modules.derf import Derf
 
 from .label_predictor import LabelPredictor, LabelPredictorArgs
 
@@ -36,7 +37,7 @@ class LatentModel(nn.Module):
         self.encoder = Encoder(            X_DIM,      -1, n_downs, stride, args.ae_args)
         self.decoder = Decoder(args.a_dim, X_DIM, emb_dim, n_downs, stride, args.ae_args)
         self.latent_spec_features = SpecFeatures(A_DIM, args.a_dim)
-        self.mu     = nn.Conv1d(args.ae_args.h_dim, emb_dim, 1)
+        self.mu     = nn.Sequential(nn.Conv1d(args.ae_args.h_dim, emb_dim, 1), Derf(emb_dim, 1))
         self.logvar = nn.Conv1d(args.ae_args.h_dim, emb_dim, 1)
         self.label_predictor = LabelPredictor(emb_dim, NUM_LABELS, args.label_args)
 
