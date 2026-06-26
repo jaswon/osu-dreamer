@@ -69,7 +69,7 @@ model:
     schedule_args:
         warmup_init: .1
         warmup_steps: 2000
-        decay_start: 4000
+        decay_start: 10000
     label_drop_prob: .2
     kl_factor: .01
 
