@@ -8,9 +8,6 @@ import torch.nn.functional as F
 from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
 
-from torch import nn
-import torch.nn.functional as F
-
 Layer = lambda d_h, n: nn.Sequential(*(
     Res(nn.GroupNorm(1, d_h), SwiGLU(d_h))
     for _ in range(n)
