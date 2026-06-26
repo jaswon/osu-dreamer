@@ -19,7 +19,7 @@ class BackboneArgs:
 def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1, dilation: int = 1):
     h_dim = dim * expand
     return Res(nn.Sequential(
-        nn.GroupNorm(1, dim),
+        nn.GroupNorm(1, dim, affine=False),
         nn.Conv1d(dim, h_dim, 1),
         nn.SiLU(),
         nn.Conv1d(h_dim, h_dim, 1+2*radius, 1, radius*dilation, dilation, groups=h_dim // group_channels),
@@ -72,7 +72,7 @@ class BackboneLayer(nn.Module):
     ):
         super().__init__()
         self.op = op
-        self.pre_norm = nn.GroupNorm(1, dim)
+        self.pre_norm = nn.GroupNorm(1, dim, affine=False)
         
         if cond_g_dim > 0:
             self.ssg_global = nn.Linear(cond_g_dim, 3*dim)

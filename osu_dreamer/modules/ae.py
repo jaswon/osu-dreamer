@@ -114,7 +114,7 @@ class Decoder(nn.Module):
 class AudioFiLM(nn.Module):
     def __init__(self, dim: int, audio_dim: int):
         super().__init__()
-        self.norm = nn.GroupNorm(1, dim)
+        self.norm = nn.GroupNorm(1, dim, affine=False)
         self.proj = nn.Conv1d(audio_dim, dim*2, 1)
 
     def forward(
