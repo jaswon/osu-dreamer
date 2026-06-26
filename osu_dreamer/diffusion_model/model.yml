@@ -65,6 +65,7 @@ model:
     opt_args:
         lr: .0007
         weight_decay: 0.01
+        betas: [0.9, 0.95]
     schedule_args:
         warmup_init: .1
         warmup_steps: 2000
