@@ -73,7 +73,9 @@ class BackboneLayer(nn.Module):
     ):
         super().__init__()
         self.op = op
-        self.norm = Derf(dim, 1)
+        self.pre_norm = Derf(dim, 1)
+        self.post_norm = Derf(dim, 1)
+        
         if cond_g_dim > 0:
             self.ssg_global = nn.Linear(cond_g_dim, 3*dim)
 
@@ -98,7 +100,7 @@ class BackboneLayer(nn.Module):
         else:
             scale_l, shift_l, gate_l = self.ssg_local(cond_l).chunk(3, dim=1)
             
-        x = self.norm(x) * (1 + scale_l + scale_g) + (shift_l + shift_g)
+        x = self.pre_norm(x) * (1 + scale_l + scale_g) + (shift_l + shift_g)
         x = self.op(x)
-        x = x * (1 + gate_l + gate_g)
+        x = self.post_norm(x) * (1 + gate_l + gate_g)
         return res + x
