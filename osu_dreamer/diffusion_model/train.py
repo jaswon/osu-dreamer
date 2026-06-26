@@ -84,7 +84,7 @@ class DiffusionTrainer(pl.LightningModule):
         kl_loss = (0.5 * (flow_mu.pow(2) + flow_logvar.exp() - 1.0 - flow_logvar)).sum(dim=1).mean()
 
         pred_flow = self.diffusion.forward(audio, masked_labels, flow_latent, xt, t)
-        recon_loss = F.huber_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
+        recon_loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
 
         loss = recon_loss + self.kl_factor * kl_loss
         return loss, {
