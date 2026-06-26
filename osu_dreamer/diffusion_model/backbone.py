@@ -7,7 +7,6 @@ from torch import nn, Tensor
 from osu_dreamer.modules.res import Res
 
 from osu_dreamer.modules.attn import SDPSA
-from osu_dreamer.modules.derf import Derf
 from osu_dreamer.modules.swiglu import SwiGLU
 
 @dataclass
@@ -20,7 +19,7 @@ class BackboneArgs:
 def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1, dilation: int = 1):
     h_dim = dim * expand
     return Res(nn.Sequential(
-        Derf(dim, 1),
+        nn.GroupNorm(1, dim),
         nn.Conv1d(dim, h_dim, 1),
         nn.SiLU(),
         nn.Conv1d(h_dim, h_dim, 1+2*radius, 1, radius*dilation, dilation, groups=h_dim // group_channels),
@@ -47,7 +46,7 @@ class Backbone(nn.Module):
             BackboneLayer(dim, cond_l_dim, cond_g_dim, SwiGLU(dim, args.expand, args.dropout, radius=0))
             for _ in range(args.depth)
         ])
-        self.out_norm = Derf(dim, 1)
+        self.out_norm = nn.GroupNorm(1, dim)
 
     def forward(
         self,
@@ -73,7 +72,7 @@ class BackboneLayer(nn.Module):
     ):
         super().__init__()
         self.op = op
-        self.pre_norm = Derf(dim, 1)
+        self.pre_norm = nn.GroupNorm(1, dim)
         
         if cond_g_dim > 0:
             self.ssg_global = nn.Linear(cond_g_dim, 3*dim)

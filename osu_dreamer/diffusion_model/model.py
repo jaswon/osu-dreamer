@@ -17,7 +17,6 @@ from osu_dreamer.data.beatmap.encode import NUM_LABELS
 from osu_dreamer.modules.spec_features import SpecFeatures
 from osu_dreamer.modules.ae import AEArgs, Encoder
 from osu_dreamer.modules.fourier_features import FourierFeatures
-from osu_dreamer.modules.derf import Derf
 
 from .backbone import Backbone, BackboneArgs
 
@@ -48,7 +47,7 @@ class DiffusionModel(nn.Module):
         self.proj_audio = nn.Sequential(
             SpecFeatures(A_DIM, args.n_audio_features),
             Encoder(args.n_audio_features, args.n_audio_features, n_downs, stride, args.audio_encoder_args),
-            Derf(args.n_audio_features, 1),
+            nn.GroupNorm(1, args.n_audio_features),
         )
 
         self.proj_time = nn.Sequential(
