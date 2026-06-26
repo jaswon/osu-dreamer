@@ -6,14 +6,13 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from osu_dreamer.modules.res import Res
-from osu_dreamer.modules.derf import Derf
 from osu_dreamer.modules.swiglu import SwiGLU
 
 from torch import nn
 import torch.nn.functional as F
 
 Layer = lambda d_h, n: nn.Sequential(*(
-    Res(Derf(d_h, 1), SwiGLU(d_h))
+    Res(nn.GroupNorm(1, d_h), SwiGLU(d_h))
     for _ in range(n)
 ))
 
@@ -118,7 +117,7 @@ class Decoder(nn.Module):
 class AudioFiLM(nn.Module):
     def __init__(self, dim: int, audio_dim: int):
         super().__init__()
-        self.norm = Derf(dim, 1)
+        self.norm = nn.GroupNorm(1, dim)
         self.proj = nn.Conv1d(audio_dim, dim*2, 1)
 
     def forward(
