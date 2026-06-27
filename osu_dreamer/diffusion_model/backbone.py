@@ -28,8 +28,15 @@ def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1,
         nn.Conv1d(h_dim, dim, 1),
     ))
 
-def inv_rms(x, dim):
-    return x.float().pow(2).mean(dim=dim, keepdim=True).add(1e-6).rsqrt()
+class RMSNorm1d(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.gamma = nn.Parameter(th.randn(dim, 1))
+
+    def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
+        xf = x.float()
+        inv_rms = xf.pow(2).mean(dim=1, keepdim=True).add(1e-6).rsqrt()
+        return (xf * inv_rms).to(x.dtype) * self.gamma
 
 class Backbone(nn.Module):
     def __init__(
@@ -51,13 +58,9 @@ class Backbone(nn.Module):
                 for i in range(len(sublayers))
             ])
         
-        self.res_weights = nn.ParameterList([
-            nn.Parameter(th.zeros(dim))
-            for _ in range(args.depth)
-            for _ in sublayers
-        ])
+        L = len(sublayers) * args.depth
         self.layers = nn.ModuleList([
-            BackboneLayer(dim, cond_l_dim, cond_g_dim, sublayer())
+            BackboneLayer(L, dim, cond_l_dim, cond_g_dim, sublayer())
             for _ in range(args.depth)
             for sublayer in sublayers
         ])
@@ -70,38 +73,26 @@ class Backbone(nn.Module):
         cond_l: Float[Tensor, "B Cl L"] | None = None,
         cond_g: Float[Tensor, "B Cg"] | None = None,
     ) -> Float[Tensor, "B D L"]:
-        all_h = [x]
-        all_inv_rms = [inv_rms(x, 1)]
-        for i, (w, layer) in enumerate(zip(self.res_weights, self.layers)):
+        for i, layer in enumerate(self.layers):
             if cond_l is not None:
                 cond_l = self.cond_tower[i](cond_l)
-            h = layer(x, cond_l=cond_l, cond_g=cond_g)
-
-            all_h.append(h)
-            all_inv_rms.append(inv_rms(h, 1))
-            wf = w.float()
-            weights = th.stack([
-                inv * th.einsum('d,bdl->bl', wf, hk.float())[:,None]
-                for hk, inv in zip(all_h, all_inv_rms)
-            ]).softmax(dim=0).to(x.dtype)
-
-            x = th.tensor(0)
-            for wt, hk in zip(weights.unbind(0), all_h):
-                x = x + wt * hk
+            x = layer(x, cond_l=cond_l, cond_g=cond_g)
         return self.out_norm(x)
 
 class BackboneLayer(nn.Module):
     def __init__(
         self, 
+        alpha: int,
         dim: int,
         cond_l_dim: int,
         cond_g_dim: int, 
         op: nn.Module,
     ):
         super().__init__()
+        self.alpha = alpha
         self.op = op
-        self.pre_norm = nn.GroupNorm(1, dim)
-        self.post_norm = nn.GroupNorm(1, dim)
+        self.pre_norm = RMSNorm1d(dim)
+        self.post_norm = RMSNorm1d(dim)
         self.gate = nn.Parameter(th.zeros(dim, 1))
 
         if cond_g_dim > 0:
@@ -136,7 +127,7 @@ class BackboneLayer(nn.Module):
         scale = 1 + scale_l + scale_g
         gate = self.gate + gate_l + gate_g
 
+        res = x
         x = self.pre_norm(x) * scale + shift
-        x = self.op(x)
-        x = self.post_norm(x) * gate
-        return x
+        x = self.op(x) * gate
+        return self.post_norm(self.alpha * res + x)
