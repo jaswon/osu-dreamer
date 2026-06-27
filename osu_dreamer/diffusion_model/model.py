@@ -142,12 +142,16 @@ class DiffusionModel(nn.Module):
         t_nodes = (schedule_std * 2 ** 0.5 * th.special.erfinv(2 * u - 1)).sigmoid()
         dt = t_nodes[1:] - t_nodes[:-1]
 
-        # euler step
-        for t, step in tqdm.tqdm(
-            zip(repeat(t_nodes[:-1], 'n -> n b', b=x.size(0)), dt),
+        # heun step
+        t_curr = repeat(t_nodes[:-1], 'n -> n b', b=x.size(0))
+        t_next = repeat(t_nodes[1:],  'n -> n b', b=x.size(0))
+        for t0, t1, step in tqdm.tqdm(
+            zip(t_curr, t_next, dt),
             total=num_steps,
             disable=not show_progress,
         ):
-            x = x + denoiser(x, t) * step
+            v0 = denoiser(x, t0)
+            v1 = denoiser(x + v0 * step, t1)
+            x = x + 0.5 * (v0 + v1) * step
 
         return x

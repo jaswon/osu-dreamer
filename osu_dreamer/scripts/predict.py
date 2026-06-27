@@ -22,7 +22,7 @@ file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
 @click.option('--model-path',   type=file_option_type, required=True, help='inference artifact (.pt)')
 @click.option('--audio-file',   type=file_option_type, required=True, help='audio file to map')
 @click.option('--diff',         type=(float, float, float, float, float), multiple=True, help='difficulty conditioning (sr, ar, od, cs, hp)')
-@click.option('--sample-steps', type=int, default=4, help='number of diffusion steps to sample')
+@click.option('--sample-steps', type=int, default=8, help='number of diffusion steps to sample')
 @click.option('--title',        type=str, help='Song title - required if it cannot be determined from the audio metadata')
 @click.option('--artist',       type=str, help='Song artist - required if it cannot be determined from the audio metadata')
 def predict(
