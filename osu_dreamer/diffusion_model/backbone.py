@@ -102,12 +102,18 @@ class BackboneLayer(nn.Module):
         self.op = op
         self.pre_norm = nn.GroupNorm(1, dim)
         self.post_norm = nn.GroupNorm(1, dim)
+        self.gate = nn.Parameter(th.zeros(dim, 1))
 
         if cond_g_dim > 0:
             self.ssg_global = nn.Linear(cond_g_dim, 3*dim)
+            nn.init.zeros_(self.ssg_global.weight)
+            nn.init.zeros_(self.ssg_global.bias)
 
         if cond_l_dim > 0:
             self.ssg_local = nn.Conv1d(cond_l_dim, 3*dim, 1)
+            nn.init.zeros_(self.ssg_local.weight)
+            if self.ssg_local.bias is not None:
+                nn.init.zeros_(self.ssg_local.bias)
 
     def forward(
         self,
@@ -125,8 +131,12 @@ class BackboneLayer(nn.Module):
             scale_l, shift_l, gate_l = 0, 0, 0
         else:
             scale_l, shift_l, gate_l = self.ssg_local(cond_l).chunk(3, dim=1)
-            
-        x = self.pre_norm(x) * (1 + scale_l + scale_g) + (shift_l + shift_g)
+
+        shift = shift_l + shift_g
+        scale = 1 + scale_l + scale_g
+        gate = self.gate + gate_l + gate_g
+
+        x = self.pre_norm(x) * scale + shift
         x = self.op(x)
-        x = self.post_norm(x) * (1 + gate_l + gate_g)
+        x = self.post_norm(x) * gate
         return x
