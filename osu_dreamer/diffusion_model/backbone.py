@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from jaxtyping import Float
 
+import torch as th
 from torch import nn, Tensor
 
 from osu_dreamer.modules.res import Res
@@ -27,6 +28,9 @@ def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1,
         nn.Conv1d(h_dim, dim, 1),
     ))
 
+def inv_rms(x, dim):
+    return x.float().pow(2).mean(dim=dim, keepdim=True).add(1e-6).rsqrt()
+
 class Backbone(nn.Module):
     def __init__(
         self,
@@ -36,15 +40,26 @@ class Backbone(nn.Module):
         args: BackboneArgs,
     ):
         super().__init__()
+        sublayers = [
+            lambda: SDPSA(dim, args.head_dim),
+            lambda: SwiGLU(dim, args.expand, args.dropout, radius=0),
+        ]
         if cond_l_dim > 0:
-            self.cond_tower = nn.ModuleList([ resnext(cond_l_dim) for _ in range(args.depth) ])
-        self.attns = nn.ModuleList([
-            BackboneLayer(dim, cond_l_dim, cond_g_dim, SDPSA(dim, args.head_dim))
+            self.cond_tower = nn.ModuleList([
+                resnext(cond_l_dim) if i==0 else nn.Identity()
+                for _ in range(args.depth)
+                for i in range(len(sublayers))
+            ])
+        
+        self.res_weights = nn.ParameterList([
+            nn.Parameter(th.zeros(dim))
             for _ in range(args.depth)
+            for _ in sublayers
         ])
-        self.mlps = nn.ModuleList([
-            BackboneLayer(dim, cond_l_dim, cond_g_dim, SwiGLU(dim, args.expand, args.dropout, radius=0))
+        self.layers = nn.ModuleList([
+            BackboneLayer(dim, cond_l_dim, cond_g_dim, sublayer())
             for _ in range(args.depth)
+            for sublayer in sublayers
         ])
         self.out_norm = nn.GroupNorm(1, dim)
 
@@ -55,11 +70,24 @@ class Backbone(nn.Module):
         cond_l: Float[Tensor, "B Cl L"] | None = None,
         cond_g: Float[Tensor, "B Cg"] | None = None,
     ) -> Float[Tensor, "B D L"]:
-        for i, (attn, mlp) in enumerate(zip(self.attns, self.mlps)):
+        all_h = [x]
+        all_inv_rms = [inv_rms(x, 1)]
+        for i, (w, layer) in enumerate(zip(self.res_weights, self.layers)):
             if cond_l is not None:
                 cond_l = self.cond_tower[i](cond_l)
-            x = attn(x, cond_l=cond_l, cond_g=cond_g)
-            x = mlp(x, cond_l=cond_l, cond_g=cond_g)
+            h = layer(x, cond_l=cond_l, cond_g=cond_g)
+
+            all_h.append(h)
+            all_inv_rms.append(inv_rms(h, 1))
+            wf = w.float()
+            weights = th.stack([
+                inv * th.einsum('d,bdl->bl', wf, hk.float())[:,None]
+                for hk, inv in zip(all_h, all_inv_rms)
+            ]).softmax(dim=0).to(x.dtype)
+
+            x = th.tensor(0)
+            for wt, hk in zip(weights.unbind(0), all_h):
+                x = x + wt * hk
         return self.out_norm(x)
 
 class BackboneLayer(nn.Module):
@@ -88,7 +116,6 @@ class BackboneLayer(nn.Module):
         cond_l: Float[Tensor, "B Cl L"] | None = None,
         cond_g: Float[Tensor, "B Cg"] | None = None,
     ) -> Float[Tensor, "B X L"]:
-        res = x
         if cond_g is None:
             scale_g, shift_g, gate_g = 0, 0, 0
         else:
@@ -102,4 +129,4 @@ class BackboneLayer(nn.Module):
         x = self.pre_norm(x) * (1 + scale_l + scale_g) + (shift_l + shift_g)
         x = self.op(x)
         x = self.post_norm(x) * (1 + gate_l + gate_g)
-        return res + x
+        return x
