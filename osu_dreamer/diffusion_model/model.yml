@@ -77,22 +77,24 @@ model:
     latent_model_ckpt: latent.ckpt
     flow_latent_dim: 16
     posterior_args:
-        backbone_dim: 512
+        backbone_dim: 384
         backbone_args: 
-            head_dim: 64
-            depth: 4
+            head_dim: 32
+            depth: 16
             expand: 4
 
     diffusion_args:
         noise_level_features: 256
-        n_audio_features: 256
         global_cond_h: 512
         global_cond_dim: 256
-        backbone_dim: 512
+
+        backbone_dim: 384
         backbone_args:
-            head_dim: 64
-            depth: 16
+            head_dim: 32
+            depth: 32
             expand: 4
+
+        n_audio_features: 256
         audio_encoder_args: 
             h_dim: 256
             n_layers: 3
