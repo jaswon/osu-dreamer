@@ -77,31 +77,22 @@ class LatentTrainer(pl.LightningModule):
             reduction='none',
         ).mul(1 + 9 * true_chart[:,HitSignals]).mean(dim=(0,2))
 
-        hitting = th.max(true_chart[:, [
-            BeatmapEncoding.ONSET,
-            BeatmapEncoding.SUSTAIN,
-        ]], dim=1, keepdim=True).values
-        hitting_w = 1 + 9 * hitting
-
         cursor_diff_factor = 10
 
         pos_loss = cursor_diff_factor ** 0 * F.mse_loss(
             pred_chart_logits[:,CursorSignals],
             true_chart[:,CursorSignals],
-            reduction='none',
-        ).mul(hitting_w).mean()
+        )
 
         vel_loss = cursor_diff_factor ** 1 * F.mse_loss(
             pred_chart_logits[:,CursorSignals].diff(n=1),
             true_chart[:,CursorSignals].diff(n=1),
-            reduction='none',
-        ).mul(hitting_w[:,:,:-1]).mean()
+        )
 
         acc_loss = cursor_diff_factor ** 2 * F.mse_loss(
             pred_chart_logits[:,CursorSignals].diff(n=2),
             true_chart[:,CursorSignals].diff(n=2),
-            reduction='none',
-        ).mul(hitting_w[:,:,1:-1]).mean()
+        )
 
         label_loss = F.mse_loss(pred_labels, true_labels, reduction='none').mean()
 
