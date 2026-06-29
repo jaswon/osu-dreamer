@@ -34,7 +34,7 @@ trainer:
     enable_model_summary: true
 
     # val_check_interval: { "minutes": 10 }
-    # check_val_every_n_epoch: null
+    check_val_every_n_epoch: 32
 
     gradient_clip_val: 1.
     
@@ -51,6 +51,9 @@ data:
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
     val_size: 256
+
+    # number of samples to take per map
+    max_per_map: 1
     
 model:
     # training parameters
@@ -61,6 +64,8 @@ model:
         warmup_init: .1
         warmup_steps: 2000
     z_reg_weight: .1
+    contrastive_weight: .1
+    contrastive_temperature: .1
 
     # model hyperparameters
     emb_dim: 16
