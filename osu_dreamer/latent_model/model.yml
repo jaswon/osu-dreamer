@@ -60,7 +60,7 @@ model:
     schedule_args:
         warmup_init: .1
         warmup_steps: 2000
-    kl_weight: .001
+    z_reg_weight: .1
 
     # model hyperparameters
     emb_dim: 16

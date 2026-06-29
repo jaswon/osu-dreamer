@@ -4,6 +4,8 @@ from typing import Any
 import torch as th
 import torch.nn.functional as F
 
+from einops import rearrange
+
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -14,6 +16,7 @@ from osu_dreamer.data.plot import plot_signals
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from .model import LatentModel, LatentModelArgs
+from .sigreg import sigreg_weak_loss
 
 LOSS_COMPONENTS = (
     "hit/onset",
@@ -36,7 +39,7 @@ class LatentTrainer(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
-        kl_weight: float,
+        z_reg_weight: float,
 
         # model hparams
         emb_dim: int,
@@ -51,14 +54,16 @@ class LatentTrainer(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
-        self.kl_weight = kl_weight
+        self.z_reg_weight = z_reg_weight
 
         self.latent = LatentModel(emb_dim, n_downs, stride, latent_args)
     
     def forward(self, batch: Batch):
 
         audio, true_chart, true_labels = batch
-        pred_chart_logits, pred_labels, kl_loss = self.latent(audio, true_chart)
+        z, pred_chart_logits, pred_labels = self.latent(audio, true_chart)
+
+        z_reg_loss = sigreg_weak_loss(rearrange(z, 'b d l -> (b l) d'))
 
         hit_loss = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
@@ -95,10 +100,10 @@ class LatentTrainer(pl.LightningModule):
         label_loss = F.mse_loss(pred_labels, true_labels, reduction='none').mean()
 
         losses = th.stack([ *hit_loss.unbind(), pos_loss, vel_loss, acc_loss, label_loss ])
-        loss = losses.sum() + self.kl_weight * kl_loss
+        loss = losses.sum() + self.z_reg_weight * z_reg_loss
         return loss, {
             **{ name: loss.detach() for name, loss in zip(LOSS_COMPONENTS, losses) },
-            "kl": kl_loss.detach(),
+            "z_reg": z_reg_loss.detach(),
             "loss": loss.detach(),
         }
 
