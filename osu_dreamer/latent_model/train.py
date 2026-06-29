@@ -77,26 +77,17 @@ class LatentTrainer(pl.LightningModule):
             reduction='none',
         ).mul(1 + 9 * true_chart[:,HitSignals]).mean(dim=(0,2))
 
-        cursor_diff_factor = 10
-
-        pos_loss = cursor_diff_factor ** 0 * F.mse_loss(
-            pred_chart_logits[:,CursorSignals],
-            true_chart[:,CursorSignals],
-        )
-
-        vel_loss = cursor_diff_factor ** 1 * F.mse_loss(
-            pred_chart_logits[:,CursorSignals].diff(n=1),
-            true_chart[:,CursorSignals].diff(n=1),
-        )
-
-        acc_loss = cursor_diff_factor ** 2 * F.mse_loss(
-            pred_chart_logits[:,CursorSignals].diff(n=2),
-            true_chart[:,CursorSignals].diff(n=2),
-        )
+        cursor_losses = [
+            F.mse_loss(
+                pred_chart_logits[:,CursorSignals].diff(n=i),
+                true_chart[:,CursorSignals].diff(n=i),
+            ) * 10 ** (i+1)
+            for i in range(3)
+        ]
 
         label_loss = F.mse_loss(pred_labels, true_labels, reduction='none').mean()
 
-        losses = th.stack([ *hit_loss.unbind(), pos_loss, vel_loss, acc_loss, label_loss ])
+        losses = th.stack([ *hit_loss.unbind(), *cursor_losses, label_loss ])
         loss = (
             losses.sum()
             + self.z_reg_weight * z_reg_loss
