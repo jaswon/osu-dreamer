@@ -31,12 +31,14 @@ class BeatmapDataModule(pl.LightningDataModule):
         val_size: float | int,
         data_path: str = "./data",
         shuffle_buffer_size: int = 1,
+        max_per_map: int = -1,
     ):
         super().__init__()
         self.batch_size = batch_size
         self.seq_len = seq_len
         self.num_workers = num_workers
         self.shuffle_buffer_size = shuffle_buffer_size
+        self.max_per_map = max_per_map
         
         # check if data dir exists
         self.data_dir = Path(data_path)
@@ -64,7 +66,7 @@ class BeatmapDataModule(pl.LightningDataModule):
         self.val_size = val_size
         
     def make_train_set(self, split) -> Dataset:
-        return BatchedSignalDataset(self.seq_len, split, self.shuffle_buffer_size)
+        return BatchedSignalDataset(self.seq_len, split, self.shuffle_buffer_size, self.max_per_map)
     
     def make_val_set(self, split) -> Dataset:
         return SignalDataset(split)
@@ -147,9 +149,16 @@ class SignalDataset(IterableDataset):
 
 
 class BatchedSignalDataset(SignalDataset):
-    def __init__(self, seq_len: int, dataset, shuffle_buffer_size: int = 1):
+    def __init__(
+        self, 
+        seq_len: int, 
+        dataset, 
+        shuffle_buffer_size: int = 1,
+        max_per_map: int = -1, 
+    ):
         super().__init__(dataset, shuffle_buffer_size)
         self.seq_len = seq_len
+        self.max_per_map = max_per_map if max_per_map > 0 else float('inf')
 
     def make_samples(self, map_file: Path, map_idx: int) -> Iterator[Batch]:
         audio,chart,labels = next(super().make_samples(map_file, map_idx))
@@ -157,7 +166,9 @@ class BatchedSignalDataset(SignalDataset):
         if offset_end < 1:
             return
         offset_start = th.randint(0, min(self.seq_len, offset_end), ()).item()
-        for i in th.arange(offset_start, offset_end, self.seq_len):
+        idxs = th.arange(offset_start, offset_end, self.seq_len)
+        idxs = idxs[th.randperm(len(idxs))[:min(self.max_per_map, len(idxs))]]
+        for i in idxs:
             chart_window = chart[...,i:i+self.seq_len].clone()
             
             # flip augment
