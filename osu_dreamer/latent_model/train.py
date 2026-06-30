@@ -9,7 +9,7 @@ from einops import rearrange
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from osu_dreamer.data.beatmap.encode import BeatmapEncoding, HitSignals, CursorSignals
+from osu_dreamer.data.beatmap.encode import HitSignals, CursorSignals
 from osu_dreamer.data.module import Batch
 from osu_dreamer.data.plot import plot_signals
 
@@ -17,7 +17,6 @@ from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from .model import LatentModel, LatentModelArgs
 from .sigreg import sigreg_weak_loss
-from .contrastive import batch_contrastive_loss
 
 LOSS_COMPONENTS = (
     "hit/onset",
@@ -41,8 +40,6 @@ class LatentTrainer(pl.LightningModule):
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
         z_reg_weight: float,
-        contrastive_weight: float,
-        contrastive_temperature: float,
 
         # model hparams
         emb_dim: int,
@@ -58,8 +55,6 @@ class LatentTrainer(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
         self.z_reg_weight = z_reg_weight
-        self.contrastive_weight = contrastive_weight
-        self.contrastive_temperature = contrastive_temperature
 
         self.latent = LatentModel(emb_dim, n_downs, stride, latent_args)
     
@@ -69,7 +64,6 @@ class LatentTrainer(pl.LightningModule):
         z, pred_chart_logits, pred_labels = self.latent(audio, true_chart)
 
         z_reg_loss = sigreg_weak_loss(rearrange(z, 'b d l -> (b l) d'))
-        contrastive_loss = batch_contrastive_loss(z, self.contrastive_temperature)
 
         hit_loss = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
@@ -91,12 +85,10 @@ class LatentTrainer(pl.LightningModule):
         loss = (
             losses.sum()
             + self.z_reg_weight * z_reg_loss
-            + self.contrastive_weight * contrastive_loss
         )
         return loss, {
             **{ name: loss.detach() for name, loss in zip(LOSS_COMPONENTS, losses) },
             "z_reg": z_reg_loss.detach(),
-            "contrastive": contrastive_loss.detach(),
             "loss": loss.detach(),
         }
 
