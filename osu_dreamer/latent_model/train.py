@@ -69,7 +69,7 @@ class LatentTrainer(pl.LightningModule):
             pred_chart_logits[:,HitSignals],
             true_chart[:,HitSignals],
             reduction='none',
-        ).mul(1 + 9 * true_chart[:,HitSignals]).mean(dim=(0,2))
+        ).mean(dim=(0,2))
 
         cursor_losses = [
             F.mse_loss(
@@ -79,7 +79,7 @@ class LatentTrainer(pl.LightningModule):
             for i in range(3)
         ]
 
-        label_loss = F.mse_loss(pred_labels, true_labels, reduction='none').mean()
+        label_loss = F.mse_loss(pred_labels, true_labels)
 
         losses = th.stack([ *hit_loss.unbind(), *cursor_losses, label_loss ])
         loss = (
