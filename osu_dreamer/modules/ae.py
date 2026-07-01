@@ -13,7 +13,7 @@ from osu_dreamer.modules.rms_norm import RMSNorm1d
 
 Layer = lambda d_h, n: nn.Sequential(*(
     layer for _ in range(n)
-    for layer in [ Res(SwiGLU(d_h)), RMSNorm1d(d_h) ] # post ln
+    for layer in [ Res(RMSNorm1d(d_h), SwiGLU(d_h), alpha=n), RMSNorm1d(d_h) ] # keel
 ))
 
 @dataclass

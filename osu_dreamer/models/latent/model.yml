@@ -74,7 +74,7 @@ model:
         a_dim: 16
         ae_args:
             h_dim: 128
-            n_layers: 4
+            n_layers: 8
         label_args:
             h_dim: 256
             grad_factor: .1
