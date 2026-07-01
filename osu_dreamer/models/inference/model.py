@@ -9,8 +9,8 @@ from torch import nn, Tensor
 from osu_dreamer.data.beatmap.encode import NUM_LABELS, X_DIM
 from osu_dreamer.data.load_audio import A_DIM
 
-from osu_dreamer.diffusion_model.model import DiffusionModel, DiffusionModelArgs
-from osu_dreamer.latent_model.model import LatentModel, LatentModelArgs
+from osu_dreamer.models.diffusion.model import DiffusionModel, DiffusionModelArgs
+from osu_dreamer.models.latent.model import LatentModel, LatentModelArgs
 
 @dataclass
 class LDMArgs:

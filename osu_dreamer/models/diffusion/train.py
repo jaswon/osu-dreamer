@@ -18,7 +18,7 @@ from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
-from osu_dreamer.latent_model.train import LatentTrainer
+from osu_dreamer.models.latent.train import LatentTrainer
 
 from .model import DiffusionModel, DiffusionModelArgs
 from .posterior import FlowPosterior, FlowPosteriorArgs

@@ -1,7 +1,7 @@
 
 import click
 
-from osu_dreamer.inference.artifact import save_inference
+from osu_dreamer.models.inference.artifact import save_inference
 
 @click.command()
 @click.option(     '--latent-ckpt-path', type=click.Path(exists= True, dir_okay=False), default='latent.ckpt', help='path to the latent checkpoint')

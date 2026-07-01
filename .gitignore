@@ -9,7 +9,6 @@ runs*/
 *.pt
 *.ipynb
 build/
-osu_dreamer/models
 /audio/
 .vscode/settings.json
 .env

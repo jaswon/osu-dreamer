@@ -8,11 +8,11 @@ from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from pytorch_lightning import Trainer
 
 from osu_dreamer.data.module import BeatmapDataModule
-from osu_dreamer.latent_model.train import LatentTrainer
+from osu_dreamer.models.latent.train import LatentTrainer
 
 file_option_type = click.Path(exists=True, dir_okay=False)
 
-default_config_path = './osu_dreamer/latent_model/model.yml'
+default_config_path = './osu_dreamer/models/latent/model.yml'
 
 @click.command()
 @click.option('-c', '--config', type=file_option_type, default=default_config_path, help='config file')

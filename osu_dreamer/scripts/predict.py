@@ -13,7 +13,7 @@ import click
 from osu_dreamer.data.load_audio import make_spec
 from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
 
-from osu_dreamer.inference.artifact import load_inference
+from osu_dreamer.models.inference.artifact import load_inference
 
 
 file_option_type = click.Path(exists=True, dir_okay=False, path_type=Path)
