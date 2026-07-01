@@ -5,12 +5,15 @@ from jaxtyping import Float
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+from einops import repeat
+
 from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
+from osu_dreamer.modules.rms_norm import RMSNorm1d
 
 Layer = lambda d_h, n: nn.Sequential(*(
-    Res(nn.GroupNorm(1, d_h), SwiGLU(d_h))
-    for _ in range(n)
+    layer for _ in range(n)
+    for layer in [ Res(SwiGLU(d_h)), RMSNorm1d(d_h) ] # post ln
 ))
 
 @dataclass
@@ -59,36 +62,16 @@ class Decoder(nn.Module):
         args: AEArgs,
     ):
         super().__init__()
+        self.stride = stride
         self.chunk_size = stride ** n_downs
 
-        self.downs = nn.ModuleList([
-            nn.Sequential(
-                Layer(d_a, args.n_layers),
-                nn.Conv1d(d_a, d_a, 2+stride,stride,1),
-            )
-            for _ in range(n_downs-1)
-        ])
+        self.proj_in = nn.Conv1d(d_a, args.h_dim, 1) if d_a != args.h_dim else nn.Identity()
+        self.proj_out = nn.Conv1d(args.h_dim, d_x, 1) if d_x != args.h_dim else nn.Identity()
 
-        self.proj_in = nn.Conv1d(d_emb, args.h_dim, 1) if d_emb != args.h_dim else nn.Identity()
-        self.proj_out = nn.Conv1d(args.h_dim, d_x, 1)
+        self.downs = nn.ModuleList([ Layer(args.h_dim, args.n_layers) for _ in range(n_downs) ])
+        self.ups = nn.ModuleList([ Layer(args.h_dim, args.n_layers) for _ in range(n_downs) ])
 
-        self.ups = nn.ModuleList([
-            nn.Sequential(
-                nn.Upsample(scale_factor=stride),
-                nn.Conv1d(args.h_dim, args.h_dim, 1+2*(stride//2+1),1,stride//2+1),
-            )
-            for _ in range(n_downs)
-        ])
-
-        self.mixes = nn.ModuleList([
-            AudioFiLM(args.h_dim, d_a)
-            for _ in range(n_downs)
-        ])
-
-        self.layers = nn.ModuleList([
-            Layer(args.h_dim, args.n_layers)
-            for _ in range(n_downs)
-        ])
+        self.mix = AdaLN1d(args.h_dim, d_emb)
 
     def forward(
         self,
@@ -101,26 +84,32 @@ class Decoder(nn.Module):
         if pad > 0:
             a = F.pad(a, (0, pad), mode='replicate')
 
-        fs = [a]
+        a = self.proj_in(a)
+
+        fs = []
         for down in self.downs:
-            fs.append(down(fs[-1]))
+            a_h = down(a)
+            a = a_h.unflatten(-1, (-1, self.stride)).mean(dim=-1)
+            fs.append(a_h - repeat(a, 'b d l -> b d (l r)', r=self.stride))
         
-        h = self.proj_in(h)
-        for up, mix, layer in zip(self.ups, self.mixes, self.layers):
-            h = layer(mix(up(h), fs.pop()))
+        h = self.mix(a, h)
+
+        for up in self.ups:
+            h = up(fs.pop() + repeat(h, 'b d l -> b d (l r)', r=self.stride))
+
         return self.proj_out(h)[:,:,:L]
 
     
-class AudioFiLM(nn.Module):
-    def __init__(self, dim: int, audio_dim: int):
+class AdaLN1d(nn.Module):
+    def __init__(self, dim: int, cond_dim: int):
         super().__init__()
         self.norm = nn.GroupNorm(1, dim, affine=False)
-        self.proj = nn.Conv1d(audio_dim, dim*2, 1)
+        self.proj = nn.Conv1d(cond_dim, dim*2, 1)
 
     def forward(
         self,
-        x: Float[Tensor, "B D L"],
-        a: Float[Tensor, "B A L"],
-    ) -> Float[Tensor, "B D L"]:
-        scale, shift = self.proj(a).chunk(2, dim=1)
+        x: Float[Tensor, "B X L"],
+        c: Float[Tensor, "B C L"],
+    ) -> Float[Tensor, "B X L"]:
+        scale, shift = self.proj(c).chunk(2, dim=1)
         return self.norm(x) * (1 + scale) + shift
