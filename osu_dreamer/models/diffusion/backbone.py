@@ -9,6 +9,7 @@ from osu_dreamer.modules.res import Res
 
 from osu_dreamer.modules.attn import SDPSA
 from osu_dreamer.modules.swiglu import SwiGLU
+from osu_dreamer.modules.rms_norm import RMSNorm1d
 
 @dataclass
 class BackboneArgs:
@@ -27,16 +28,6 @@ def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1,
         nn.SiLU(),
         nn.Conv1d(h_dim, dim, 1),
     ))
-
-class RMSNorm1d(nn.Module):
-    def __init__(self, dim: int):
-        super().__init__()
-        self.gamma = nn.Parameter(th.randn(dim, 1))
-
-    def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
-        xf = x.float()
-        inv_rms = xf.pow(2).mean(dim=1, keepdim=True).add(1e-6).rsqrt()
-        return (xf * inv_rms).to(x.dtype) * self.gamma
 
 class Backbone(nn.Module):
     def __init__(
