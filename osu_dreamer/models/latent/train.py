@@ -64,7 +64,7 @@ class LatentTrainer(pl.LightningModule):
             pred_chart_logits[:,HitSignals],
             true_chart[:,HitSignals],
             reduction='none',
-        ).mean(dim=(0,2))
+        ).mul(1 + 9 * true_chart[:,HitSignals]).mean(dim=(0,2))
 
         cursor_losses = [
             F.mse_loss(
