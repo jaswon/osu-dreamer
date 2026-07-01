@@ -9,7 +9,7 @@ from osu_dreamer.modules.res import Res
 
 from osu_dreamer.modules.attn import SDPSA
 from osu_dreamer.modules.swiglu import SwiGLU
-from osu_dreamer.modules.rms_norm import RMSNorm1d
+from osu_dreamer.modules.rms_norm import RMSNorm
 
 @dataclass
 class BackboneArgs:
@@ -21,7 +21,7 @@ class BackboneArgs:
 def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1, dilation: int = 1):
     h_dim = dim * expand
     return Res(nn.Sequential(
-        nn.GroupNorm(1, dim, affine=False),
+        RMSNorm(dim, affine=False),
         nn.Conv1d(dim, h_dim, 1),
         nn.SiLU(),
         nn.Conv1d(h_dim, h_dim, 1+2*radius, 1, radius*dilation, dilation, groups=h_dim // group_channels),
@@ -55,7 +55,7 @@ class Backbone(nn.Module):
             for _ in range(args.depth)
             for sublayer in sublayers
         ])
-        self.out_norm = nn.GroupNorm(1, dim)
+        self.out_norm = RMSNorm(dim)
 
     def forward(
         self,
@@ -82,8 +82,8 @@ class BackboneLayer(nn.Module):
         super().__init__()
         self.alpha = alpha
         self.op = op
-        self.pre_norm = RMSNorm1d(dim)
-        self.post_norm = RMSNorm1d(dim)
+        self.pre_norm = RMSNorm(dim)
+        self.post_norm = RMSNorm(dim)
         self.gate = nn.Parameter(th.zeros(dim, 1))
 
         if cond_g_dim > 0:

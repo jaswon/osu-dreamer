@@ -5,6 +5,8 @@ from torch import nn, Tensor
 
 from einops.layers.torch import Rearrange
 
+from .rms_norm import RMSNorm
+
 
 class SpecFeatures(nn.Module):
     def __init__(
@@ -16,14 +18,14 @@ class SpecFeatures(nn.Module):
         self.net = nn.Sequential(
             nn.Unflatten(1, (1, -1)),
             nn.Conv2d(1, 8, (8,3), (6,1), (1,1), bias=False),
-            nn.GroupNorm(1, 8),
+            RMSNorm(8),
             nn.SiLU(),
             nn.Conv2d(8, 32, (6,3), (4,1), (1,1), bias=False),
-            nn.GroupNorm(1, 32),
+            RMSNorm(32),
             nn.SiLU(),
             Rearrange('b c a l -> b (c a) l'),
             nn.Conv1d(32*(n_freqs//24), d_a, 1, bias=False),
-            nn.GroupNorm(1, d_a),
+            RMSNorm(d_a),
             nn.SiLU(),
         )
 

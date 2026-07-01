@@ -4,6 +4,8 @@ from jaxtyping import Float
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+from .rms_norm import RMSNorm
+
 class SwiGLU(nn.Module):
     def __init__(
         self, 
@@ -16,7 +18,7 @@ class SwiGLU(nn.Module):
         h_dim = int(dim * expand * 2/3)
         self.proj_vg = nn.Conv1d(dim, 2*h_dim, 1+2*radius,1,radius)
         self.dropout = nn.Dropout1d(dropout)
-        self.norm = nn.GroupNorm(1, h_dim, affine=False)
+        self.norm = RMSNorm(h_dim, affine=False)
         self.proj_o = nn.Conv1d(h_dim, dim, 1)
 
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:

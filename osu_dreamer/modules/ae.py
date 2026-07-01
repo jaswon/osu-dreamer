@@ -9,11 +9,11 @@ from einops import repeat
 
 from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
-from osu_dreamer.modules.rms_norm import RMSNorm1d
+from osu_dreamer.modules.rms_norm import RMSNorm
 
 Layer = lambda d_h, n: nn.Sequential(*(
     layer for _ in range(n)
-    for layer in [ Res(RMSNorm1d(d_h), SwiGLU(d_h), alpha=n), RMSNorm1d(d_h) ] # keel
+    for layer in [ Res(RMSNorm(d_h), SwiGLU(d_h), alpha=n), RMSNorm(d_h) ] # keel
 ))
 
 @dataclass
@@ -103,7 +103,7 @@ class Decoder(nn.Module):
 class AdaLN1d(nn.Module):
     def __init__(self, dim: int, cond_dim: int):
         super().__init__()
-        self.norm = nn.GroupNorm(1, dim, affine=False)
+        self.norm = RMSNorm(dim, affine=False)
         self.proj = nn.Conv1d(cond_dim, dim*2, 1)
 
     def forward(
