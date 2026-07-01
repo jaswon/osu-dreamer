@@ -33,8 +33,10 @@ class LatentModel(nn.Module):
         self.stride = stride
         self.chunk_size = stride ** n_downs
 
-        self.encoder = Encoder(            X_DIM, emb_dim, n_downs, stride, args.ae_args)
+        self.encoder = Encoder(            X_DIM,      -1, n_downs, stride, args.ae_args)
         self.decoder = Decoder(args.a_dim, X_DIM, emb_dim, n_downs, stride, args.ae_args)
+        self.mu = nn.Conv1d(args.ae_args.h_dim, emb_dim, 1)
+        self.logvar = nn.Conv1d(args.ae_args.h_dim, emb_dim, 1)
         self.latent_spec_features = SpecFeatures(A_DIM, args.a_dim)
         self.label_predictor = LabelPredictor(emb_dim, NUM_LABELS, args.label_args)
 
@@ -43,13 +45,17 @@ class LatentModel(nn.Module):
         audio: Float[Tensor, str(f"B {A_DIM} L")],
         true_chart: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> tuple[
-        Float[Tensor, "B D l"], 
+        Float[Tensor, ""], 
         Float[Tensor, str(f"B {X_DIM} L")], 
         Float[Tensor, str(f"B {NUM_LABELS}")],
     ]:
-        z = self.encoder(true_chart)
+        h = self.encoder(true_chart)
+        mu, logvar = self.mu(h), self.logvar(h)
+        z_reg_loss = 0.5 * (mu.pow(2) + logvar.exp() - 1.0 - logvar).sum(dim=1).mean()
+
+        z = mu + th.exp(0.5 * logvar) * th.randn_like(mu)
         return (
-            z,
+            z_reg_loss,
             self.decoder(self.latent_spec_features(audio), z),
             self.label_predictor(z),
         )
@@ -59,7 +65,7 @@ class LatentModel(nn.Module):
         self,
         chart: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> Float[Tensor, "B D l"]:
-        return self.encoder(chart)
+        return self.mu(self.encoder(chart))
     
     @th.no_grad
     def decode(

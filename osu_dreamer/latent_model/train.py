@@ -4,8 +4,6 @@ from typing import Any
 import torch as th
 import torch.nn.functional as F
 
-from einops import rearrange
-
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -16,7 +14,6 @@ from osu_dreamer.data.plot import plot_signals
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from .model import LatentModel, LatentModelArgs
-from .sigreg import sigreg_weak_loss
 
 LOSS_COMPONENTS = (
     "hit/onset",
@@ -61,9 +58,7 @@ class LatentTrainer(pl.LightningModule):
     def forward(self, batch: Batch):
 
         audio, true_chart, true_labels = batch
-        z, pred_chart_logits, pred_labels = self.latent(audio, true_chart)
-
-        z_reg_loss = sigreg_weak_loss(rearrange(z, 'b d l -> (b l) d'))
+        z_reg_loss, pred_chart_logits, pred_labels = self.latent(audio, true_chart)
 
         hit_loss = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
