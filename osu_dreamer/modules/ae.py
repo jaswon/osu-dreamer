@@ -11,8 +11,8 @@ from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
 from osu_dreamer.modules.rms_norm import RMSNorm
 
-Layer = lambda d_h, n: nn.Sequential(*(
-    Res(RMSNorm(d_h), SwiGLU(d_h), RMSNorm(d_h)) # peri-ln
+Layer = lambda d_h, n, r: nn.Sequential(*(
+    Res(RMSNorm(d_h), SwiGLU(d_h, radius=r), RMSNorm(d_h)) # peri-ln
     for _ in range(n)
 ), RMSNorm(d_h))
 
@@ -20,6 +20,7 @@ Layer = lambda d_h, n: nn.Sequential(*(
 class AEArgs:
     h_dim: int
     n_layers: int
+    radius: int = 1
 
 class Encoder(nn.Module):
     def __init__(
@@ -37,7 +38,7 @@ class Encoder(nn.Module):
             *(
                 layer for _ in range(n_downs)
                 for layer in [
-                    Layer(args.h_dim, args.n_layers),
+                    Layer(args.h_dim, args.n_layers, args.radius),
                     nn.Conv1d(args.h_dim, args.h_dim, 2+stride,stride,1),
                 ]
             ),
@@ -68,8 +69,8 @@ class Decoder(nn.Module):
         self.proj_in = nn.Conv1d(d_a, args.h_dim, 1) if d_a != args.h_dim else nn.Identity()
         self.proj_out = nn.Conv1d(args.h_dim, d_x, 1) if d_x != args.h_dim else nn.Identity()
 
-        self.downs = nn.ModuleList([ Layer(args.h_dim, args.n_layers) for _ in range(n_downs) ])
-        self.ups = nn.ModuleList([ Layer(args.h_dim, args.n_layers) for _ in range(n_downs) ])
+        self.downs = nn.ModuleList([ Layer(args.h_dim, args.n_layers, args.radius) for _ in range(n_downs) ])
+        self.ups = nn.ModuleList([ Layer(args.h_dim, args.n_layers, args.radius) for _ in range(n_downs) ])
 
         self.mixers = nn.ModuleList([ AdaLN1d(args.h_dim, d_emb) for _ in range(n_downs) ])
 
