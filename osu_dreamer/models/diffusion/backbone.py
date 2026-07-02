@@ -49,9 +49,8 @@ class Backbone(nn.Module):
                 for i in range(len(sublayers))
             ])
         
-        L = len(sublayers) * args.depth
         self.layers = nn.ModuleList([
-            BackboneLayer(L, dim, cond_l_dim, cond_g_dim, sublayer())
+            BackboneLayer(dim, cond_l_dim, cond_g_dim, sublayer())
             for _ in range(args.depth)
             for sublayer in sublayers
         ])
@@ -73,14 +72,12 @@ class Backbone(nn.Module):
 class BackboneLayer(nn.Module):
     def __init__(
         self, 
-        alpha: int,
         dim: int,
         cond_l_dim: int,
         cond_g_dim: int, 
         op: nn.Module,
     ):
         super().__init__()
-        self.alpha = alpha
         self.op = op
         self.pre_norm = RMSNorm(dim)
         self.post_norm = RMSNorm(dim)
@@ -121,4 +118,4 @@ class BackboneLayer(nn.Module):
         res = x
         x = self.pre_norm(x) * scale + shift
         x = self.op(x) * gate
-        return self.post_norm(self.alpha * res + x)
+        return res + self.post_norm(x)
