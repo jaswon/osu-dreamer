@@ -14,7 +14,7 @@ from osu_dreamer.modules.rms_norm import RMSNorm
 Layer = lambda d_h, n: nn.Sequential(*(
     Res(RMSNorm(d_h), SwiGLU(d_h), RMSNorm(d_h)) # peri-ln
     for _ in range(n)
-))
+), RMSNorm(d_h))
 
 @dataclass
 class AEArgs:
