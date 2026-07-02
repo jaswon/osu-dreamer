@@ -71,7 +71,7 @@ class Decoder(nn.Module):
         self.downs = nn.ModuleList([ Layer(args.h_dim, args.n_layers) for _ in range(n_downs) ])
         self.ups = nn.ModuleList([ Layer(args.h_dim, args.n_layers) for _ in range(n_downs) ])
 
-        self.mix = AdaLN1d(args.h_dim, d_emb)
+        self.mixers = nn.ModuleList([ AdaLN1d(args.h_dim, d_emb) for _ in range(n_downs) ])
 
     def forward(
         self,
@@ -84,20 +84,20 @@ class Decoder(nn.Module):
         if pad > 0:
             a = F.pad(a, (0, pad), mode='replicate')
 
-        a = self.proj_in(a)
+        x = self.proj_in(a)
 
         fs = []
         for down in self.downs:
-            a_h = down(a)
-            a = a_h.unflatten(-1, (-1, self.stride)).mean(dim=-1)
-            fs.append(a_h - repeat(a, 'b d l -> b d (l r)', r=self.stride))
-        
-        h = self.mix(a, h)
+            x_full = down(x)
+            x = x_full.unflatten(-1, (-1, self.stride)).mean(dim=-1)
+            fs.append(x_full - repeat(x, 'b d l -> b d (l r)', r=self.stride))
 
-        for up in self.ups:
-            h = up(fs.pop() + repeat(h, 'b d l -> b d (l r)', r=self.stride))
+        for i, (mix, up) in enumerate(zip(self.mixers, self.ups)):
+            x = mix(x, repeat(h, 'b e l -> b e (l r)', r=self.stride ** i))
+            x = fs.pop() + repeat(x, 'b d l -> b d (l r)', r=self.stride)
+            x = up(x)
 
-        return self.proj_out(h)[:,:,:L]
+        return self.proj_out(x)[:,:,:L]
 
     
 class AdaLN1d(nn.Module):
