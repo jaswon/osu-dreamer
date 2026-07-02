@@ -73,10 +73,13 @@ class Decoder(nn.Module):
 
         self.mixers = nn.ModuleList([ AdaLN1d(args.h_dim, d_emb) for _ in range(n_downs) ])
 
+    def _upsample(self, x):
+        return repeat(x, 'b d l -> b d (l r)', r=self.stride)
+
     def forward(
         self,
         a: Float[Tensor, "B F L"],
-        h: Float[Tensor, "B E l"],
+        z: Float[Tensor, "B E l"],
     ) -> Float[Tensor, "B X L"]:
         c = self.chunk_size
         L = a.size(-1)
@@ -90,11 +93,12 @@ class Decoder(nn.Module):
         for down in self.downs:
             x_full = down(x)
             x = x_full.unflatten(-1, (-1, self.stride)).mean(dim=-1)
-            fs.append(x_full - repeat(x, 'b d l -> b d (l r)', r=self.stride))
+            fs.append(x_full - self._upsample(x))
 
-        for i, (mix, up) in enumerate(zip(self.mixers, self.ups)):
-            x = mix(x, repeat(h, 'b e l -> b e (l r)', r=self.stride ** i))
-            x = fs.pop() + repeat(x, 'b d l -> b d (l r)', r=self.stride)
+        for (mix, up) in zip(self.mixers, self.ups):
+            x = mix(x, z)
+            z = self._upsample(z)
+            x = fs.pop() + self._upsample(x)
             x = up(x)
 
         return self.proj_out(x)[:,:,:L]
