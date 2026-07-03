@@ -65,8 +65,8 @@ class SDPSA(nn.Module):
         assert d_model % head_dim == 0
         self.head_dim = head_dim
 
-        self.qkv_proj = nn.Conv1d(d_model, 3*d_model, 1, bias=False)
-        self.out_proj = nn.Conv1d(d_model, d_model, 1, bias=False)
+        self.qkv_proj = nn.Conv1d(d_model, 3*d_model, 1)
+        self.out_proj = nn.Conv1d(d_model, d_model, 1)
 
         self.q_norm = nn.RMSNorm(head_dim)
         self.k_norm = nn.RMSNorm(head_dim)
