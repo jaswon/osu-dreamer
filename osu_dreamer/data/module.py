@@ -46,7 +46,7 @@ class BeatmapDataModule(pl.LightningDataModule):
             raise ValueError(f'data dir `{self.data_dir}` does not exist, generate dataset first')
         
         # data dir exists, check for samples
-        self.full_set = list(self.data_dir.rglob("*.map.npy"))
+        self.full_set = sorted(self.data_dir.rglob("*.map.npy"))
         if len(self.full_set) == 0:
             raise ValueError(f'data dir `{self.data_dir}` is empty, generate dataset first')
         
@@ -83,6 +83,7 @@ class BeatmapDataModule(pl.LightningDataModule):
         train_split, val_split = random_split(
             self.full_set, # type: ignore
             [train_size, self.val_size],
+            generator=th.Generator().manual_seed(0),
         )
         
         self.train_set = self.make_train_set(train_split)
