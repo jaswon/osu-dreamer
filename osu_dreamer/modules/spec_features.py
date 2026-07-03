@@ -17,14 +17,14 @@ class SpecFeatures(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Unflatten(1, (1, -1)),
-            nn.Conv2d(1, 8, (8,3), (6,1), (1,1), bias=False),
+            nn.Conv2d(1, 8, (8,3), (6,1), (1,1)),
             RMSNorm(8),
             nn.SiLU(),
-            nn.Conv2d(8, 32, (6,3), (4,1), (1,1), bias=False),
+            nn.Conv2d(8, 32, (6,3), (4,1), (1,1)),
             RMSNorm(32),
             nn.SiLU(),
             Rearrange('b c a l -> b (c a) l'),
-            nn.Conv1d(32*(n_freqs//24), d_a, 1, bias=False),
+            nn.Conv1d(32*(n_freqs//24), d_a, 1),
             RMSNorm(d_a),
             nn.SiLU(),
         )
