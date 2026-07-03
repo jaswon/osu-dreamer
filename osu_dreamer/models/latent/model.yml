@@ -16,11 +16,18 @@ trainer:
         - # keep the best performing checkpoint
             class_path: pytorch_lightning.callbacks.ModelCheckpoint
             init_args:
-                monitor: val/loss
-                mode: min
+                monitor: eval/score
+                mode: max
                 save_top_k: 1
         - # learning rate monitor
             class_path: pytorch_lightning.callbacks.LearningRateMonitor
+        - # stop once the eval score stops improving
+            class_path: pytorch_lightning.callbacks.EarlyStopping
+            init_args:
+                monitor: eval/score
+                mode: max
+                patience: 10
+                min_delta: 0.001
 
 
     logger:
