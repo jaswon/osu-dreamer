@@ -9,7 +9,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.affine = affine
         if affine:
-            self.gamma = nn.Parameter(th.randn(dim))
+            self.gamma = nn.Parameter(th.ones(dim))
 
     def forward(self, x: Float[Tensor, "B C *N"]) -> Float[Tensor, "B C *N"]:
         xf = x.float()
