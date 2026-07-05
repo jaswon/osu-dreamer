@@ -57,11 +57,11 @@ data:
     
     # number of samples to hold out for validation
     # must be at least one in order to render validation plots
-    val_size: 256
+    val_size: 64
 
     # number of samples to take per map
     # values < 1 take as many non-overlapping samples as possible
-    max_per_map: 0
+    max_per_map: 5
     
 model:
     # training parameters
