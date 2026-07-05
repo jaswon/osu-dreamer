@@ -32,8 +32,14 @@ class Encoder(nn.Module):
         super().__init__()
         self.chunk_size = stride ** n_downs
 
-        self.downs = nn.ModuleList([ nn.Conv1d(dim, dim, 2+stride,stride,1) for _ in range(n_downs)])
-        self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(n_downs) ])
+        self.downs = nn.ModuleList([
+            nn.Identity() if i==0 else nn.Conv1d(dim, dim, 2+stride,stride,1) 
+            for i in range(1+n_downs)
+        ])
+        self.layers = nn.ModuleList([
+            Layer(dim, args.n_layers, args.radius) 
+            for _ in range(1+n_downs)
+        ])
 
     def forward(
         self, 
@@ -44,7 +50,7 @@ class Encoder(nn.Module):
         if pad > 0:
             x = F.pad(x, (0, pad), mode='replicate')
 
-        layers = [x]
+        layers = []
         for down, layer in zip(self.downs, self.layers):
             x = down(x)
             x = layer(x)
