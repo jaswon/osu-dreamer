@@ -58,7 +58,12 @@ class LatentTrainer(pl.LightningModule):
     def forward(self, batch: Batch):
 
         audio, true_chart, true_labels = batch
-        z_reg_loss, pred_chart_logits, pred_labels = self.latent(audio, true_chart)
+        
+        mu, logvar = self.latent.param_encode(true_chart)
+        z_reg_loss = 0.5 * (mu.pow(2) + logvar.exp() - 1.0 - logvar).sum(dim=1).mean()
+        z = mu + th.exp(0.5 * logvar) * th.randn_like(mu)
+
+        pred_chart_logits, pred_labels = self.latent(audio, z)
 
         hit_loss = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],

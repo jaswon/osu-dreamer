@@ -43,22 +43,25 @@ class LatentModel(nn.Module):
     def forward(
         self,
         audio: Float[Tensor, str(f"B {A_DIM} L")],
-        true_chart: Float[Tensor, str(f"B {X_DIM} L")],
+        z: Float[Tensor, "B E L"],
     ) -> tuple[
-        Float[Tensor, ""], 
         Float[Tensor, str(f"B {X_DIM} L")], 
         Float[Tensor, str(f"B {NUM_LABELS}")],
     ]:
-        h = self.encoder(true_chart)
-        mu, logvar = self.mu(h), self.logvar(h)
-        z_reg_loss = 0.5 * (mu.pow(2) + logvar.exp() - 1.0 - logvar).sum(dim=1).mean()
-
-        z = mu + th.exp(0.5 * logvar) * th.randn_like(mu)
         return (
-            z_reg_loss,
             self.decoder(self.latent_spec_features(audio), z),
             self.label_predictor(z),
         )
+    
+    def param_encode(
+        self,
+        true_chart: Float[Tensor, str(f"B {X_DIM} L")],
+    ) -> tuple[
+        Float[Tensor, "B E L"],
+        Float[Tensor, "B E L"],
+    ]:
+        h = self.encoder(true_chart)
+        return self.mu(h), self.logvar(h)
     
     @th.no_grad
     def encode(
