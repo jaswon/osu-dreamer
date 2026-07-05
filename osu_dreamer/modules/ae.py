@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from jaxtyping import Float
 
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 from einops import repeat
 
@@ -30,8 +29,6 @@ class Encoder(nn.Module):
         args: AEArgs,
     ):
         super().__init__()
-        self.chunk_size = stride ** n_downs
-
         self.downs = nn.ModuleList([
             nn.Identity() if i==0 else nn.Conv1d(dim, dim, 2+stride,stride,1) 
             for i in range(1+n_downs)
@@ -45,11 +42,6 @@ class Encoder(nn.Module):
         self, 
         x: Float[Tensor, "B X L"],
     ) -> list[ Float[Tensor, "B X _l"] ]:
-        c = self.chunk_size
-        pad = (c-x.size(-1)%c)%c
-        if pad > 0:
-            x = F.pad(x, (0, pad), mode='replicate')
-
         layers = []
         for down, layer in zip(self.downs, self.layers):
             x = down(x)
@@ -69,7 +61,7 @@ class Decoder(nn.Module):
         super().__init__()
         self.stride = stride
 
-        self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(n_downs) ])
+        self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(1+n_downs) ])
         self.mixers = nn.ModuleList([ AdaLN1d(dim, dim) for _ in range(n_downs) ])
 
     def forward(
@@ -77,8 +69,8 @@ class Decoder(nn.Module):
         xs: list[ Float[Tensor, "B X _L"] ],
     ) -> Float[Tensor, "B X L"]:
 
-        x = xs.pop()
-        for mix, layer in zip(self.mixers, self.layers):
+        x = self.layers[0](xs.pop())
+        for mix, layer in zip(self.mixers, self.layers[1:]):
             x = repeat(x, 'b d l -> b d (l r)', r=self.stride)
             x = mix(x, xs.pop())
             x = layer(x)
