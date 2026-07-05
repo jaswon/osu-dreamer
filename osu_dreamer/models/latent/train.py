@@ -37,6 +37,7 @@ class LatentTrainer(pl.LightningModule):
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
         z_reg_weight: float,
+        z_dropout: float,
 
         # model hparams
         emb_dim: int,
@@ -52,6 +53,7 @@ class LatentTrainer(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
         self.z_reg_weight = z_reg_weight
+        self.z_dropout = z_dropout
 
         self.latent = LatentModel(emb_dim, n_downs, stride, latent_args)
     
@@ -62,6 +64,7 @@ class LatentTrainer(pl.LightningModule):
         mu, logvar = self.latent.param_encode(true_chart)
         z_reg_loss = 0.5 * (mu.pow(2) + logvar.exp() - 1.0 - logvar).sum(dim=1).mean()
         z = mu + th.exp(0.5 * logvar) * th.randn_like(mu)
+        z[th.rand(z.size(0)) < self.z_dropout] = 0
 
         pred_chart_logits, pred_labels = self.latent(audio, z)
 
