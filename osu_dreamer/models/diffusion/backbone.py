@@ -81,7 +81,7 @@ class BackboneLayer(nn.Module):
         super().__init__()
         self.op = op
         self.pre_norm = RMSNorm(dim)
-        self.post_norm = RMSNorm(dim)
+        self.post_norm = RMSNorm(dim, gain=1e-3)
         self.gate = nn.Parameter(th.zeros(dim, 1))
 
         if cg_dim > 0:

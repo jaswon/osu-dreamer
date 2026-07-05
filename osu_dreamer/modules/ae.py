@@ -12,9 +12,9 @@ from osu_dreamer.modules.swiglu import SwiGLU
 from osu_dreamer.modules.rms_norm import RMSNorm
 
 Layer = lambda d_h, n, r: nn.Sequential(RMSNorm(d_h), *(
-    Res(RMSNorm(d_h), SwiGLU(d_h, radius=r), RMSNorm(d_h)) # peri-ln
+    Res(RMSNorm(d_h), SwiGLU(d_h, radius=r), RMSNorm(d_h, gain=1e-3))
     for _ in range(n)
-), RMSNorm(d_h))
+), RMSNorm(d_h)) # peri-ln
 
 @dataclass
 class AEArgs:
