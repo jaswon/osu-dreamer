@@ -20,39 +20,39 @@ class BackboneArgs:
     
 def resnext(dim: int, expand: int = 1, group_channels: int = 8, radius: int = 1, dilation: int = 1):
     h_dim = dim * expand
-    return Res(nn.Sequential(
-        RMSNorm(dim, affine=False),
+    return Res(
+        RMSNorm(dim),
         nn.Conv1d(dim, h_dim, 1),
         nn.SiLU(),
         nn.Conv1d(h_dim, h_dim, 1+2*radius, 1, radius*dilation, dilation, groups=h_dim // group_channels),
         nn.SiLU(),
         nn.Conv1d(h_dim, dim, 1),
-    ))
+        RMSNorm(dim),
+    )
 
 class Backbone(nn.Module):
     def __init__(
         self,
         dim: int,
-        cond_l_dim: int,
-        cond_g_dim: int,
+        cl_dim: int,
+        cg_dim: int,
         args: BackboneArgs,
     ):
         super().__init__()
-        sublayers = [
-            lambda: SDPSA(dim, args.head_dim),
-            lambda: SwiGLU(dim, args.expand, args.dropout, radius=0),
-        ]
-        if cond_l_dim > 0:
-            self.cond_tower = nn.ModuleList([
-                resnext(cond_l_dim) if i==0 else nn.Identity()
-                for _ in range(args.depth)
-                for i in range(len(sublayers))
-            ])
+        self.cond_tower = nn.ModuleList([
+            resnext(cl_dim) if cl_dim > 0 else nn.Identity()
+            for _ in range(args.depth)
+        ])
         
         self.layers = nn.ModuleList([
-            BackboneLayer(dim, cond_l_dim, cond_g_dim, sublayer())
+            nn.ModuleList([
+                BackboneLayer(dim, cl_dim, cg_dim, sublayer)
+                for sublayer in [
+                    SDPSA(dim, args.head_dim),
+                    SwiGLU(dim, args.expand, args.dropout, radius=0),
+                ]
+            ])
             for _ in range(args.depth)
-            for sublayer in sublayers
         ])
         self.out_norm = RMSNorm(dim)
 
@@ -63,18 +63,19 @@ class Backbone(nn.Module):
         cond_l: Float[Tensor, "B Cl L"] | None = None,
         cond_g: Float[Tensor, "B Cg"] | None = None,
     ) -> Float[Tensor, "B D L"]:
-        for i, layer in enumerate(self.layers):
+        for cond_op, block in zip(self.cond_tower, self.layers):
             if cond_l is not None:
-                cond_l = self.cond_tower[i](cond_l)
-            x = layer(x, cond_l=cond_l, cond_g=cond_g)
+                cond_l = cond_op(cond_l)
+            for layer in block: # type: ignore
+                x = layer(x, cond_l=cond_l, cond_g=cond_g)
         return self.out_norm(x)
 
 class BackboneLayer(nn.Module):
     def __init__(
         self, 
         dim: int,
-        cond_l_dim: int,
-        cond_g_dim: int, 
+        cl_dim: int,
+        cg_dim: int, 
         op: nn.Module,
     ):
         super().__init__()
@@ -83,13 +84,13 @@ class BackboneLayer(nn.Module):
         self.post_norm = RMSNorm(dim)
         self.gate = nn.Parameter(th.zeros(dim, 1))
 
-        if cond_g_dim > 0:
-            self.ssg_global = nn.Linear(cond_g_dim, 3*dim)
+        if cg_dim > 0:
+            self.ssg_global = nn.Linear(cg_dim, 3*dim)
             nn.init.zeros_(self.ssg_global.weight)
             nn.init.zeros_(self.ssg_global.bias)
 
-        if cond_l_dim > 0:
-            self.ssg_local = nn.Conv1d(cond_l_dim, 3*dim, 1)
+        if cl_dim > 0:
+            self.ssg_local = nn.Conv1d(cl_dim, 3*dim, 1)
             nn.init.zeros_(self.ssg_local.weight)
             if self.ssg_local.bias is not None:
                 nn.init.zeros_(self.ssg_local.bias)
