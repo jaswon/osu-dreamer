@@ -47,7 +47,7 @@ class DiffusionModel(nn.Module):
 
         self.proj_audio = nn.Sequential(
             SpecFeatures(A_DIM, args.n_audio_features),
-            Encoder(args.n_audio_features, args.n_audio_features, n_downs, stride, args.audio_encoder_args),
+            Encoder(args.n_audio_features, n_downs, stride, args.audio_encoder_args),
             RMSNorm(args.n_audio_features),
         )
 

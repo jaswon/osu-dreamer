@@ -20,7 +20,7 @@ class AEArgs:
     n_layers: int
     radius: int = 1
 
-class Encoder(nn.Module):
+class UNetEncoder(nn.Module):
     def __init__(
         self,
         dim: int,
@@ -50,7 +50,11 @@ class Encoder(nn.Module):
 
         return layers
     
-class Decoder(nn.Module):
+class Encoder(UNetEncoder):
+    def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B X _l"]:
+        return super().forward(x)[-1]
+    
+class UNetDecoder(nn.Module):
     def __init__(
         self,
         dim: int,
