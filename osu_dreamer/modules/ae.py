@@ -74,7 +74,7 @@ class Decoder(nn.Module):
         x = xs.pop()
         for mix, layer in zip(self.mixers, self.layers):
             x = repeat(x, 'b d l -> b d (l r)', r=self.stride)
-            x = mix(xs.pop(), x)
+            x = mix(x, xs.pop())
             x = layer(x)
 
         return x
