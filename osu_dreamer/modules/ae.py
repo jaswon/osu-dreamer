@@ -11,7 +11,7 @@ from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
 from osu_dreamer.modules.rms_norm import RMSNorm
 
-Layer = lambda d_h, n, r: nn.Sequential(*(
+Layer = lambda d_h, n, r: nn.Sequential(RMSNorm(d_h), *(
     Res(RMSNorm(d_h), SwiGLU(d_h, radius=r), RMSNorm(d_h)) # peri-ln
     for _ in range(n)
 ), RMSNorm(d_h))
