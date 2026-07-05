@@ -37,7 +37,8 @@ class LatentModel(nn.Module):
         self.audio_encoder = nn.Sequential( SpecFeatures(A_DIM, args.h_dim), Encoder(args.h_dim, n_downs, stride, args.ae_args) )
         self.mu = nn.Conv1d(args.h_dim, emb_dim, 1)
         self.logvar = nn.Conv1d(args.h_dim, emb_dim, 1)
-        self.mixer = AdaLN1d(args.h_dim, emb_dim)
+        self.proj_emb = nn.Conv1d(emb_dim, args.h_dim, 1)
+        self.mixer = AdaLN1d(args.h_dim, args.h_dim)
         self.decoder = nn.Sequential( Decoder(args.h_dim, n_downs, stride, args.ae_args), nn.Conv1d(args.h_dim, X_DIM, 1) )
         self.label_predictor = LabelPredictor(emb_dim, NUM_LABELS, args.label_args)
 
@@ -70,7 +71,7 @@ class LatentModel(nn.Module):
         z: Float[Tensor, "B E l"],
     ):
         enc = self.audio_encoder(audio)
-        enc[-1] = self.mixer(enc[-1], z)
+        enc[-1] = self.mixer(self.proj_emb(z), enc[-1])
         return self.decoder(enc)[:,:,:audio.size(-1)]
     
     @th.no_grad
