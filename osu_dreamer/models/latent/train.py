@@ -158,8 +158,7 @@ class LatentTrainer(pl.LightningModule):
         """
         a, x, true_labels = b
 
-        h = self.latent.encoder(x)
-        mu, logvar = self.latent.mu(h), self.latent.logvar(h)
+        mu, logvar = self.latent.param_encode(x)
 
         pred_chart, pred_labels = self.latent.decode(a, mu)
         # shuffled latent: a real, in-distribution z that no longer matches the

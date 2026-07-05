@@ -18,91 +18,66 @@ Layer = lambda d_h, n, r: nn.Sequential(*(
 
 @dataclass
 class AEArgs:
-    h_dim: int
     n_layers: int
     radius: int = 1
 
 class Encoder(nn.Module):
     def __init__(
         self,
-        d_x: int,
-        d_emb: int,
+        dim: int,
         n_downs: int,
         stride: int,
         args: AEArgs,
     ):
         super().__init__()
         self.chunk_size = stride ** n_downs
-        self.net = nn.Sequential(
-            nn.Conv1d(d_x, args.h_dim, 1) if d_x != args.h_dim else nn.Identity(),
-            *(
-                layer for _ in range(n_downs)
-                for layer in [
-                    Layer(args.h_dim, args.n_layers, args.radius),
-                    nn.Conv1d(args.h_dim, args.h_dim, 2+stride,stride,1),
-                ]
-            ),
-            nn.Conv1d(args.h_dim, d_emb, 1) if d_emb > 0 else nn.Identity(),
-        )
 
-    def forward(self, x: Float[Tensor, "B X L"]) -> Float[Tensor, "B E l"]:
+        self.downs = nn.ModuleList([ nn.Conv1d(dim, dim, 2+stride,stride,1) for _ in range(n_downs)])
+        self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(n_downs) ])
+
+    def forward(
+        self, 
+        x: Float[Tensor, "B X L"],
+    ) -> list[ Float[Tensor, "B X _l"] ]:
         c = self.chunk_size
         pad = (c-x.size(-1)%c)%c
         if pad > 0:
             x = F.pad(x, (0, pad), mode='replicate')
-        return self.net(x)
+
+        layers = [x]
+        for down, layer in zip(self.downs, self.layers):
+            x = down(x)
+            x = layer(x)
+            layers.append(x)
+
+        return layers
     
 class Decoder(nn.Module):
     def __init__(
         self,
-        d_a: int,
-        d_x: int,
-        d_emb: int,
+        dim: int,
         n_downs: int,
         stride: int,
         args: AEArgs,
     ):
         super().__init__()
         self.stride = stride
-        self.chunk_size = stride ** n_downs
 
-        self.proj_in = nn.Conv1d(d_a, args.h_dim, 1) if d_a != args.h_dim else nn.Identity()
-        self.proj_out = nn.Conv1d(args.h_dim, d_x, 1) if d_x != args.h_dim else nn.Identity()
-
-        self.downs = nn.ModuleList([ Layer(args.h_dim, args.n_layers, args.radius) for _ in range(n_downs) ])
-        self.ups = nn.ModuleList([ Layer(args.h_dim, args.n_layers, args.radius) for _ in range(n_downs) ])
-
-        self.mixers = nn.ModuleList([ AdaLN1d(args.h_dim, d_emb) for _ in range(n_downs) ])
-
-    def _upsample(self, x):
-        return repeat(x, 'b d l -> b d (l r)', r=self.stride)
+        self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(n_downs) ])
+        self.mixers = nn.ModuleList([ AdaLN1d(dim, dim) for _ in range(n_downs) ])
 
     def forward(
         self,
-        a: Float[Tensor, "B F L"],
-        z: Float[Tensor, "B E l"],
+        xs: list[ Float[Tensor, "B X _L"] ],
     ) -> Float[Tensor, "B X L"]:
-        c = self.chunk_size
-        L = a.size(-1)
-        pad = (c-L%c)%c
-        if pad > 0:
-            a = F.pad(a, (0, pad), mode='replicate')
 
-        x = self.proj_in(a)
+        x = xs.pop()
+        for mix, layer in zip(self.mixers, self.layers):
+            x = repeat(x, 'b d l -> b d (l r)', r=self.stride)
+            x = mix(xs.pop(), x)
+            x = layer(x)
 
-        fs = []
-        for down in self.downs:
-            x_full = down(x)
-            x = x_full.unflatten(-1, (-1, self.stride)).mean(dim=-1)
-            fs.append(x_full - self._upsample(x))
-
-        for (mix, up) in zip(self.mixers, self.ups):
-            x = mix(x, z)
-            z = self._upsample(z)
-            x = fs.pop() + self._upsample(x)
-            x = up(x)
-
-        return self.proj_out(x)[:,:,:L]
+        return x
 
     
 class AdaLN1d(nn.Module):
