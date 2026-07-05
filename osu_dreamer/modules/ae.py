@@ -4,8 +4,6 @@ from jaxtyping import Float
 
 from torch import nn, Tensor
 
-from einops import repeat
-
 from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
 from osu_dreamer.modules.rms_norm import RMSNorm
@@ -38,10 +36,7 @@ class UNetEncoder(nn.Module):
             for _ in range(1+n_downs)
         ])
 
-    def forward(
-        self, 
-        x: Float[Tensor, "B X L"],
-    ) -> list[ Float[Tensor, "B X _l"] ]:
+    def forward(self, x: Float[Tensor, "B X L"]) -> list[ Float[Tensor, "B X _l"] ]:
         layers = []
         for down, layer in zip(self.downs, self.layers):
             x = down(x)
@@ -63,21 +58,21 @@ class UNetDecoder(nn.Module):
         args: AEArgs,
     ):
         super().__init__()
-        self.stride = stride
-
+        self.ups = nn.ModuleList([
+            nn.Sequential(
+                nn.Upsample(scale_factor=stride),
+                nn.Conv1d(dim, dim, 1+2*(stride//2+1),1,stride//2+1),
+            )
+            for _ in range(n_downs)
+        ])
         self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(1+n_downs) ])
         self.mixers = nn.ModuleList([ AdaLN1d(dim, dim) for _ in range(n_downs) ])
 
-    def forward(
-        self,
-        xs: list[ Float[Tensor, "B X _L"] ],
-    ) -> Float[Tensor, "B X L"]:
+    def forward(self, xs: list[ Float[Tensor, "B X _L"] ]) -> Float[Tensor, "B X L"]:
 
         x = self.layers[0](xs.pop())
-        for mix, layer in zip(self.mixers, self.layers[1:]):
-            x = repeat(x, 'b d l -> b d (l r)', r=self.stride)
-            x = mix(x, xs.pop())
-            x = layer(x)
+        for up, mix, layer in zip(self.ups, self.mixers, self.layers[1:]):
+            x = layer(mix(up(x), xs.pop()))
 
         return x
 
