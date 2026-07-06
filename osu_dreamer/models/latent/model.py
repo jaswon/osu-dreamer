@@ -10,13 +10,13 @@ from osu_dreamer.data.load_audio import A_DIM
 
 from osu_dreamer.modules.spec_features import SpecFeatures
 
-from .unet import AEArgs, UNetEncoder, UNetDecoder, Layer
+from .unet import LayerArgs, UNetEncoder, UNetDecoder, Layer
 from .label_predictor import LabelPredictor, LabelPredictorArgs
 
 @dataclass
 class LatentModelArgs:
     h_dim: int
-    ae_args: AEArgs
+    ae_args: LayerArgs
     label_args: LabelPredictorArgs
 
 class LatentModel(nn.Module):
@@ -35,7 +35,7 @@ class LatentModel(nn.Module):
         self.chart_encoder = nn.Sequential( nn.Conv1d(X_DIM, args.h_dim, 1), UNetEncoder(args.h_dim, n_downs, stride, args.ae_args) )
         self.audio_encoder = nn.Sequential( SpecFeatures(A_DIM, args.h_dim), UNetEncoder(args.h_dim, n_downs, stride, args.ae_args) )
         self.param_head = nn.Sequential(
-            Layer(args.h_dim, args.ae_args.n_layers, args.ae_args.radius),
+            Layer(args.h_dim, args.ae_args),
             nn.Conv1d(args.h_dim, 2*emb_dim, 1),
         )
 
