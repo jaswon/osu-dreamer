@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from jaxtyping import Float
 
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
@@ -28,17 +27,11 @@ class UNetEncoder(nn.Module):
         args: AEArgs,
     ):
         super().__init__()
-        self.chunk_size = stride ** n_downs
         self.down = nn.AvgPool1d(stride)
 
         self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(n_downs) ])
 
     def forward(self, x: Float[Tensor, "B X L"]) -> tuple[ list[ Float[Tensor, "B X _l"] ], Float[Tensor, "B X l"] ]:
-        c = self.chunk_size
-        pad = (c-x.size(-1)%c)%c
-        if pad > 0:
-            x = F.pad(x, (0, pad), mode='replicate')
-
         skips = []
         for layer in self.layers:
             h = layer(x)
@@ -55,7 +48,6 @@ class UNetDecoder(nn.Module):
         args: AEArgs,
     ):
         super().__init__()
-        self.stride = stride
         self.up = nn.Upsample(scale_factor=stride)
 
         self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(n_downs) ])

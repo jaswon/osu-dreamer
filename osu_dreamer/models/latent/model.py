@@ -76,8 +76,7 @@ class LatentModel(nn.Module):
         if skips is None:
             skips, _ = self.audio_encoder(audio)
             assert skips is not None
-        L = skips[0].size(-1)
-        return self.proj_out(self.decoder(skips, self.proj_emb(z))[:,:,:L])
+        return self.proj_out(self.decoder(skips, self.proj_emb(z)))
     
     @th.no_grad
     def encode_chart(self, chart: Float[Tensor, str(f"B {X_DIM} L")]) -> Float[Tensor, "B D l"]:

@@ -8,6 +8,7 @@ from torch import nn, Tensor
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS, X_DIM
 from osu_dreamer.data.load_audio import A_DIM
+from osu_dreamer.data.module import pad_to_multiple
 
 from osu_dreamer.models.diffusion.model import DiffusionModel, DiffusionModelArgs
 from osu_dreamer.models.latent.model import LatentModel, LatentModelArgs
@@ -38,6 +39,10 @@ class LDM(nn.Module):
         Float[Tensor, str(f"B {X_DIM} L")], 
         Float[Tensor, str(f"B {NUM_LABELS}")],
     ]:
+        L = audio.size(-1)
+        audio = pad_to_multiple(audio, self.latent.chunk_size)
+
         skips, h = self.latent.audio_encoder(audio[None])
         z = self.diffusion.sample(h, labels, num_steps, show_progress)
-        return self.latent.decode(z, skips=skips)
+        chart, out_labels = self.latent.decode(z, skips=skips)
+        return chart[..., :L], out_labels

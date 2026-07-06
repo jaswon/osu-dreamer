@@ -7,6 +7,7 @@ from pathlib import Path
 import random
 
 import torch as th
+import torch.nn.functional as F
 from torch.utils.data import random_split, Dataset, IterableDataset, DataLoader
 
 import pytorch_lightning as pl
@@ -20,6 +21,13 @@ class Batch(NamedTuple):
     audio: Float[Tensor, str(f"{A_DIM} L")]
     chart: Float[Tensor, str(f"{X_DIM} L")]
     labels: Float[Tensor, str(f"{NUM_LABELS}")]
+
+
+def pad_to_multiple(x: Float[Tensor, "... L"], chunk_size: int) -> Float[Tensor, "... Lp"]:
+    """right-pad the time axis so its length is a multiple of `chunk_size` —
+    the models' encoders require chunk-aligned inputs."""
+    pad = (chunk_size - x.size(-1) % chunk_size) % chunk_size
+    return F.pad(x, (0, pad), mode='replicate') if pad > 0 else x
 
 
 class BeatmapDataModule(pl.LightningDataModule):

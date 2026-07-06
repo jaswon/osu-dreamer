@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.beatmap.encode import BeatmapEncoding, HitSignals, CursorSignals
-from osu_dreamer.data.module import Batch
+from osu_dreamer.data.module import Batch, pad_to_multiple
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
@@ -103,6 +103,12 @@ class LatentTrainer(pl.LightningModule):
                 "interval": "step",
             }
         ]
+    
+    def on_after_batch_transfer(self, batch: Batch, dataloader_idx: int) -> Batch:
+        # pad to chunk_size
+        c = self.latent.chunk_size
+        audio, chart, labels = batch
+        return Batch(pad_to_multiple(audio, c), pad_to_multiple(chart, c), labels)
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(batch)

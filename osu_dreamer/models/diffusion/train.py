@@ -13,7 +13,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS, X_DIM
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.module import Batch
+from osu_dreamer.data.module import Batch, pad_to_multiple
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
@@ -62,7 +62,7 @@ class DiffusionTrainer(pl.LightningModule):
         self.latent = LatentTrainer.load_from_checkpoint(latent_model_ckpt).latent
         self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.a_dim, flow_latent_dim, diffusion_args)
         self.posterior = FlowPosterior(self.latent.emb_dim, flow_latent_dim, posterior_args)
-        
+
     def forward(
         self, 
         audio: Float[Tensor, str(f"B {A_DIM} L")], 
@@ -103,6 +103,12 @@ class DiffusionTrainer(pl.LightningModule):
                 "interval": "step",
             }
         }
+        
+    def on_after_batch_transfer(self, batch: Batch, dataloader_idx: int) -> Batch:
+        # pad to chunk_size
+        c = self.latent.chunk_size
+        audio, chart, labels = batch
+        return Batch(pad_to_multiple(audio, c), pad_to_multiple(chart, c), labels)
 
     def training_step(self, batch: Batch, batch_idx):
         loss, log_dict = self(*batch)
@@ -125,7 +131,9 @@ class DiffusionTrainer(pl.LightningModule):
                 exp.add_figure("samples", fig, global_step=self.global_step)
         
         with th.no_grad():
-            bL = self.val_batches * (a.size(-1) // self.val_batches)
+            c = self.latent.chunk_size
+            seg = (a.size(-1) // self.val_batches) // c * c
+            bL = self.val_batches * seg
             a = rearrange(a[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
             x = rearrange(x[...,:bL], '1 ... (b l) -> b ... l', b = self.val_batches)
             l = repeat(l, '1 d -> b d', b = self.val_batches)
