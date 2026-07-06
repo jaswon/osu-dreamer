@@ -72,7 +72,7 @@ class DiffusionTrainer(pl.LightningModule):
         masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, 0, labels) # classifier free guidance
         
         with th.no_grad():
-            x1 = self.latent.encode(chart)
+            x1 = self.latent.encode_chart(chart)
         x0 = th.randn_like(x1)
         true_flow = x1 - x0
         t = th.randn(audio.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal

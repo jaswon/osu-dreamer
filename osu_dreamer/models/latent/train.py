@@ -212,7 +212,7 @@ class LatentTrainer(pl.LightningModule):
         from einops import repeat
 
         a,x,_ = b
-        z = self.latent.encode(x)
+        z = self.latent.encode_chart(x)
         plot_z = repeat(z, 'b d l -> b d (l r)', r=self.latent.chunk_size)[:,:,:x.size(-1)]
         pred_x, _ = self.latent.decode(a, z)
 
