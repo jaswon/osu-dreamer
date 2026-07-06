@@ -160,12 +160,12 @@ class LatentTrainer(pl.LightningModule):
 
         mu, logvar = self.latent.param_encode(x)
 
-        pred_chart, pred_labels = self.latent.decode(a, mu)
+        pred_chart, pred_labels = self.latent.decode(mu, audio=a)
         # shuffled latent: a real, in-distribution z that no longer matches the
         # audio (temporal roll). unlike zeroing z, this avoids OOD artifacts, so
         # it cleanly isolates whether the decoder relies on the latent vs audio
         z_shuf = th.roll(mu, shifts=max(1, mu.size(-1) // 2), dims=-1)
-        pred_chart_sh, _ = self.latent.decode(a, z_shuf)
+        pred_chart_sh, _ = self.latent.decode(z_shuf, audio=a)
 
         kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1. - logvar).mean(dim=(0, 2))
         active_units = (kl_per_dim > 1e-2).sum().float()
@@ -214,7 +214,7 @@ class LatentTrainer(pl.LightningModule):
         a,x,_ = b
         z = self.latent.encode_chart(x)
         plot_z = repeat(z, 'b d l -> b d (l r)', r=self.latent.chunk_size)[:,:,:x.size(-1)]
-        pred_x, _ = self.latent.decode(a, z)
+        pred_x, _ = self.latent.decode(z, audio=a)
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
         with plot_signals(

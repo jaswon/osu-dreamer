@@ -61,10 +61,10 @@ class UNetDecoder(nn.Module):
         self.layers = nn.ModuleList([ Layer(dim, args.n_layers, args.radius) for _ in range(n_downs) ])
         self.mixers = nn.ModuleList([ AdaLN1d(dim, dim) for _ in range(n_downs) ])
 
-    def forward(self, skips: list[ Float[Tensor, "B X _L"] ], x: Float[Tensor, "B X l"]) -> Float[Tensor, "B X L"]:
+    def forward(self, skips: list[ Float[Tensor, "#B X _L"] ], x: Float[Tensor, "B X l"]) -> Float[Tensor, "B X L"]:
         for mix, layer in zip(self.mixers, self.layers):
             x = self.up(x)
-            x = mix(x, skips.pop())
+            x = mix(x, skips.pop().expand(x.size(0), -1, -1))
             x = layer(x)
         return x
 

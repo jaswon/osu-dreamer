@@ -29,8 +29,7 @@ class LatentModel(nn.Module):
     ):
         super().__init__()
         self.emb_dim = emb_dim
-        self.n_downs = n_downs
-        self.stride = stride
+        self.a_dim = args.h_dim
         self.chunk_size = stride ** n_downs
 
         self.chart_encoder = nn.Sequential( nn.Conv1d(X_DIM, args.h_dim, 1), UNetEncoder(args.h_dim, n_downs, stride, args.ae_args) )
@@ -53,7 +52,7 @@ class LatentModel(nn.Module):
         Float[Tensor, str(f"B {NUM_LABELS}")],
     ]:
         return (
-            self.decode_logits(audio, z),
+            self.decode_logits(z, audio=audio),
             self.label_predictor(z),
         )
     
@@ -69,11 +68,16 @@ class LatentModel(nn.Module):
     
     def decode_logits(
         self, 
-        audio: Float[Tensor, str(f"B {A_DIM} L")],
         z: Float[Tensor, "B E l"],
+        *,
+        audio: None | Float[Tensor, str(f"B {A_DIM} L")] = None,
+        skips: None | list[ Float[Tensor, "B X _l"] ] = None,
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
-        skips, _ = self.audio_encoder(audio)
-        return self.proj_out(self.decoder(skips, self.proj_emb(z))[:,:,:audio.size(-1)])
+        if skips is None:
+            skips, _ = self.audio_encoder(audio)
+            assert skips is not None
+        L = skips[0].size(-1)
+        return self.proj_out(self.decoder(skips, self.proj_emb(z))[:,:,:L])
     
     @th.no_grad
     def encode_chart(self, chart: Float[Tensor, str(f"B {X_DIM} L")]) -> Float[Tensor, "B D l"]:
@@ -81,20 +85,17 @@ class LatentModel(nn.Module):
         return self.mu(h)
     
     @th.no_grad
-    def encode_audio(self, audio: Float[Tensor, str(f"B {A_DIM} L")]) -> Float[Tensor, "B A l"]:
-        _, h = self.audio_encoder(audio)
-        return h
-    
-    @th.no_grad
     def decode(
         self,
-        a: Float[Tensor, "*B A L"],
         z: Float[Tensor, "B D l"],
+        *,
+        audio: None | Float[Tensor, str(f"B {A_DIM} L")] = None,
+        skips: None | list[ Float[Tensor, "B X _l"] ] = None,
     ) -> tuple[
         Float[Tensor, str(f"B {X_DIM} L")], 
         Float[Tensor, str(f"B {NUM_LABELS}")],
     ]:
-        pred_logits = self.decode_logits(a.expand(z.size(0),-1,-1), z)
+        pred_logits = self.decode_logits(z, audio=audio, skips=skips)
         pred_chart = th.cat([
             pred_logits[:, HitSignals].sigmoid(),
             pred_logits[:, CursorSignals],

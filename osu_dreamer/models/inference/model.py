@@ -25,7 +25,7 @@ class LDM(nn.Module):
     def __init__(self, args: LDMArgs):
         super().__init__()
         self.latent = LatentModel(args.emb_dim, args.n_downs, args.stride, args.latent_args)
-        self.diffusion = DiffusionModel(args.emb_dim, args.n_downs, args.stride, args.flow_latent_dim, args.diffusion_args)
+        self.diffusion = DiffusionModel(args.emb_dim, args.latent_args.h_dim, args.flow_latent_dim, args.diffusion_args)
 
     @th.no_grad()
     def sample(
@@ -38,4 +38,6 @@ class LDM(nn.Module):
         Float[Tensor, str(f"B {X_DIM} L")], 
         Float[Tensor, str(f"B {NUM_LABELS}")],
     ]:
-        return self.latent.decode(audio, self.diffusion.sample(audio, labels, num_steps, show_progress))
+        skips, h = self.latent.audio_encoder(audio[None])
+        z = self.diffusion.sample(h, labels, num_steps, show_progress)
+        return self.latent.decode(z, skips=skips)

@@ -60,7 +60,7 @@ class DiffusionTrainer(pl.LightningModule):
 
         # model
         self.latent = LatentTrainer.load_from_checkpoint(latent_model_ckpt).latent
-        self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.n_downs, self.latent.stride, flow_latent_dim, diffusion_args)
+        self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.a_dim, flow_latent_dim, diffusion_args)
         self.posterior = FlowPosterior(self.latent.emb_dim, flow_latent_dim, posterior_args)
         
     def forward(
@@ -73,6 +73,7 @@ class DiffusionTrainer(pl.LightningModule):
         
         with th.no_grad():
             x1 = self.latent.encode_chart(chart)
+            _, a = self.latent.audio_encoder(audio)
         x0 = th.randn_like(x1)
         true_flow = x1 - x0
         t = th.randn(audio.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal
@@ -83,7 +84,7 @@ class DiffusionTrainer(pl.LightningModule):
         flow_latent = flow_mu + th.exp(0.5 * flow_logvar) * th.randn_like(flow_mu)
         kl_loss = (0.5 * (flow_mu.pow(2) + flow_logvar.exp() - 1.0 - flow_logvar)).sum(dim=1).mean()
 
-        pred_flow = self.diffusion.forward(audio, masked_labels, flow_latent, xt, t)
+        pred_flow = self.diffusion.forward(a, masked_labels, flow_latent, xt, t)
         recon_loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
 
         loss = recon_loss + self.kl_factor * kl_loss
@@ -112,8 +113,9 @@ class DiffusionTrainer(pl.LightningModule):
         a,x,l = batch
 
         if batch_idx == 0:
-            pred_z = self.diffusion.sample(a[0], l, self.val_steps)
-            pred_x, _ = self.latent.decode(a, pred_z)
+            skips, h = self.latent.audio_encoder(a)
+            pred_z = self.diffusion.sample(h, l, self.val_steps)
+            pred_x, _ = self.latent.decode(pred_z, skips=skips)
 
             exp: SummaryWriter = self.logger.experiment # type: ignore
             with plot_signals(
