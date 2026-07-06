@@ -29,6 +29,32 @@ LOSS_COMPONENTS = (
     "label",
 )
 
+def mmd_imq(z: th.Tensor, z_prior: th.Tensor) -> th.Tensor:
+    """
+    unbiased MMD^2 between encoded samples `z` and prior samples `z_prior`,
+    both shaped (N, E), using a sum of inverse-multiquadratic kernels.
+    this is the WAE-MMD regularizer (Tolstikhin et al. 2018): it pushes the
+    aggregated posterior towards the N(0, I) prior without the per-sample KL
+    (and reparameterization) that a VAE requires.
+    """
+    n, d = z.shape
+    C_base = 2. * d
+    scales = (.1, .2, .5, 1., 2., 5., 10.)
+
+    def kernel(a: th.Tensor, b: th.Tensor) -> th.Tensor:
+        d2 = th.cdist(a, b).pow(2)
+        out = th.zeros_like(d2)
+        for s in scales:
+            C = C_base * s
+            out = out + C / (C + d2)
+        return out
+
+    off_diag = 1. - th.eye(n, device=z.device, dtype=z.dtype)
+    zz = (kernel(z, z) * off_diag).sum() / (n * (n - 1))
+    pp = (kernel(z_prior, z_prior) * off_diag).sum() / (n * (n - 1))
+    zp = kernel(z, z_prior).mean()
+    return zz + pp - 2. * zp
+
 class LatentTrainer(pl.LightningModule):
     def __init__(
         self,
@@ -61,12 +87,15 @@ class LatentTrainer(pl.LightningModule):
 
         audio, true_chart, true_labels = batch
         
-        mu, logvar = self.latent.param_encode(true_chart)
-        z_reg_loss = 0.5 * (mu.pow(2) + logvar.exp() - 1.0 - logvar).sum(dim=1).mean()
-        z = mu + th.exp(0.5 * logvar) * th.randn_like(mu)
-        z[th.rand(z.size(0)) < self.z_dropout] = 0
+        z = self.latent.encode(true_chart)
 
-        pred_chart_logits, pred_labels = self.latent(audio, z)
+        z_samples = z.transpose(1, 2).reshape(-1, z.size(1))
+        z_reg_loss = mmd_imq(z_samples, th.randn_like(z_samples))
+
+        z_dec = z.clone()
+        z_dec[th.rand(z.size(0)) < self.z_dropout] = 0
+
+        pred_chart_logits, pred_labels = self.latent(audio, z_dec)
 
         hit_loss = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
@@ -164,17 +193,19 @@ class LatentTrainer(pl.LightningModule):
         """
         a, x, true_labels = b
 
-        mu, logvar = self.latent.param_encode(x)
+        z = self.latent.encode(x)
 
-        pred_chart, pred_labels = self.latent.decode(mu, audio=a)
+        pred_chart, pred_labels = self.latent.decode(z, audio=a)
         # shuffled latent: a real, in-distribution z that no longer matches the
         # audio (temporal roll). unlike zeroing z, this avoids OOD artifacts, so
         # it cleanly isolates whether the decoder relies on the latent vs audio
-        z_shuf = th.roll(mu, shifts=max(1, mu.size(-1) // 2), dims=-1)
+        z_shuf = th.roll(z, shifts=max(1, z.size(-1) // 2), dims=-1)
         pred_chart_sh, _ = self.latent.decode(z_shuf, audio=a)
 
-        kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1. - logvar).mean(dim=(0, 2))
-        active_units = (kl_per_dim > 1e-2).sum().float()
+        # WAE uses a deterministic encoder, so posterior collapse shows up as
+        # latent dimensions with (near-)zero variance rather than as low KL
+        z_var = z.var(dim=(0, 2))
+        active_units = (z_var > 1e-2).sum().float()
 
         # --- onset soft-F1 (Dice) accumulation ---
         # continuous overlap of the onset activation curves; equals F1 for binary
@@ -209,7 +240,7 @@ class LatentTrainer(pl.LightningModule):
             "eval/cursor_px_mae": cursor_px,
             "eval/label_mae": label_mae,
             "eval/active_units": active_units,
-            "eval/kl_mean": kl_per_dim.mean(),
+            "eval/z_var": z_var.mean(),
             "eval/cursor_px_ablation": cursor_px_sh - cursor_px,
         }
 

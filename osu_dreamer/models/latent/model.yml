@@ -71,7 +71,7 @@ model:
     schedule_args:
         warmup_init: .1
         warmup_steps: 2000
-    z_reg_weight: .01
+    z_reg_weight: 1.
     z_dropout: .1
 
     # model hyperparameters
