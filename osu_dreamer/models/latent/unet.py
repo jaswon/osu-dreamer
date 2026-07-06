@@ -56,7 +56,7 @@ class UNetDecoder(nn.Module):
     def forward(self, skips: list[ Float[Tensor, "#B X _L"] ], x: Float[Tensor, "B X l"]) -> Float[Tensor, "B X L"]:
         for mix, layer in zip(self.mixers, self.layers):
             x = self.up(x)
-            x = mix(x, skips.pop().expand(x.size(0), -1, -1))
+            x = mix(skips.pop().expand(x.size(0), -1, -1), x)
             x = layer(x)
         return x
 
