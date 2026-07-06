@@ -10,7 +10,7 @@ from osu_dreamer.data.load_audio import A_DIM
 
 from osu_dreamer.modules.spec_features import SpecFeatures
 
-from .unet import AEArgs, UNetEncoder, UNetDecoder
+from .unet import AEArgs, UNetEncoder, UNetDecoder, Layer
 from .label_predictor import LabelPredictor, LabelPredictorArgs
 
 @dataclass
@@ -34,8 +34,10 @@ class LatentModel(nn.Module):
 
         self.chart_encoder = nn.Sequential( nn.Conv1d(X_DIM, args.h_dim, 1), UNetEncoder(args.h_dim, n_downs, stride, args.ae_args) )
         self.audio_encoder = nn.Sequential( SpecFeatures(A_DIM, args.h_dim), UNetEncoder(args.h_dim, n_downs, stride, args.ae_args) )
-        self.mu = nn.Conv1d(args.h_dim, emb_dim, 1)
-        self.logvar = nn.Conv1d(args.h_dim, emb_dim, 1)
+        self.param_head = nn.Sequential(
+            Layer(args.h_dim, args.ae_args.n_layers, args.ae_args.radius),
+            nn.Conv1d(args.h_dim, 2*emb_dim, 1),
+        )
 
         self.proj_emb = nn.Conv1d(emb_dim, args.h_dim, 1)
         self.decoder = UNetDecoder(args.h_dim, n_downs, stride, args.ae_args)
@@ -64,7 +66,7 @@ class LatentModel(nn.Module):
         Float[Tensor, "B E l"],
     ]:
         _, h = self.chart_encoder(true_chart)
-        return self.mu(h), self.logvar(h)
+        return self.param_head(h).chunk(2, dim=1)
     
     def decode_logits(
         self, 
@@ -81,7 +83,7 @@ class LatentModel(nn.Module):
     @th.no_grad
     def encode_chart(self, chart: Float[Tensor, str(f"B {X_DIM} L")]) -> Float[Tensor, "B D l"]:
         _, h = self.chart_encoder(chart)
-        return self.mu(h)
+        return self.param_head(h).chunk(2, dim=1)[0]
     
     @th.no_grad
     def decode(
