@@ -62,7 +62,7 @@ class DiffusionTrainer(pl.LightningModule):
         # model
         self.latent = LatentTrainer.load_from_checkpoint(latent_model_ckpt).latent
         self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.a_dim, flow_latent_dim, diffusion_args)
-        self.posterior = FlowPosterior(self.latent.emb_dim, flow_latent_dim, posterior_args)
+        self.posterior = FlowPosterior(self.latent.emb_dim + self.latent.a_dim, flow_latent_dim, posterior_args)
 
     def forward(
         self, 
@@ -80,7 +80,7 @@ class DiffusionTrainer(pl.LightningModule):
         t = th.randn(audio.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal
         xt = th.lerp(x0,x1,t[:,None,None])
 
-        flow_latent = self.posterior(x1)
+        flow_latent = self.posterior(th.cat([a, x1], dim=1))
         flow_reg_loss = mmd_imq(flow_latent, th.randn_like(flow_latent))
 
         pred_flow = self.diffusion.forward(a, masked_labels, flow_latent, xt, t)
