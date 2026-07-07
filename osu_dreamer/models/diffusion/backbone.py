@@ -55,12 +55,13 @@ class BackboneLayer(nn.Module):
         super().__init__()
         self.op = op
         self.pre_norm = RMSNorm(dim)
-        self.post_norm = RMSNorm(dim, gain=1e-3)
+        self.post_norm = RMSNorm(dim, affine=False)
+        self.gate = nn.Parameter(th.zeros(dim, 1))
 
         if cg_dim > 0:
-            self.ss = nn.Linear(cg_dim, 2*dim)
-            nn.init.zeros_(self.ss.weight)
-            nn.init.zeros_(self.ss.bias)
+            self.ssg = nn.Linear(cg_dim, 3*dim)
+            nn.init.zeros_(self.ssg.weight)
+            nn.init.zeros_(self.ssg.bias)
 
     def forward(
         self,
@@ -69,11 +70,12 @@ class BackboneLayer(nn.Module):
         cond: Float[Tensor, "B C"] | None = None,
     ) -> Float[Tensor, "B X L"]:
         if cond is None:
-            scale, shift = 0, 0
+            scale, shift, gate = 0, 0, 0
         else:
-            scale, shift = self.ss(cond)[:,:,None].chunk(2, dim=1)
+            scale, shift, gate = self.ssg(cond)[:,:,None].chunk(3, dim=1)
 
         res = x
         x = self.pre_norm(x) * (1 + scale) + shift
         x = self.op(x)
-        return res + self.post_norm(x)
+        x = self.post_norm(x) * (self.gate + gate)
+        return res + x
