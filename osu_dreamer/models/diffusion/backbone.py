@@ -14,6 +14,7 @@ class BackboneArgs:
     depth: int
     expand: int
     head_dim: int
+    radius: int = 1
     dropout: float = 0.
 
 class Backbone(nn.Module):
@@ -31,7 +32,7 @@ class Backbone(nn.Module):
             for _ in range(args.depth)
             for sublayer in [
                 SDPSA(dim, args.head_dim),
-                SwiGLU(dim, args.expand, args.dropout, radius=0),
+                SwiGLU(dim, args.expand, args.dropout, args.radius),
             ]
         ])
         self.out_norm = RMSNorm(dim)
