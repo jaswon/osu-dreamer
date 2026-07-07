@@ -51,8 +51,8 @@ class DiffusionModel(nn.Module):
             nn.SiLU(),
         )
 
-        self.proj_in = nn.Conv1d(emb_dim+a_dim, args.backbone_dim, 1)
-        self.net = Backbone(args.backbone_dim, args.global_cond_dim, args.backbone_args)
+        self.proj_in = nn.Conv1d(emb_dim, args.backbone_dim, 1)
+        self.net = Backbone(args.backbone_dim, a_dim, args.global_cond_dim, args.backbone_args)
         self.proj_out = nn.Conv1d(args.backbone_dim, emb_dim, 1)
         nn.init.zeros_(self.proj_out.weight)
         if self.proj_out.bias is not None:
@@ -67,14 +67,14 @@ class DiffusionModel(nn.Module):
     
     def _pred_flow(
         self,
-        cond: Float[Tensor, "B C"],
+        cg: Float[Tensor, "B C"],
         a: Float[Tensor, "#B A l"],
         xt: Float[Tensor, "B E l"], # noised input
         t: Float[Tensor, "B"],      # noise level
     ) -> Float[Tensor, "B E l"]:
-        cond = self.proj_cond( cond + self.proj_time(t[:,None]) )
-        h = self.proj_in(th.cat([xt, a.expand(xt.size(0), -1, -1)], dim=1))
-        h = self.net(h,cond=cond)
+        cg = self.proj_cond( cg + self.proj_time(t[:,None]) )
+        h = self.proj_in(xt)
+        h = self.net(h,cl=a,cg=cg)
         return self.proj_out(h)
 
     def forward(

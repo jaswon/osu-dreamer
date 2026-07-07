@@ -20,13 +20,14 @@ class Backbone(nn.Module):
     def __init__(
         self,
         dim: int,
-        cond_dim: int,
+        cl_dim: int,
+        cg_dim: int,
         args: BackboneArgs,
     ):
         super().__init__()
         
         self.layers = nn.ModuleList([
-            BackboneLayer(dim, cond_dim, sublayer)
+            BackboneLayer(dim, cl_dim, cg_dim, sublayer)
             for _ in range(args.depth)
             for sublayer in [
                 SDPSA(dim, args.head_dim),
@@ -39,16 +40,18 @@ class Backbone(nn.Module):
         self,
         x: Float[Tensor, "B D L"],
         *,
-        cond: Float[Tensor, "B C"] | None = None,
+        cl: Float[Tensor, "#B Cl L"] | None = None,
+        cg: Float[Tensor, "#B Cg"] | None = None,
     ) -> Float[Tensor, "B D L"]:
         for layer in self.layers:
-            x = layer(x, cond=cond)
+            x = layer(x, cl=cl, cg=cg)
         return self.out_norm(x)
 
 class BackboneLayer(nn.Module):
     def __init__(
         self, 
         dim: int,
+        cl_dim: int,
         cg_dim: int, 
         op: nn.Module,
     ):
@@ -58,24 +61,36 @@ class BackboneLayer(nn.Module):
         self.post_norm = RMSNorm(dim, affine=False)
         self.gate = nn.Parameter(th.zeros(dim, 1))
 
+        if cl_dim > 0:
+            self.l_ssg = nn.Conv1d(cl_dim, 3*dim, 1)
+            nn.init.zeros_(self.l_ssg.weight)
+            if self.l_ssg.bias is not None:
+                nn.init.zeros_(self.l_ssg.bias)
+
         if cg_dim > 0:
-            self.ssg = nn.Linear(cg_dim, 3*dim)
-            nn.init.zeros_(self.ssg.weight)
-            nn.init.zeros_(self.ssg.bias)
+            self.g_ssg = nn.Linear(cg_dim, 3*dim)
+            nn.init.zeros_(self.g_ssg.weight)
+            nn.init.zeros_(self.g_ssg.bias)
 
     def forward(
         self,
         x: Float[Tensor, "B X L"],
         *,
-        cond: Float[Tensor, "B C"] | None = None,
+        cl: Float[Tensor, "#B Cl L"] | None = None,
+        cg: Float[Tensor, "#B Cg"] | None = None,
     ) -> Float[Tensor, "B X L"]:
-        if cond is None:
-            scale, shift, gate = 0, 0, 0
+        if cl is None:
+            l_scale, l_shift, l_gate = 0, 0, 0
         else:
-            scale, shift, gate = self.ssg(cond)[:,:,None].chunk(3, dim=1)
+            l_scale, l_shift, l_gate = self.l_ssg(cl).chunk(3, dim=1)
+            
+        if cg is None:
+            g_scale, g_shift, g_gate = 0, 0, 0
+        else:
+            g_scale, g_shift, g_gate = self.g_ssg(cg)[:,:,None].chunk(3, dim=1)
 
         res = x
-        x = self.pre_norm(x) * (1 + scale) + shift
+        x = self.pre_norm(x) * (1 + g_scale + l_scale) + (g_shift + l_shift)
         x = self.op(x)
-        x = self.post_norm(x) * (self.gate + gate)
+        x = self.post_norm(x) * (self.gate + g_gate + l_gate)
         return res + x

@@ -22,7 +22,7 @@ class FlowPosterior(nn.Module):
         super().__init__()
         self.cls_token = nn.Parameter(th.randn(1, args.backbone_dim, 1))
         self.proj_in = nn.Conv1d(emb_dim, args.backbone_dim, 1)
-        self.net = Backbone(args.backbone_dim, 0, args.backbone_args)
+        self.net = Backbone(args.backbone_dim, 0, 0, args.backbone_args)
         self.proj_out = nn.Linear(args.backbone_dim, flow_latent_dim)
 
     def forward(self, x: Float[Tensor, "B E l"]) -> Float[Tensor, "B Z"]:
