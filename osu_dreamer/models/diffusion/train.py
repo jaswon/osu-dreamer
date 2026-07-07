@@ -63,8 +63,13 @@ class DiffusionTrainer(pl.LightningModule):
 
         # model
         self.latent = LatentTrainer.load_from_checkpoint(latent_model_ckpt).latent
+        self.latent.requires_grad_(False)
+
         self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.a_dim, flow_latent_dim, diffusion_args)
         self.posterior = FlowPosterior(self.latent.emb_dim + self.latent.a_dim, flow_latent_dim, posterior_args)
+
+    def on_train_epoch_start(self):
+        self.latent.eval()
 
     def forward(
         self, 
@@ -109,7 +114,8 @@ class DiffusionTrainer(pl.LightningModule):
         return x0[cols]
 
     def configure_optimizers(self):
-        opt = th.optim.AdamW(self.parameters(), **self.opt_args)
+        params = [ p for p in self.parameters() if p.requires_grad ]
+        opt = th.optim.AdamW(params, **self.opt_args)
         return {
             "optimizer": opt,
             "lr_scheduler": {
