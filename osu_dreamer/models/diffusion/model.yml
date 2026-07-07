@@ -71,7 +71,7 @@ model:
         warmup_steps: 2000
         decay_start: 10000
     label_drop_prob: .2
-    kl_factor: .01
+    flow_reg_factor: 1.
 
     # model hyperparameters
     latent_model_ckpt: latent.ckpt

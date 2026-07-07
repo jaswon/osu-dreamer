@@ -17,6 +17,7 @@ from osu_dreamer.data.module import Batch, pad_to_multiple
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
+from osu_dreamer.modules.wae import mmd_imq
 
 from osu_dreamer.models.latent.train import LatentTrainer
 
@@ -36,7 +37,7 @@ class DiffusionTrainer(pl.LightningModule):
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
         label_drop_prob: float,
-        kl_factor: float,
+        flow_reg_factor: float,
 
         # model hparams
         latent_model_ckpt: str,
@@ -56,7 +57,7 @@ class DiffusionTrainer(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
         self.label_drop_prob = label_drop_prob
-        self.kl_factor = kl_factor
+        self.flow_reg_factor = flow_reg_factor
 
         # model
         self.latent = LatentTrainer.load_from_checkpoint(latent_model_ckpt).latent
@@ -79,19 +80,17 @@ class DiffusionTrainer(pl.LightningModule):
         t = th.randn(audio.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal
         xt = th.lerp(x0,x1,t[:,None,None])
 
-        flow_mu, flow_logvar = self.posterior(x1)
-        flow_logvar = flow_logvar.clamp(-30., 20.)
-        flow_latent = flow_mu + th.exp(0.5 * flow_logvar) * th.randn_like(flow_mu)
-        kl_loss = (0.5 * (flow_mu.pow(2) + flow_logvar.exp() - 1.0 - flow_logvar)).sum(dim=1).mean()
+        flow_latent = self.posterior(x1)
+        flow_reg_loss = mmd_imq(flow_latent, th.randn_like(flow_latent))
 
         pred_flow = self.diffusion.forward(a, masked_labels, flow_latent, xt, t)
         recon_loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
 
-        loss = recon_loss + self.kl_factor * kl_loss
+        loss = recon_loss + self.flow_reg_factor * flow_reg_loss
         return loss, {
             "loss": loss.detach(),
             "recon": recon_loss.detach(),
-            "kl": kl_loss.detach(),
+            "flow_reg": flow_reg_loss.detach(),
         }
 
     def configure_optimizers(self):
