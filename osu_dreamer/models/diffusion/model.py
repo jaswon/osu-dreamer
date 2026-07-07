@@ -7,8 +7,6 @@ from jaxtyping import Float
 import torch as th
 from torch import Tensor, nn
 
-from einops import repeat
-
 import tqdm
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS
@@ -96,23 +94,30 @@ class DiffusionModel(nn.Module):
         audio: Float[Tensor, "#B A l"],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         num_steps: int,
+        time_shift: float = 3.,
         show_progress: bool = False,
     ) -> Float[Tensor, "B E l"]:
-        x = th.randn(labels.size(0), self.emb_dim, audio.size(-1), device=audio.device)
-        flow_latent = th.randn(1, self.flow_latent_dim, device=audio.device)
+        B = labels.size(0)
+        x = th.randn(B, self.emb_dim, audio.size(-1), device=audio.device)
+        flow_latent = th.randn(B, self.flow_latent_dim, device=audio.device)
         denoiser = partial(
             self._pred_flow,
             self._precompute_conditioning(labels, flow_latent),
             audio,
         )
 
-        # huen step
-        for i in tqdm.tqdm(
-            repeat(th.arange(num_steps, device=audio.device), 'n -> n b', b=x.size(0)),
+        # shifted timestep schedule: denser steps near t=1
+        u = th.linspace(0, 1, num_steps+1, device=audio.device)
+        ts = time_shift * u / (1 + (time_shift - 1) * u)
+
+        # heun step
+        for t0, t1 in tqdm.tqdm(
+            list(zip(ts[:-1], ts[1:])),
             disable=not show_progress,
         ):
-            v0 = denoiser(x, i / num_steps)
-            v1 = denoiser(x + v0 / num_steps, (i + 1) / num_steps)
-            x = x + 0.5 * (v0 + v1) / num_steps
+            dt = t1 - t0
+            v0 = denoiser(x, t0.expand(B))
+            v1 = denoiser(x + v0 * dt, t1.expand(B))
+            x = x + 0.5 * (v0 + v1) * dt
 
         return x
