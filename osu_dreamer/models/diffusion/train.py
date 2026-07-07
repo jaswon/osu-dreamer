@@ -8,6 +8,8 @@ import torch.nn.functional as F
 
 from einops import repeat, rearrange
 
+from scipy.optimize import linear_sum_assignment
+
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -75,7 +77,7 @@ class DiffusionTrainer(pl.LightningModule):
         with th.no_grad():
             x1 = self.latent.encode_chart(chart)
             _, a = self.latent.audio_encoder(audio)
-        x0 = th.randn_like(x1)
+        x0 = self.ot_coupled_noise(x1)
         true_flow = x1 - x0
         t = th.randn(audio.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal
         xt = th.lerp(x0,x1,t[:,None,None])
@@ -92,6 +94,19 @@ class DiffusionTrainer(pl.LightningModule):
             "recon": recon_loss.detach(),
             "flow_reg": flow_reg_loss.detach(),
         }
+
+    @th.no_grad()
+    def ot_coupled_noise(self, x1: Float[Tensor, "B E L"]) -> Float[Tensor, "B E L"]:
+        """sample noise minibatch-OT-coupled to `x1` (straightens flow paths)"""
+        x0 = th.randn_like(x1)
+        if x1.size(0) < 2:
+            return x0
+        cost = th.cdist(
+            x1.flatten(1).float(),
+            x0.flatten(1).float(),
+        ).cpu().numpy()
+        _, cols = linear_sum_assignment(cost)
+        return x0[cols]
 
     def configure_optimizers(self):
         opt = th.optim.AdamW(self.parameters(), **self.opt_args)
