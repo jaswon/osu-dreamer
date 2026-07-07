@@ -16,7 +16,10 @@ class SwiGLU(nn.Module):
     ):
         super().__init__()
         h_dim = int(dim * expand * 2/3)
-        self.proj_vg = nn.Conv1d(dim, 2*h_dim, 1+2*radius,1,radius)
+        self.proj_vg = nn.Sequential(
+            nn.Conv1d(dim, dim, 1+2*radius,1,radius, groups=dim) if radius > 0 else nn.Identity(),
+            nn.Conv1d(dim, 2*h_dim, 1),
+        )
         self.dropout = nn.Dropout1d(dropout)
         self.norm = RMSNorm(h_dim, affine=False)
         self.proj_o = nn.Conv1d(h_dim, dim, 1)
