@@ -63,13 +63,12 @@ model:
 
     # training parameters
     opt_args:
-        lr: .0007
+        lr: .001
         weight_decay: 0.01
-        betas: [0.9, 0.95]
     schedule_args:
         warmup_init: .1
         warmup_steps: 2000
-        decay_start: 10000
+        decay_start: 4000
     label_drop_prob: .2
     flow_reg_factor: 1.
 
@@ -82,7 +81,7 @@ model:
             head_dim: 32
             depth: 16
             expand: 4
-            radius: 1
+            radius: 2
 
     diffusion_args:
         noise_level_features: 256
@@ -94,4 +93,4 @@ model:
             head_dim: 32
             depth: 32
             expand: 4
-            radius: 1
+            radius: 2
