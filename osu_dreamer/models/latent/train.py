@@ -4,6 +4,8 @@ from typing import Any
 import torch as th
 import torch.nn.functional as F
 
+from einops import rearrange, repeat
+
 import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -64,12 +66,23 @@ class LatentTrainer(pl.LightningModule):
     def forward(self, batch: Batch):
 
         audio, true_chart, true_labels = batch
-        
+
+        # split each window into halves treated as separate batch items; each
+        # half is decoded with the *other* half's style code, so style
+        # consistency is enforced by the reconstruction loss itself
+        audio = rearrange(audio, 'b d (h l) -> (b h) d l', h=2)
+        true_chart = rearrange(true_chart, 'b d (h l) -> (b h) d l', h=2)
+        true_labels = repeat(true_labels, 'b d -> (b h) d', h=2)
+
         z, s = self.latent.encode_chart(true_chart)
 
         z_samples = z.transpose(1, 2).reshape(-1, z.size(1))
         z_reg_loss = mmd_imq(z_samples, th.randn_like(z_samples))
         s_reg_loss = mmd_imq(s, th.randn_like(s))
+
+        # swap styles within each half-pair
+        s_pairs = rearrange(s, '(b h) d -> b h d', h=2)
+        s = rearrange(s_pairs.flip(1), 'b h d -> (b h) d')
 
         if self.training:
             s = s + self.s_noise * th.randn_like(s)
@@ -115,7 +128,7 @@ class LatentTrainer(pl.LightningModule):
     
     def on_after_batch_transfer(self, batch: Batch, dataloader_idx: int) -> Batch:
         # pad to chunk_size
-        c = self.latent.chunk_size
+        c = 2 * self.latent.chunk_size
         audio, chart, labels = batch
         return Batch(pad_to_multiple(audio, c), pad_to_multiple(chart, c), labels)
 

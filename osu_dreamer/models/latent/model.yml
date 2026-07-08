@@ -47,10 +47,10 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 1024 # * 6ms/frame ~= 6.1s
+    seq_len: 2052 # * 6ms/frame ~= 12.3s
     
     # size of training batch
-    batch_size: 64
+    batch_size: 32
     
     # number of workers to use for data loading
     num_workers: 13
@@ -76,15 +76,15 @@ model:
     s_noise: .2
 
     # model hyperparameters
-    emb_dim: 4
+    emb_dim: 8
     style_dim: 128
     n_downs: 3
     stride: 3
     latent_args:
         h_dim: 128
         ae_args:
-            n_layers: 3
-            expand: 3
+            n_layers: 4
+            expand: 2
             radius: 1
         label_args:
             h_dim: 256
