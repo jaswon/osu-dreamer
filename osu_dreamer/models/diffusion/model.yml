@@ -81,8 +81,7 @@ model:
 
     diffusion_args:
         noise_level_features: 256
-        global_cond_h: 512
-        global_cond_dim: 384
+        global_cond_dim: 512
 
         backbone_dim: 512
         backbone_args:

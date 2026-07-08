@@ -18,7 +18,6 @@ from .backbone import Backbone, BackboneArgs
 @dataclass
 class DiffusionModelArgs:
     noise_level_features: int
-    global_cond_h: int
     global_cond_dim: int
     
     backbone_dim: int
@@ -38,16 +37,10 @@ class DiffusionModel(nn.Module):
 
         self.proj_time = nn.Sequential(
             FourierFeatures(1, args.noise_level_features),
-            nn.Linear(args.noise_level_features, args.global_cond_h, bias=False),
+            nn.Linear(args.noise_level_features, args.global_cond_dim),
         )
-        self.proj_label = nn.Linear(NUM_LABELS, args.global_cond_h, bias=False)
-        self.proj_latent = nn.Linear(flow_latent_dim, args.global_cond_h)
-
-        self.proj_cond = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(args.global_cond_h, args.global_cond_dim, bias=False),
-            nn.SiLU(),
-        )
+        self.proj_label = nn.Linear(NUM_LABELS, args.global_cond_dim)
+        self.proj_latent = nn.Linear(flow_latent_dim, args.global_cond_dim)
 
         self.proj_in = nn.Conv1d(emb_dim+a_dim, args.backbone_dim, 1)
         self.net = Backbone(args.backbone_dim, a_dim, args.global_cond_dim, args.backbone_args)
@@ -70,7 +63,7 @@ class DiffusionModel(nn.Module):
         xt: Float[Tensor, "B E l"], # noised input
         t: Float[Tensor, "#B"],     # noise level
     ) -> Float[Tensor, "B E l"]:
-        cg = self.proj_cond( cg + self.proj_time(t[:,None]) )
+        cg = cg + self.proj_time(t[:,None])
         h = self.proj_in(th.cat([xt, a.expand(xt.size(0), -1, -1)], dim=1))
         h = self.net(h,cl=a,cg=cg)
         return self.proj_out(h)
