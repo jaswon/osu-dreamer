@@ -70,6 +70,11 @@ model:
     # model hyperparameters
     latent_model_ckpt: latent.ckpt
 
+    style_prior_args:
+        noise_level_features: 64
+        h_dim: 256
+        depth: 4
+
     diffusion_args:
         noise_level_features: 256
         global_cond_dim: 512

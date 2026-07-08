@@ -28,10 +28,8 @@ class layer(nn.Module):
     
         self.films = None
         if cond_dim > 0:
-            h_dim = 4*cond_dim
-            self.proj_cond = nn.Sequential(nn.Linear(cond_dim, h_dim), nn.SiLU())
             def film():
-                f = nn.Linear(h_dim, 3*dim)
+                f = nn.Linear(cond_dim, 3*dim)
                 nn.init.zeros_(f.weight)
                 nn.init.zeros_(f.bias) # type: ignore
                 return f
@@ -44,7 +42,6 @@ class layer(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         if self.films is not None:
             assert cond is not None, "conditional layer requires `cond`"
-            cond = self.proj_cond(cond)
             films = [ film(cond)[:,:,None].chunk(3, dim=1) for film in self.films ]
         else:
             assert cond is None, "conditioning passed to an unconditional layer"

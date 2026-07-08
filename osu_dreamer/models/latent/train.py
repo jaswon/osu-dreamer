@@ -65,7 +65,7 @@ class LatentTrainer(pl.LightningModule):
 
         audio, true_chart, true_labels = batch
         
-        z, s = self.latent.encode(true_chart)
+        z, s = self.latent.encode_chart(true_chart)
 
         z_samples = z.transpose(1, 2).reshape(-1, z.size(1))
         z_reg_loss = mmd_imq(z_samples, th.randn_like(z_samples))

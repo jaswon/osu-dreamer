@@ -66,19 +66,23 @@ class LatentModel(nn.Module):
             self.label_predictor(s),
         )
     
-    def encode(
+    def encode_chart(
         self,
-        true_chart: Float[Tensor, str(f"B {X_DIM} L")],
+        chart: Float[Tensor, str(f"B {X_DIM} L")],
     ) -> tuple[
         Float[Tensor, "B E l"],
         Float[Tensor, "B S"],
     ]:
-        _, h = self.chart_encoder(true_chart)
+        _, h = self.chart_encoder(chart)
         s = self.style_head(h)
 
         # `s.detach()`: the style branch must earn its content via its own losses, 
         # not serve as a reconstruction side-channel
         z = self.param_proj(self.param_layer(h, s.detach()))
+
+        # DC projection: remove per-channel window means so time-invariant
+        # information cannot live in `z` and must route through `s`
+        z = z - z.mean(dim=-1, keepdim=True)
         return z, s
     
     def decode_logits(
@@ -93,19 +97,6 @@ class LatentModel(nn.Module):
             skips, _ = self.audio_encoder(audio)
             assert skips is not None
         return self.proj_out(self.decoder(skips, self.proj_emb(z), s))
-    
-    @th.no_grad
-    def encode_chart(self, chart: Float[Tensor, str(f"B {X_DIM} L")]) -> tuple[
-        Float[Tensor, "B D l"],
-        Float[Tensor, "B S"],
-    ]:
-        return self.encode(chart)
-
-    @th.no_grad
-    def sample_style(self, n: int) -> Float[Tensor, "n S"]:
-        """sample style codes from the N(0,I) prior (aligned via MMD during training)"""
-        p = next(self.parameters())
-        return th.randn(n, self.style_dim, device=p.device, dtype=p.dtype)
     
     @th.no_grad
     def decode(

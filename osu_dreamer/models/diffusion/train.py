@@ -23,6 +23,7 @@ from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
 from osu_dreamer.models.latent.train import LatentTrainer
 
 from .model import DiffusionModel, DiffusionModelArgs
+from .style_prior import StylePrior, StylePriorArgs
 
     
 class DiffusionTrainer(pl.LightningModule):
@@ -40,6 +41,7 @@ class DiffusionTrainer(pl.LightningModule):
 
         # model hparams
         latent_model_ckpt: str,
+        style_prior_args: StylePriorArgs,
         diffusion_args: DiffusionModelArgs,
     ):
         super().__init__()
@@ -60,6 +62,7 @@ class DiffusionTrainer(pl.LightningModule):
         self.latent.requires_grad_(False)
 
         self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.a_dim, self.latent.style_dim, diffusion_args)
+        self.style_prior = StylePrior(self.latent.style_dim, style_prior_args)
 
     def on_train_epoch_start(self):
         self.latent.eval()
@@ -75,35 +78,37 @@ class DiffusionTrainer(pl.LightningModule):
         with th.no_grad():
             x1, s = self.latent.encode_chart(chart)
             _, a = self.latent.audio_encoder(audio)
-        x0 = self.ot_coupled_noise(x1)
+        x0 = th.randn_like(x1)
         true_flow = x1 - x0
         t = th.randn(audio.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal
         xt = th.lerp(x0,x1,t[:,None,None])
 
         pred_flow = self.diffusion.forward(a, masked_labels, s, xt, t)
-        loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
+        recon_loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
+
+        # style prior flow matching
+        s_u0 = self.ot_coupled_style_noise(s)
+        s_t = th.randn(s.size(0), device=s.device, dtype=s.dtype).sigmoid() # logit-normal
+        s_ut = th.lerp(s_u0, s, s_t[:,None])
+        pred_style_flow = self.style_prior(s_ut, masked_labels, s_t)
+        style_prior_loss = F.mse_loss(pred_style_flow, s - s_u0)
+
+        loss = recon_loss + style_prior_loss
         return loss, {
             "loss": loss.detach(),
+            "recon": recon_loss.detach(),
+            "style_prior": style_prior_loss.detach(),
         }
 
     @th.no_grad()
-    def ot_coupled_noise(self, x1: Float[Tensor, "B E L"], cost_dims: int = 64) -> Float[Tensor, "B E L"]:
-        """sample noise minibatch-OT-coupled to `x1` (straightens flow paths)
-
-        cost is computed on features average-pooled along L, so the assignment
-        is solved in a low dim where minibatch OT is effective.
-        """
-        x0 = th.randn_like(x1)
-        if x1.size(0) < 2:
-            return x0
-
-        out_frames = max(1, cost_dims // x1.size(1)) # cost dim = out_frames * E
-        cost = th.cdist(
-            F.adaptive_avg_pool1d(x1.float(), out_frames).flatten(1),
-            F.adaptive_avg_pool1d(x0.float(), out_frames).flatten(1),
-        ).cpu().numpy()
+    def ot_coupled_style_noise(self, s: Float[Tensor, "B S"]) -> Float[Tensor, "B S"]:
+        """sample noise minibatch-OT-coupled to the style codes `s`"""
+        u0 = th.randn_like(s)
+        if s.size(0) < 2:
+            return u0
+        cost = th.cdist(s.float(), u0.float()).cpu().numpy()
         _, cols = linear_sum_assignment(cost)
-        return x0[cols]
+        return u0[cols]
 
     def configure_optimizers(self):
         params = [ p for p in self.parameters() if p.requires_grad ]
@@ -132,7 +137,7 @@ class DiffusionTrainer(pl.LightningModule):
 
         if batch_idx == 0:
             skips, h = self.latent.audio_encoder(a)
-            s = self.latent.sample_style(l.size(0))
+            s = self.style_prior.sample(l)
             pred_z = self.diffusion.sample(h, l, s, self.val_steps)
             pred_x, _ = self.latent.decode(pred_z, s, skips=skips)
 
