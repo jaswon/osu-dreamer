@@ -66,18 +66,9 @@ model:
         lr: .0002
         weight_decay: 0.01
     label_drop_prob: .2
-    flow_reg_factor: 1.
 
     # model hyperparameters
     latent_model_ckpt: latent.ckpt
-    flow_latent_dim: 16
-    posterior_args:
-        backbone_dim: 128
-        backbone_args: 
-            head_dim: 32
-            depth: 6
-            expand: 4
-            radius: 2
 
     diffusion_args:
         noise_level_features: 256

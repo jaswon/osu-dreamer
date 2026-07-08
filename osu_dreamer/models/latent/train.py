@@ -38,9 +38,12 @@ class LatentTrainer(pl.LightningModule):
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
         z_reg_weight: float,
+        s_reg_weight: float,
+        s_noise: float,
 
         # model hparams
         emb_dim: int,
+        style_dim: int,
         n_downs: int,
         stride: int,
         latent_args: LatentModelArgs,
@@ -53,19 +56,24 @@ class LatentTrainer(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
         self.z_reg_weight = z_reg_weight
+        self.s_reg_weight = s_reg_weight
+        self.s_noise = s_noise
 
-        self.latent = LatentModel(emb_dim, n_downs, stride, latent_args)
+        self.latent = LatentModel(emb_dim, style_dim, n_downs, stride, latent_args)
     
     def forward(self, batch: Batch):
 
         audio, true_chart, true_labels = batch
         
-        z = self.latent.encode(true_chart)
+        z, s = self.latent.encode(true_chart)
 
         z_samples = z.transpose(1, 2).reshape(-1, z.size(1))
         z_reg_loss = mmd_imq(z_samples, th.randn_like(z_samples))
+        s_reg_loss = mmd_imq(s, th.randn_like(s))
 
-        pred_chart_logits, pred_labels = self.latent(audio, z)
+        if self.training:
+            s = s + self.s_noise * th.randn_like(s)
+        pred_chart_logits, pred_labels = self.latent(audio, z, s)
 
         hit_loss = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
@@ -87,10 +95,12 @@ class LatentTrainer(pl.LightningModule):
         loss = (
             losses.sum()
             + self.z_reg_weight * z_reg_loss
+            + self.s_reg_weight * s_reg_loss
         )
         return loss, {
             **{ name: loss.detach() for name, loss in zip(LOSS_COMPONENTS, losses) },
             "z_reg": z_reg_loss.detach(),
+            "s_reg": s_reg_loss.detach(),
             "loss": loss.detach(),
         }
 
@@ -156,9 +166,9 @@ class LatentTrainer(pl.LightningModule):
         """
         a, x, true_labels = b
 
-        z = self.latent.encode(x)
+        z, s = self.latent.encode_chart(x)
 
-        pred_chart, pred_labels = self.latent.decode(z, audio=a)
+        pred_chart, pred_labels = self.latent.decode(z, s, audio=a)
 
         # WAE uses a deterministic encoder, so posterior collapse shows up as
         # latent dimensions with (near-)zero variance rather than as low KL
@@ -199,9 +209,9 @@ class LatentTrainer(pl.LightningModule):
         from einops import repeat
 
         a,x,_ = b
-        z = self.latent.encode_chart(x)
+        z, s = self.latent.encode_chart(x)
         plot_z = repeat(z, 'b d l -> b d (l r)', r=self.latent.chunk_size)[:,:,:x.size(-1)]
-        pred_x, _ = self.latent.decode(z, audio=a)
+        pred_x, _ = self.latent.decode(z, s, audio=a)
 
         exp: SummaryWriter = self.logger.experiment # type: ignore
         with plot_signals(

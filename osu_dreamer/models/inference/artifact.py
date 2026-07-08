@@ -14,8 +14,8 @@ def save_inference(
     latent_ckpt = th.load(latent_ckpt_path, map_location='cpu')
     denoiser_ckpt = th.load(denoiser_ckpt_path, map_location='cpu')
     inference_hparams = {
-        **{ k: latent_ckpt['hyper_parameters'][k] for k in ['emb_dim', 'n_downs', 'stride', 'latent_args'] },
-        **{ k: denoiser_ckpt['hyper_parameters'][k] for k in ['diffusion_args', 'flow_latent_dim'] },
+        **{ k: latent_ckpt['hyper_parameters'][k] for k in ['emb_dim', 'style_dim', 'n_downs', 'stride', 'latent_args'] },
+        **{ k: denoiser_ckpt['hyper_parameters'][k] for k in ['diffusion_args'] },
     }
 
     inference_state_dict = {

@@ -72,9 +72,12 @@ model:
         warmup_init: .1
         warmup_steps: 2000
     z_reg_weight: .001
+    s_reg_weight: 1.
+    s_noise: .2
 
     # model hyperparameters
-    emb_dim: 16
+    emb_dim: 8
+    style_dim: 16
     n_downs: 3
     stride: 3
     latent_args:

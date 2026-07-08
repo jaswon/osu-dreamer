@@ -19,12 +19,10 @@ from osu_dreamer.data.module import Batch, pad_to_multiple
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
-from osu_dreamer.modules.wae import mmd_imq
 
 from osu_dreamer.models.latent.train import LatentTrainer
 
 from .model import DiffusionModel, DiffusionModelArgs
-from .posterior import FlowPosterior, FlowPosteriorArgs
 
     
 class DiffusionTrainer(pl.LightningModule):
@@ -39,12 +37,9 @@ class DiffusionTrainer(pl.LightningModule):
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
         label_drop_prob: float,
-        flow_reg_factor: float,
 
         # model hparams
         latent_model_ckpt: str,
-        flow_latent_dim: int,
-        posterior_args: FlowPosteriorArgs,
         diffusion_args: DiffusionModelArgs,
     ):
         super().__init__()
@@ -59,14 +54,12 @@ class DiffusionTrainer(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
         self.label_drop_prob = label_drop_prob
-        self.flow_reg_factor = flow_reg_factor
 
         # model
         self.latent = LatentTrainer.load_from_checkpoint(latent_model_ckpt).latent
         self.latent.requires_grad_(False)
 
-        self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.a_dim, flow_latent_dim, diffusion_args)
-        self.posterior = FlowPosterior(self.latent.emb_dim + self.latent.a_dim, flow_latent_dim, posterior_args)
+        self.diffusion = DiffusionModel(self.latent.emb_dim, self.latent.a_dim, self.latent.style_dim, diffusion_args)
 
     def on_train_epoch_start(self):
         self.latent.eval()
@@ -80,24 +73,17 @@ class DiffusionTrainer(pl.LightningModule):
         masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, 0, labels) # classifier free guidance
         
         with th.no_grad():
-            x1 = self.latent.encode_chart(chart)
+            x1, s = self.latent.encode_chart(chart)
             _, a = self.latent.audio_encoder(audio)
         x0 = self.ot_coupled_noise(x1)
         true_flow = x1 - x0
         t = th.randn(audio.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal
         xt = th.lerp(x0,x1,t[:,None,None])
 
-        flow_latent = self.posterior(th.cat([a, x1], dim=1))
-        flow_reg_loss = mmd_imq(flow_latent, th.randn_like(flow_latent))
-
-        pred_flow = self.diffusion.forward(a, masked_labels, flow_latent, xt, t)
-        recon_loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
-
-        loss = recon_loss + self.flow_reg_factor * flow_reg_loss
+        pred_flow = self.diffusion.forward(a, masked_labels, s, xt, t)
+        loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
         return loss, {
             "loss": loss.detach(),
-            "recon": recon_loss.detach(),
-            "flow_reg": flow_reg_loss.detach(),
         }
 
     @th.no_grad()
@@ -146,8 +132,9 @@ class DiffusionTrainer(pl.LightningModule):
 
         if batch_idx == 0:
             skips, h = self.latent.audio_encoder(a)
-            pred_z = self.diffusion.sample(h, l, self.val_steps)
-            pred_x, _ = self.latent.decode(pred_z, skips=skips)
+            s = self.latent.sample_style(l.size(0))
+            pred_z = self.diffusion.sample(h, l, s, self.val_steps)
+            pred_x, _ = self.latent.decode(pred_z, s, skips=skips)
 
             exp: SummaryWriter = self.logger.experiment # type: ignore
             with plot_signals(

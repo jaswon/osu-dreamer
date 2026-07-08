@@ -16,17 +16,17 @@ from osu_dreamer.models.latent.model import LatentModel, LatentModelArgs
 @dataclass
 class LDMArgs:
     emb_dim: int
+    style_dim: int
     n_downs: int
     stride: int
-    flow_latent_dim: int
     latent_args: LatentModelArgs
     diffusion_args: DiffusionModelArgs
 
 class LDM(nn.Module):
     def __init__(self, args: LDMArgs):
         super().__init__()
-        self.latent = LatentModel(args.emb_dim, args.n_downs, args.stride, args.latent_args)
-        self.diffusion = DiffusionModel(args.emb_dim, args.latent_args.h_dim, args.flow_latent_dim, args.diffusion_args)
+        self.latent = LatentModel(args.emb_dim, args.style_dim, args.n_downs, args.stride, args.latent_args)
+        self.diffusion = DiffusionModel(args.emb_dim, args.latent_args.h_dim, args.style_dim, args.diffusion_args)
 
     @th.no_grad()
     def sample(
@@ -43,6 +43,7 @@ class LDM(nn.Module):
         audio = pad_to_multiple(audio, self.latent.chunk_size)
 
         skips, h = self.latent.audio_encoder(audio[None])
-        z = self.diffusion.sample(h, labels, num_steps, show_progress)
-        chart, out_labels = self.latent.decode(z, skips=skips)
+        s = self.latent.sample_style(labels.size(0))
+        z = self.diffusion.sample(h, labels, s, num_steps, show_progress=show_progress)
+        chart, out_labels = self.latent.decode(z, s, skips=skips)
         return chart[..., :L], out_labels

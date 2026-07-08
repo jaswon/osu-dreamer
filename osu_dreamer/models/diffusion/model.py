@@ -28,19 +28,19 @@ class DiffusionModel(nn.Module):
         self,
         emb_dim: int,
         a_dim: int,
-        flow_latent_dim: int,
+        style_dim: int,
         args: DiffusionModelArgs,
     ):
         super().__init__()
         self.emb_dim = emb_dim
-        self.flow_latent_dim = flow_latent_dim
+        self.style_dim = style_dim
 
         self.proj_time = nn.Sequential(
             FourierFeatures(1, args.noise_level_features),
             nn.Linear(args.noise_level_features, args.global_cond_dim),
         )
         self.proj_label = nn.Linear(NUM_LABELS, args.global_cond_dim)
-        self.proj_latent = nn.Linear(flow_latent_dim, args.global_cond_dim)
+        self.proj_style = nn.Linear(style_dim, args.global_cond_dim)
 
         self.proj_in = nn.Conv1d(emb_dim+a_dim, args.backbone_dim, 1)
         self.net = Backbone(args.backbone_dim, a_dim, args.global_cond_dim, args.backbone_args)
@@ -52,9 +52,9 @@ class DiffusionModel(nn.Module):
     def _precompute_conditioning(
         self,
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
-        flow_latent: Float[Tensor, "#B Z"],
+        style: Float[Tensor, "#B S"],
     ) -> Float[Tensor, "B C"]:
-        return self.proj_label(labels) + self.proj_latent(flow_latent)
+        return self.proj_label(labels) + self.proj_style(style)
     
     def _pred_flow(
         self,
@@ -72,13 +72,13 @@ class DiffusionModel(nn.Module):
         self, 
         audio: Float[Tensor, "B A l"],
         labels: Float[Tensor, "B C"],
-        latent: Float[Tensor, "B Z"], # flow latent
+        style: Float[Tensor, "B S"],
         
         # --- diffusion args --- #
         xt: Float[Tensor, "B E l"], # noised input
         t: Float[Tensor, "B"],      # noise level
     ) -> Float[Tensor, "B E l"]:
-        return self._pred_flow(self._precompute_conditioning(labels, latent), audio, xt, t)
+        return self._pred_flow(self._precompute_conditioning(labels, style), audio, xt, t)
         
     
     @th.no_grad()
@@ -86,16 +86,16 @@ class DiffusionModel(nn.Module):
         self, 
         audio: Float[Tensor, "#B A l"],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+        style: Float[Tensor, "B S"],
         num_steps: int,
         time_shift: float = 3.,
         show_progress: bool = False,
     ) -> Float[Tensor, "B E l"]:
         B = labels.size(0)
         x = th.randn(B, self.emb_dim, audio.size(-1), device=audio.device)
-        flow_latent = th.randn(B, self.flow_latent_dim, device=audio.device)
         denoiser = partial(
             self._pred_flow,
-            self._precompute_conditioning(labels, flow_latent),
+            self._precompute_conditioning(labels, style),
             audio,
         )
 

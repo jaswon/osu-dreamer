@@ -4,7 +4,6 @@ from jaxtyping import Float
 
 from torch import nn, Tensor
 
-from osu_dreamer.modules.res import Res
 from osu_dreamer.modules.swiglu import SwiGLU
 from osu_dreamer.modules.rms_norm import RMSNorm
 
@@ -14,21 +13,52 @@ class LayerArgs:
     expand: int
     radius: int
 
-def Layer(dim: int, args: LayerArgs):
-    return nn.Sequential(
-        *( Res(
-            RMSNorm(dim), 
-            SwiGLU(dim, expand=args.expand, radius=args.radius), 
-            RMSNorm(dim, gain=1e-3),
-        ) for _ in range(args.n_layers) ), 
-        RMSNorm(dim),
-    ) # peri-ln
+class layer(nn.Module):
+    def __init__(self, dim: int, cond_dim: int, args: LayerArgs):
+        super().__init__()
+        self.norms = nn.ModuleList([ RMSNorm(dim) for _ in range(args.n_layers) ])
+        self.blocks = nn.ModuleList([
+            nn.Sequential(
+                SwiGLU(dim, expand=args.expand, radius=args.radius), 
+                RMSNorm(dim, gain=1e-3),
+            )
+            for _ in range(args.n_layers)
+        ])
+        self.out_norm = RMSNorm(dim)
+    
+        self.films = None
+        if cond_dim > 0:
+            h_dim = 4*cond_dim
+            self.proj_cond = nn.Sequential(nn.Linear(cond_dim, h_dim), nn.SiLU())
+            def film():
+                f = nn.Linear(h_dim, 3*dim)
+                nn.init.zeros_(f.weight)
+                nn.init.zeros_(f.bias) # type: ignore
+                return f
+            self.films = nn.ModuleList([ film() for _ in range(args.n_layers) ])
+
+    def forward(
+        self,
+        x: Float[Tensor, "B X L"],
+        cond: None | Float[Tensor, "B C"] = None,
+    ) -> Float[Tensor, "B X L"]:
+        if self.films is not None:
+            assert cond is not None, "conditional layer requires `cond`"
+            cond = self.proj_cond(cond)
+            films = [ film(cond)[:,:,None].chunk(3, dim=1) for film in self.films ]
+        else:
+            assert cond is None, "conditioning passed to an unconditional layer"
+            films = [ (0,0,0) ] * len(self.blocks)
+
+        for (scale, shift, gate), norm, block in zip(films, self.norms, self.blocks):
+            x = x + block(norm(x) * (1 + scale) + shift) * (1 + gate)
+        return self.out_norm(x)
 
 class UNetEncoder(nn.Module):
     def __init__(self, dim: int, n_downs: int, stride: int, args: LayerArgs):
         super().__init__()
         self.down = nn.AvgPool1d(stride)
-        self.layers = nn.ModuleList([ Layer(dim, args) for _ in range(n_downs) ])
+        self.layers = nn.ModuleList([ layer(dim, 0, args) for _ in range(n_downs) ])
         self.unmixers = nn.ModuleList([ unmixer(dim, stride) for _ in range(n_downs) ])
 
     def forward(self, x: Float[Tensor, "B X L"]) -> tuple[ list[ Float[Tensor, "B X _l"] ], Float[Tensor, "B X l"] ]:
@@ -41,18 +71,23 @@ class UNetEncoder(nn.Module):
         return skips, x
     
 class UNetDecoder(nn.Module):
-    def __init__(self, dim: int, n_downs: int, stride: int, args: LayerArgs):
+    def __init__(self, dim: int, cond_dim: int, n_downs: int, stride: int, args: LayerArgs):
         super().__init__()
         self.up = nn.Upsample(scale_factor=stride)
-        self.layers = nn.ModuleList([ Layer(dim, args) for _ in range(n_downs) ])
+        self.layers = nn.ModuleList([ layer(dim, cond_dim, args) for _ in range(n_downs) ])
         self.mixers = nn.ModuleList([ mixer(dim, stride) for _ in range(n_downs) ])
 
-    def forward(self, skips: list[ Float[Tensor, "#B X _L"] ], x: Float[Tensor, "B X l"]) -> Float[Tensor, "B X L"]:
+    def forward(
+        self,
+        skips: list[ Float[Tensor, "#B X _L"] ],
+        x: Float[Tensor, "B X l"],
+        cond: None | Float[Tensor, "B C"] = None,
+    ) -> Float[Tensor, "B X L"]:
         for mix, layer in zip(self.mixers, self.layers):
             x = self.up(x)
             skip = skips.pop().expand(x.size(0), -1, -1)
             x = mix(skip, x)
-            x = layer(x)
+            x = layer(x, cond)
         return x
     
 class unmixer(nn.Module):

@@ -15,12 +15,12 @@ class LabelPredictor(nn.Module):
         super().__init__()
         self.grad_factor = args.grad_factor
         self.net = nn.Sequential(
-            nn.Conv1d(x_dim, args.h_dim, 3),
+            nn.Linear(x_dim, args.h_dim),
             nn.SiLU(),
-            nn.Conv1d(args.h_dim, label_dim, 1),
+            nn.Linear(args.h_dim, label_dim),
         )
 
-    def forward(self, x: Float[Tensor, "B X l"]) -> Float[Tensor, "B C"]:
+    def forward(self, x: Float[Tensor, "B X"]) -> Float[Tensor, "B C"]:
         if self.training:
             x = th.lerp(x.detach(), x, self.grad_factor)
-        return 5 + 5 * self.net(x).mean(dim=2)
+        return 5 + 5 * self.net(x)
