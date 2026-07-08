@@ -80,8 +80,8 @@ model:
     latent_args:
         h_dim: 128
         ae_args:
-            n_layers: 2
-            expand: 2
+            n_layers: 3
+            expand: 3
             radius: 1
         label_args:
             h_dim: 256
