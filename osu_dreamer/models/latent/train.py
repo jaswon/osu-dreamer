@@ -115,9 +115,8 @@ class LatentTrainer(pl.LightningModule):
         return loss
 
     def on_validation_epoch_start(self):
-        # onset soft-Dice sums (shared true-norm `_on_tt`); `_sh` = shuffled latent
+        # onset soft-Dice sums (shared true-norm `_on_tt`)
         self._on_pt = self._on_pp = self._on_tt = 0.
-        self._on_pt_sh = self._on_pp_sh = 0.
         # cursor R² sums: residual and total (variance) sum-of-squares
         self._cur_res = self._cur_tot = 0.
 
@@ -140,19 +139,13 @@ class LatentTrainer(pl.LightningModule):
             return 2 * a * b / max(a + b, 1e-8)
 
         onset_f1 = soft_f1(self._on_pt, self._on_pp, self._on_tt)
-        onset_f1_sh = soft_f1(self._on_pt_sh, self._on_pp_sh, self._on_tt)
         cursor_r2 = 1. - self._cur_res / max(self._cur_tot, 1e-8)
         cursor_q = self._cur_tot / max(self._cur_tot + self._cur_res, 1e-8)
 
         self.log_dict({
-            "eval/onset_soft_f1": onset_f1,
-            "eval/cursor_vel_r2": cursor_r2,
+            "eval/hit/dice": onset_f1,
+            "eval/cursor/vel/r2": cursor_r2,
             "eval/score": hmean(onset_f1, cursor_q),
-            # onset overlap with a temporally-shuffled (mismatched but in-
-            # distribution) latent; gain ≈ 0 => decoder recovers onsets from
-            # audio, gain ≈ onset_f1 => onsets are driven by the latent
-            "eval/onset_soft_f1_shuf": onset_f1_sh,
-            "eval/onset_soft_f1_gain": onset_f1 - onset_f1_sh,
         })
 
     @th.no_grad
@@ -166,28 +159,19 @@ class LatentTrainer(pl.LightningModule):
         z = self.latent.encode(x)
 
         pred_chart, pred_labels = self.latent.decode(z, audio=a)
-        # shuffled latent: a real, in-distribution z that no longer matches the
-        # audio (temporal roll). unlike zeroing z, this avoids OOD artifacts, so
-        # it cleanly isolates whether the decoder relies on the latent vs audio
-        z_shuf = th.roll(z, shifts=max(1, z.size(-1) // 2), dims=-1)
-        pred_chart_sh, _ = self.latent.decode(z_shuf, audio=a)
 
         # WAE uses a deterministic encoder, so posterior collapse shows up as
         # latent dimensions with (near-)zero variance rather than as low KL
         z_var = z.var(dim=(0, 2))
-        active_units = (z_var > 1e-2).sum().float()
 
         # --- onset soft-F1 (Dice) accumulation ---
         # continuous overlap of the onset activation curves; equals F1 for binary
         # signals but needs no peak-picking or timing tolerance
         t = x[:, BeatmapEncoding.ONSET].float()
         p = pred_chart[:, BeatmapEncoding.ONSET].float()
-        p_sh = pred_chart_sh[:, BeatmapEncoding.ONSET].float()
         self._on_tt += t.mul(t).sum().item()
         self._on_pt += p.mul(t).sum().item()
         self._on_pp += p.mul(p).sum().item()
-        self._on_pt_sh += p_sh.mul(t).sum().item()
-        self._on_pp_sh += p_sh.mul(p_sh).sum().item()
 
         # --- cursor R² accumulation ---
         # computed on velocity (first difference), not raw position: position R²
@@ -201,17 +185,13 @@ class LatentTrainer(pl.LightningModule):
         self._cur_res += (pred_v - true_v).pow(2).sum().item()
         self._cur_tot += (true_v - true_v.mean(dim=-1, keepdim=True)).pow(2).sum().item()
 
-        # interpretable diagnostics (unit conversion only, not thresholds)
         cursor_px = (pred_xy - true_xy).abs().mean()
-        cursor_px_sh = ((pred_chart_sh[:, CursorSignals].float() * scale) - true_xy).abs().mean()
         label_mae = (pred_labels - true_labels).abs().mean()
 
         return {
             "eval/cursor_px_mae": cursor_px,
             "eval/label_mae": label_mae,
-            "eval/active_units": active_units,
             "eval/z_var": z_var.mean(),
-            "eval/cursor_px_ablation": cursor_px_sh - cursor_px,
         }
 
     @th.no_grad
