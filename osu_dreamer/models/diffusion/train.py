@@ -101,14 +101,20 @@ class DiffusionTrainer(pl.LightningModule):
         }
 
     @th.no_grad()
-    def ot_coupled_noise(self, x1: Float[Tensor, "B E L"]) -> Float[Tensor, "B E L"]:
-        """sample noise minibatch-OT-coupled to `x1` (straightens flow paths)"""
+    def ot_coupled_noise(self, x1: Float[Tensor, "B E L"], cost_dims: int = 64) -> Float[Tensor, "B E L"]:
+        """sample noise minibatch-OT-coupled to `x1` (straightens flow paths)
+
+        cost is computed on features average-pooled along L, so the assignment
+        is solved in a low dim where minibatch OT is effective.
+        """
         x0 = th.randn_like(x1)
         if x1.size(0) < 2:
             return x0
+
+        out_frames = max(1, cost_dims // x1.size(1)) # cost dim = out_frames * E
         cost = th.cdist(
-            x1.flatten(1).float(),
-            x0.flatten(1).float(),
+            F.adaptive_avg_pool1d(x1.float(), out_frames).flatten(1),
+            F.adaptive_avg_pool1d(x0.float(), out_frames).flatten(1),
         ).cpu().numpy()
         _, cols = linear_sum_assignment(cost)
         return x0[cols]
