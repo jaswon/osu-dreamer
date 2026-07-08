@@ -68,7 +68,7 @@ class DiffusionModel(nn.Module):
         cg: Float[Tensor, "B C"],
         a: Float[Tensor, "#B A l"],
         xt: Float[Tensor, "B E l"], # noised input
-        t: Float[Tensor, "B"],      # noise level
+        t: Float[Tensor, "#B"],     # noise level
     ) -> Float[Tensor, "B E l"]:
         cg = self.proj_cond( cg + self.proj_time(t[:,None]) )
         h = self.proj_in(th.cat([xt, a.expand(xt.size(0), -1, -1)], dim=1))
@@ -107,7 +107,7 @@ class DiffusionModel(nn.Module):
         )
 
         # shifted timestep schedule: denser steps near t=1
-        u = th.linspace(0, 1, num_steps+1, device=audio.device)
+        u = th.linspace(0, 1, num_steps+1, device=audio.device)[:,None]
         ts = time_shift * u / (1 + (time_shift - 1) * u)
 
         # heun step
@@ -116,8 +116,8 @@ class DiffusionModel(nn.Module):
             disable=not show_progress,
         ):
             dt = t1 - t0
-            v0 = denoiser(x, t0.expand(B))
-            v1 = denoiser(x + v0 * dt, t1.expand(B))
+            v0 = denoiser(x, t0)
+            v1 = denoiser(x + v0 * dt, t1)
             x = x + 0.5 * (v0 + v1) * dt
 
         return x
