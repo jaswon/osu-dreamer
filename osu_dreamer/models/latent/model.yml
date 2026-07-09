@@ -83,9 +83,9 @@ model:
     latent_args:
         h_dim: 128
         ae_args:
-            n_layers: 4
+            n_layers: 6
             expand: 2
-            radius: 1
+            radius: 2
 
         style_head_dim: 64
-        style_heads: 8
+        style_heads: 16
