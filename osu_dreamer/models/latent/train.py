@@ -88,11 +88,15 @@ class LatentTrainer(pl.LightningModule):
             s = s + self.s_noise * th.randn_like(s)
         pred_chart_logits, pred_labels = self.latent(audio, z, s)
 
-        hit_loss = F.binary_cross_entropy_with_logits(
+        true_hits = true_chart[:,HitSignals]
+        hit_bce = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
-            true_chart[:,HitSignals],
+            true_hits,
             reduction='none',
-        ).mul(1 + 9 * true_chart[:,HitSignals]).mean(dim=(0,2))
+        )
+        # `hit_floor``: soft target bce floor > 0 - subtract for cleaner objective (autocast safe)
+        hit_floor = -th.special.xlogy(true_hits, true_hits) - th.special.xlogy(1 - true_hits, 1 - true_hits)
+        hit_loss = (hit_bce - hit_floor).mul(1 + 9 * true_hits).mean(dim=(0,2))
 
         cursor_losses = [
             F.mse_loss(
