@@ -5,7 +5,7 @@ from torch import nn, Tensor
 
 from einops.layers.torch import Rearrange
 
-from .rms_norm import RMSNorm
+from osu_dreamer.common.rms_norm import RMSNorm
 
 
 class SpecFeatures(nn.Module):
