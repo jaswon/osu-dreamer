@@ -102,8 +102,7 @@ class UNetDecoder(nn.Module):
 class unmixer(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
-        self.proj = nn.Conv1d(dim, 2*dim, 1)
-
+        
     def forward(
         self,
         x: Float[Tensor, "B D L"],
@@ -111,17 +110,15 @@ class unmixer(nn.Module):
         Float[Tensor, "B D L"], # skip
         Float[Tensor, "B D L"], # x
     ]:
-        return self.proj(x).chunk(2, dim=1)
+        return x, x
 
 class mixer(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
-        self.proj = nn.Conv1d(2*dim, dim, 1)
-
+        
     def forward(
         self,
         skip: Float[Tensor, "B D L"],
         x: Float[Tensor, "B D L"],
     ) -> Float[Tensor, "B D L"]:
-        import torch as th
-        return self.proj(th.cat([skip, x], dim=1))
+        return skip + x
