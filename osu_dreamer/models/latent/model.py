@@ -11,13 +11,11 @@ from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.modules.spec_features import SpecFeatures
 
 from .unet import LayerArgs, UNetEncoder, UNetDecoder, layer
-from .label_predictor import LabelPredictor, LabelPredictorArgs
 
 @dataclass
 class LatentModelArgs:
     h_dim: int
     ae_args: LayerArgs
-    label_args: LabelPredictorArgs
 
 class LatentModel(nn.Module):
     def __init__(
@@ -50,7 +48,11 @@ class LatentModel(nn.Module):
         self.decoder = UNetDecoder(args.h_dim, style_dim, n_downs, stride, args.ae_args)
         self.proj_out = nn.Conv1d(args.h_dim, X_DIM, 1)
 
-        self.label_predictor = LabelPredictor(style_dim, NUM_LABELS, args.label_args)
+        self.label_predictor = nn.Sequential(
+            nn.Linear(style_dim, args.h_dim),
+            nn.SiLU(),
+            nn.Linear(args.h_dim, NUM_LABELS),
+        )
 
     def forward(
         self,
