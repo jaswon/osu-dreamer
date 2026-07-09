@@ -4,8 +4,8 @@ from jaxtyping import Float
 
 from torch import nn, Tensor
 
-from osu_dreamer.modules.swiglu import SwiGLU
-from osu_dreamer.modules.rms_norm import RMSNorm
+from osu_dreamer.common.swiglu import SwiGLU
+from osu_dreamer.common.rms_norm import RMSNorm
 
 @dataclass
 class LayerArgs:

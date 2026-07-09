@@ -8,7 +8,7 @@ from torch import nn, Tensor
 from osu_dreamer.data.beatmap.encode import X_DIM, NUM_LABELS, HitSignals, CursorSignals
 from osu_dreamer.data.load_audio import A_DIM
 
-from osu_dreamer.modules.spec_features import SpecFeatures
+from osu_dreamer.common.spec_features import SpecFeatures
 
 from .unet import LayerArgs, UNetEncoder, UNetDecoder, layer
 

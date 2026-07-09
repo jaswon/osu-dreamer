@@ -18,7 +18,7 @@ from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.module import Batch, pad_to_multiple
 from osu_dreamer.data.plot import plot_signals
 
-from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
+from osu_dreamer.common.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from osu_dreamer.models.latent.train import LatentTrainer
 

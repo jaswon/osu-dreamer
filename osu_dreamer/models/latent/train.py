@@ -13,8 +13,8 @@ from osu_dreamer.data.beatmap.encode import BeatmapEncoding, HitSignals, CursorS
 from osu_dreamer.data.module import Batch, pad_to_multiple
 from osu_dreamer.data.plot import plot_signals
 
-from osu_dreamer.modules.lr_schedule import LRScheduleArgs, make_lr_schedule
-from osu_dreamer.modules.wae import mmd_imq
+from osu_dreamer.common.lr_schedule import LRScheduleArgs, make_lr_schedule
+from osu_dreamer.common.wae import mmd_imq
 
 from .model import LatentModel, LatentModelArgs
 

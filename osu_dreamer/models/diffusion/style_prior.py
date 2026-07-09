@@ -7,7 +7,7 @@ from torch import nn, Tensor
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS
 
-from osu_dreamer.modules.fourier_features import FourierFeatures
+from osu_dreamer.common.fourier_features import FourierFeatures
 
 @dataclass
 class StylePriorArgs:
