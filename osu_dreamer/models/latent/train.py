@@ -19,17 +19,17 @@ from osu_dreamer.common.wae import mmd_imq
 from .model import LatentModel, LatentModelArgs
 
 LOSS_COMPONENT_WEIGHTS = {
-    "hit/onset": 3,
-    "hit/combo": 3,
+    "hit/onset": 1,
+    "hit/combo": 1,
     "hit/slide": 1,
     "hit/sustain": 1,
-    "hit/whistle": 3,
-    "hit/finish": 3,
-    "hit/clap": 3,
-    "cursor/pos": 40,
-    "cursor/vel": 40,
-    "cursor/acc": 40,
-    "label": 1,
+    "hit/whistle": 1,
+    "hit/finish": 1,
+    "hit/clap": 1,
+    "cursor/pos": 2,
+    "cursor/vel": 2,
+    "cursor/acc": 2,
+    "label": 2,
 }
 
 class LatentTrainer(pl.LightningModule):
@@ -102,7 +102,7 @@ class LatentTrainer(pl.LightningModule):
             F.mse_loss(
                 pred_chart_logits[:,CursorSignals].diff(n=i),
                 true_chart[:,CursorSignals].diff(n=i),
-            ) * 10 ** i
+            )
             for i in range(3)
         ]
 
