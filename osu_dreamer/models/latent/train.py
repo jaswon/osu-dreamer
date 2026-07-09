@@ -18,19 +18,19 @@ from osu_dreamer.modules.wae import mmd_imq
 
 from .model import LatentModel, LatentModelArgs
 
-LOSS_COMPONENTS = (
-    "hit/onset",
-    "hit/combo",
-    "hit/slide",
-    "hit/sustain",
-    "hit/whistle",
-    "hit/finish",
-    "hit/clap",
-    "cursor/pos",
-    "cursor/vel",
-    "cursor/acc",
-    "label",
-)
+LOSS_COMPONENT_WEIGHTS = {
+    "hit/onset": 3,
+    "hit/combo": 3,
+    "hit/slide": 1,
+    "hit/sustain": 1,
+    "hit/whistle": 3,
+    "hit/finish": 3,
+    "hit/clap": 3,
+    "cursor/pos": 40,
+    "cursor/vel": 40,
+    "cursor/acc": 40,
+    "label": 1,
+}
 
 class LatentTrainer(pl.LightningModule):
     def __init__(
@@ -98,20 +98,21 @@ class LatentTrainer(pl.LightningModule):
             F.mse_loss(
                 pred_chart_logits[:,CursorSignals].diff(n=i),
                 true_chart[:,CursorSignals].diff(n=i),
-            ) * 10 ** (i+1)
+            ) * 10 ** i
             for i in range(3)
         ]
 
         label_loss = F.mse_loss(pred_labels, true_labels)
 
         losses = th.stack([ *hit_loss.unbind(), *cursor_losses, label_loss ])
+        loss_weights = losses.new_tensor(list(LOSS_COMPONENT_WEIGHTS.values()))
         loss = (
-            losses.sum()
+            (loss_weights * losses).sum()
             + self.z_reg_weight * z_reg_loss
             + self.s_reg_weight * s_reg_loss
         )
         return loss, {
-            **{ name: loss.detach() for name, loss in zip(LOSS_COMPONENTS, losses) },
+            **{ name: loss.detach() for name, loss in zip(LOSS_COMPONENT_WEIGHTS.keys(), losses) },
             "z_reg": z_reg_loss.detach(),
             "s_reg": s_reg_loss.detach(),
             "loss": loss.detach(),
