@@ -13,6 +13,11 @@ class LayerArgs:
     expand: int
     radius: int
 
+def zero(m: nn.Linear):
+    nn.init.zeros_(m.weight)
+    nn.init.zeros_(m.bias)
+    return m
+
 class layer(nn.Module):
     def __init__(self, dim: int, cond_dim: int, args: LayerArgs):
         super().__init__()
@@ -28,12 +33,7 @@ class layer(nn.Module):
     
         self.films = None
         if cond_dim > 0:
-            def film():
-                f = nn.Linear(cond_dim, 3*dim)
-                nn.init.zeros_(f.weight)
-                nn.init.zeros_(f.bias) # type: ignore
-                return f
-            self.films = nn.ModuleList([ film() for _ in range(args.n_layers) ])
+            self.films = nn.ModuleList([ zero(nn.Linear(cond_dim, 3*dim)) for _ in range(args.n_layers) ])
 
     def forward(
         self,
