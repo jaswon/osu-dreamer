@@ -86,3 +86,6 @@ model:
             n_layers: 4
             expand: 2
             radius: 1
+
+        style_head_dim: 64
+        style_heads: 8

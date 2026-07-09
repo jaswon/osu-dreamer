@@ -16,6 +16,23 @@ from .unet import LayerArgs, UNetEncoder, UNetDecoder, layer
 class LatentModelArgs:
     h_dim: int
     ae_args: LayerArgs
+    
+    style_head_dim: int
+    style_heads: int
+
+class AttnPool(nn.Module):
+    def __init__(self, dim: int, out_dim: int, head_dim: int, n_heads: int):
+        super().__init__()
+        self.n_heads = n_heads
+        h_dim = head_dim * n_heads
+        self.scores = nn.Conv1d(dim, n_heads, 1)
+        self.values = nn.Conv1d(dim, h_dim, 1)
+        self.proj_out = nn.Linear(h_dim, out_dim)
+
+    def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B O"]:
+        a = self.scores(x).softmax(dim=-1)                  # B H L
+        v = self.values(x).unflatten(1, (self.n_heads, -1)) # B H D L
+        return self.proj_out(th.einsum('bhl,bhdl->bhd', a, v).flatten(1))
 
 class LatentModel(nn.Module):
     def __init__(
@@ -36,9 +53,7 @@ class LatentModel(nn.Module):
         self.audio_encoder = nn.Sequential( SpecFeatures(A_DIM, args.h_dim), UNetEncoder(args.h_dim, n_downs, stride, args.ae_args) )
         self.style_head = nn.Sequential(
             layer(args.h_dim, 0, args.ae_args),
-            nn.Conv1d(args.h_dim, style_dim, 1),
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(1),
+            AttnPool(args.h_dim, style_dim, args.style_head_dim, args.style_heads),
         )
 
         self.param_layer = layer(args.h_dim, style_dim, args.ae_args)
