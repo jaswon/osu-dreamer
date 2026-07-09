@@ -54,25 +54,37 @@ class layer(nn.Module):
 class UNetEncoder(nn.Module):
     def __init__(self, dim: int, n_downs: int, stride: int, args: LayerArgs):
         super().__init__()
-        self.down = nn.AvgPool1d(stride)
+        self.downs = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv1d(dim, dim, 1+2*(stride//2), 1, stride//2, groups=dim),
+                nn.AvgPool1d(stride),
+            )
+            for _ in range(n_downs)
+        ])
         self.layers = nn.ModuleList([ layer(dim, 0, args) for _ in range(n_downs) ])
-        self.unmixers = nn.ModuleList([ unmixer(dim, stride) for _ in range(n_downs) ])
+        self.unmixers = nn.ModuleList([ unmixer(dim) for _ in range(n_downs) ])
 
     def forward(self, x: Float[Tensor, "B X L"]) -> tuple[ list[ Float[Tensor, "B X _l"] ], Float[Tensor, "B X l"] ]:
         skips = []
-        for layer, unmix in zip(self.layers, self.unmixers):
+        for layer, unmix, down in zip(self.layers, self.unmixers, self.downs):
             x = layer(x)
             skip, x = unmix(x)
             skips.append(skip)
-            x = self.down(x)
+            x = down(x)
         return skips, x
     
 class UNetDecoder(nn.Module):
     def __init__(self, dim: int, cond_dim: int, n_downs: int, stride: int, args: LayerArgs):
         super().__init__()
-        self.up = nn.Upsample(scale_factor=stride)
+        self.ups = nn.ModuleList([
+            nn.Sequential(
+                nn.Upsample(scale_factor=stride),
+                nn.Conv1d(dim, dim, 1+2*(stride//2), 1, stride//2, groups=dim),
+            )
+            for _ in range(n_downs)
+        ])
         self.layers = nn.ModuleList([ layer(dim, cond_dim, args) for _ in range(n_downs) ])
-        self.mixers = nn.ModuleList([ mixer(dim, stride) for _ in range(n_downs) ])
+        self.mixers = nn.ModuleList([ mixer(dim) for _ in range(n_downs) ])
 
     def forward(
         self,
@@ -80,17 +92,16 @@ class UNetDecoder(nn.Module):
         x: Float[Tensor, "B X l"],
         cond: None | Float[Tensor, "B C"] = None,
     ) -> Float[Tensor, "B X L"]:
-        for mix, layer in zip(self.mixers, self.layers):
-            x = self.up(x)
+        for up, mix, layer in zip(self.ups, self.mixers, self.layers):
+            x = up(x)
             skip = skips.pop().expand(x.size(0), -1, -1)
             x = mix(skip, x)
             x = layer(x, cond)
         return x
     
 class unmixer(nn.Module):
-    def __init__(self, dim: int, stride: int):
+    def __init__(self, dim: int):
         super().__init__()
-        self.filter = nn.Conv1d(dim, dim, 1+2*(stride//2), 1, stride//2, groups=dim)
         self.proj = nn.Conv1d(dim, 2*dim, 1)
 
     def forward(
@@ -100,12 +111,11 @@ class unmixer(nn.Module):
         Float[Tensor, "B D L"], # skip
         Float[Tensor, "B D L"], # x
     ]:
-        return self.proj(self.filter(x)).chunk(2, dim=1)
+        return self.proj(x).chunk(2, dim=1)
 
 class mixer(nn.Module):
-    def __init__(self, dim: int, stride: int):
+    def __init__(self, dim: int):
         super().__init__()
-        self.filter = nn.Conv1d(dim, dim, 1+2*(stride//2), 1, stride//2, groups=dim)
         self.proj = nn.Conv1d(2*dim, dim, 1)
 
     def forward(
@@ -114,4 +124,4 @@ class mixer(nn.Module):
         x: Float[Tensor, "B D L"],
     ) -> Float[Tensor, "B D L"]:
         import torch as th
-        return self.proj(th.cat([skip, self.filter(x)], dim=1))
+        return self.proj(th.cat([skip, x], dim=1))
