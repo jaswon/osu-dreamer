@@ -61,6 +61,11 @@ class LatentTrainer(pl.LightningModule):
         self.s_reg_weight = s_reg_weight
         self.s_noise = s_noise
 
+        self.loss_ema: th.Tensor
+        self.register_buffer('loss_ema', th.ones(len(LOSS_COMPONENT_WEIGHTS)))
+        self.loss_ema_initialized: th.Tensor
+        self.register_buffer('loss_ema_initialized', th.tensor(False))
+
         self.latent = LatentModel(emb_dim, style_dim, n_downs, stride, latent_args)
     
     def forward(self, batch: Batch):
@@ -89,14 +94,14 @@ class LatentTrainer(pl.LightningModule):
         pred_chart_logits, pred_labels = self.latent(audio, z, s)
 
         true_hits = true_chart[:,HitSignals]
+        # `hit_floor``: soft target bce floor > 0 - subtract for cleaner objective (autocast safe)
+        hit_floor = -th.special.xlogy(true_hits, true_hits) - th.special.xlogy(1 - true_hits, 1 - true_hits)
         hit_bce = F.binary_cross_entropy_with_logits(
             pred_chart_logits[:,HitSignals],
             true_hits,
             reduction='none',
-        )
-        # `hit_floor``: soft target bce floor > 0 - subtract for cleaner objective (autocast safe)
-        hit_floor = -th.special.xlogy(true_hits, true_hits) - th.special.xlogy(1 - true_hits, 1 - true_hits)
-        hit_loss = (hit_bce - hit_floor).mul(1 + 9 * true_hits).mean(dim=(0,2))
+        ) - hit_floor
+        hit_loss = hit_bce.mean(dim=(0,2))
 
         cursor_losses = [
             F.mse_loss(
@@ -110,8 +115,16 @@ class LatentTrainer(pl.LightningModule):
 
         losses = th.stack([ *hit_loss.unbind(), *cursor_losses, label_loss ])
         loss_weights = losses.new_tensor(list(LOSS_COMPONENT_WEIGHTS.values()))
+
+        if self.training:
+            if not self.loss_ema_initialized:
+                self.loss_ema.copy_(losses.detach())
+                self.loss_ema_initialized.fill_(True)
+            else:
+                self.loss_ema.lerp_(losses.detach(), 0.01)
+
         loss = (
-            (loss_weights * losses).sum()
+            (loss_weights * losses / self.loss_ema.clamp(min=1e-8)).sum()
             + self.z_reg_weight * z_reg_loss
             + self.s_reg_weight * s_reg_loss
         )
