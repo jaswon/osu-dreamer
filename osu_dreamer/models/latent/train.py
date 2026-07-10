@@ -39,7 +39,6 @@ class LatentTrainer(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
-        z_reg_weight: float,
         s_reg_weight: float,
         s_noise: float,
         z_noise: float,
@@ -59,7 +58,6 @@ class LatentTrainer(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
-        self.z_reg_weight = z_reg_weight
         self.s_reg_weight = s_reg_weight
         self.s_noise = s_noise
         self.z_noise = z_noise
@@ -85,8 +83,6 @@ class LatentTrainer(pl.LightningModule):
 
         z, s = self.latent.encode_chart(true_chart)
 
-        z_samples = z.transpose(1, 2).reshape(-1, z.size(1))
-        z_reg_loss = mmd_imq(z_samples, th.randn_like(z_samples))
         s_reg_loss = mmd_imq(s, th.randn_like(s))
 
         # swap styles within each half-pair
@@ -140,12 +136,10 @@ class LatentTrainer(pl.LightningModule):
 
         loss = (
             (loss_weights * losses / self.loss_ema.clamp(min=1e-8)).sum()
-            + self.z_reg_weight * z_reg_loss
             + self.s_reg_weight * s_reg_loss
         )
         return loss, {
             **{ name: loss.detach() for name, loss in zip(LOSS_COMPONENT_WEIGHTS.keys(), losses) },
-            "z_reg": z_reg_loss.detach(),
             "s_reg": s_reg_loss.detach(),
             "loss": loss.detach(),
         }
