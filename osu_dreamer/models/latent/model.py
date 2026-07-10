@@ -91,11 +91,7 @@ class LatentModel(nn.Module):
     ]:
         _, h = self.chart_encoder(chart)
         s = self.style_head(h)
-
-        # `s.detach()`: the style branch must earn its content via its own losses, 
-        # not serve as a reconstruction side-channel
-        z = self.param_proj(self.param_layer(h, s.detach()))
-        
+        z = self.param_proj(self.param_layer(h, s))
         return z, s
     
     def decode_logits(

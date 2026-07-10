@@ -43,6 +43,7 @@ class LatentTrainer(pl.LightningModule):
         s_reg_weight: float,
         s_noise: float,
         z_noise: float,
+        z_mask_frac: float,
 
         # model hparams
         emb_dim: int,
@@ -62,6 +63,7 @@ class LatentTrainer(pl.LightningModule):
         self.s_reg_weight = s_reg_weight
         self.s_noise = s_noise
         self.z_noise = z_noise
+        self.z_mask_frac = z_mask_frac
 
         self.loss_ema: th.Tensor
         self.register_buffer('loss_ema', th.ones(len(LOSS_COMPONENT_WEIGHTS)))
@@ -94,6 +96,16 @@ class LatentTrainer(pl.LightningModule):
         if self.training:
             s = s + self.s_noise * th.randn_like(s)
             z = z + self.z_noise * th.randn_like(z)
+            if self.z_mask_frac > 0:
+                # zero out a random contiguous span per item: the decoder must
+                # fill gaps from `s` + audio skips, so time-invariant info is
+                # cheaper to route through `s` than to replicate in `z`
+                B, _, l = z.shape
+                span = (th.rand(B, device=z.device) * self.z_mask_frac * l).long()
+                start = (th.rand(B, device=z.device) * (l - span).clamp(min=1)).long()
+                idx = th.arange(l, device=z.device)[None]
+                mask = (idx >= start[:, None]) & (idx < (start + span)[:, None])
+                z = z.masked_fill(mask[:, None, :], 0.)
         pred_chart_logits, pred_labels = self.latent(audio, z, s)
 
         true_hits = true_chart[:,HitSignals]

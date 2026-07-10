@@ -75,6 +75,7 @@ model:
     s_reg_weight: .001
     s_noise: .2
     z_noise: .2
+    z_mask_frac: .25
 
     # model hyperparameters
     emb_dim: 8
