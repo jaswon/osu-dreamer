@@ -11,7 +11,7 @@ from osu_dreamer.data.load_audio import A_DIM
 from osu_dreamer.data.module import pad_to_multiple
 
 from osu_dreamer.models.diffusion.model import DiffusionModel, DiffusionModelArgs
-from osu_dreamer.models.diffusion.style_prior import StylePrior, StylePriorArgs
+from osu_dreamer.models.style_prior.model import StylePrior, StylePriorArgs
 from osu_dreamer.models.latent.model import LatentModel, LatentModelArgs
 
 @dataclass

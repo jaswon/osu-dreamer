@@ -26,15 +26,12 @@ trainer:
         class_path: pytorch_lightning.loggers.TensorBoardLogger
         init_args:
             save_dir: runs
-            name: denoiser
+            name: style_prior
 
     accumulate_grad_batches: 1
     enable_progress_bar: true
     log_every_n_steps: 5
     enable_model_summary: true
-
-    # val_check_interval: { 'minutes': 10 }
-    # check_val_every_n_epoch: 1
 
     gradient_clip_val: 1.
     
@@ -49,7 +46,6 @@ data:
     num_workers: 13
     
     # number of samples to hold out for validation
-    # must be at least one in order to render validation plots
     val_size: 128
 
     # per-worker shuffle buffer (in windows); >1 decorrelates consecutive
@@ -57,10 +53,6 @@ data:
     shuffle_buffer_size: 512
     
 model:
-    # validation parameters
-    val_steps: 16
-    val_batches: 8
-
     # training parameters
     opt_args:
         lr: .0002
@@ -70,13 +62,7 @@ model:
     # model hyperparameters
     latent_model_ckpt: latent.ckpt
 
-    diffusion_args:
-        noise_level_features: 256
-        global_cond_dim: 512
-
-        backbone_dim: 512
-        backbone_args:
-            head_dim: 64
-            depth: 16
-            expand: 4
-            radius: 2
+    style_prior_args:
+        noise_level_features: 64
+        h_dim: 256
+        depth: 4
