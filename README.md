@@ -83,22 +83,22 @@ ln runs/denoiser/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt denois
 
 Afterwards, proceed to the next training stage
 
-#### Style Prior Model
+#### Style Model
 
 ```
-$ uv run python -m osu_dreamer.model fit-style-prior
+$ uv run python -m osu_dreamer.model fit-style
 ```
 
-See `osu_dreamer/models/style_prior/model.yml` for all style prior model training parameters.
+See `osu_dreamer/models/style/model.yml` for all style model training parameters.
 
-At the end of every epoch, the model parameters will be checkpointed to `runs/style_prior/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt-path [PATH TO CHECKPOINT]` to the `fit-style-prior` command.
+At the end of every epoch, the model parameters will be checkpointed to `runs/style/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt`. You can resume training from a saved checkpoint by adding `--ckpt-path [PATH TO CHECKPOINT]` to the `fit-style` command.
 
-run `tensorboard --logdir=runs/style_prior` in a new window to track training progress in Tensorboard
+run `tensorboard --logdir=runs/style` in a new window to track training progress in Tensorboard
 
 After training, copy/link the final checkpoint to the repo root:
 
 ```
-ln runs/style_prior/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt style_prior.ckpt
+ln runs/style/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt style.ckpt
 ```
 
 After obtaining all three training checkpoints, you must create an inference artifcat

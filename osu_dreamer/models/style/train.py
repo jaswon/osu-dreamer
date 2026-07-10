@@ -17,10 +17,10 @@ from osu_dreamer.common.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from osu_dreamer.models.latent.train import LatentTrainer
 
-from .model import StylePrior, StylePriorArgs
+from .model import StyleModel, StyleModelArgs
 
 
-class StylePriorTrainer(pl.LightningModule):
+class StyleTrainer(pl.LightningModule):
     def __init__(
         self,
 
@@ -31,7 +31,7 @@ class StylePriorTrainer(pl.LightningModule):
 
         # model hparams
         latent_model_ckpt: str,
-        style_prior_args: StylePriorArgs,
+        style_args: StyleModelArgs,
     ):
         super().__init__()
         th.set_float32_matmul_precision('medium')
@@ -47,7 +47,7 @@ class StylePriorTrainer(pl.LightningModule):
         self.latent.requires_grad_(False)
         self.latent.eval()
 
-        self.style_prior = StylePrior(self.latent.style_dim, style_prior_args)
+        self.style = StyleModel(self.latent.style_dim, style_args)
 
     def on_train_epoch_start(self):
         self.latent.eval()
@@ -71,7 +71,7 @@ class StylePriorTrainer(pl.LightningModule):
         
         t = th.randn(s1.size(0), device=s1.device, dtype=s1.dtype).sigmoid() # logit-normal
         st = th.lerp(s0, s1, t[:,None])
-        pred_style_flow = self.style_prior(st, masked_labels, t)
+        pred_style_flow = self.style(st, masked_labels, t)
         loss = F.mse_loss(pred_style_flow, s1 - s0)
 
         return loss, {

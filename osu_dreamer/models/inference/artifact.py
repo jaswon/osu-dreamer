@@ -9,22 +9,22 @@ from .model import LDM, LDMArgs
 def save_inference(
     latent_ckpt_path: str,
     denoiser_ckpt_path: str,
-    style_prior_ckpt_path: str,
+    style_ckpt_path: str,
     output_path: str,
 ):
     latent_ckpt = th.load(latent_ckpt_path, map_location='cpu')
     denoiser_ckpt = th.load(denoiser_ckpt_path, map_location='cpu')
-    style_prior_ckpt = th.load(style_prior_ckpt_path, map_location='cpu')
+    style_ckpt = th.load(style_ckpt_path, map_location='cpu')
     inference_hparams = {
         **{ k: latent_ckpt['hyper_parameters'][k] for k in ['emb_dim', 'style_dim', 'n_downs', 'stride', 'latent_args'] },
         **{ k: denoiser_ckpt['hyper_parameters'][k] for k in ['diffusion_args'] },
-        **{ k: style_prior_ckpt['hyper_parameters'][k] for k in ['style_prior_args'] },
+        **{ k: style_ckpt['hyper_parameters'][k] for k in ['style_args'] },
     }
 
     inference_state_dict = {
         **{ k: v for k, v in latent_ckpt['state_dict'].items() if k.startswith('latent.') },
         **{ k: v for k, v in denoiser_ckpt['state_dict'].items() if k.startswith('diffusion.') },
-        **{ k: v for k, v in style_prior_ckpt['state_dict'].items() if k.startswith('style_prior.') },
+        **{ k: v for k, v in style_ckpt['state_dict'].items() if k.startswith('style.') },
     }
 
     with open(output_path, 'wb') as f:

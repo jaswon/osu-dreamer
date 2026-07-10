@@ -15,14 +15,14 @@ def zero(m: nn.Linear):
     return m
 
 @dataclass
-class StylePriorArgs:
+class StyleModelArgs:
     noise_level_features: int
     h_dim: int
     depth: int
     expand: int
 
-class StylePrior(nn.Module):
-    def __init__(self, style_dim: int, args: StylePriorArgs):
+class StyleModel(nn.Module):
+    def __init__(self, style_dim: int, args: StyleModelArgs):
         super().__init__()
         self.style_dim = style_dim
         self.t_feats = FourierFeatures(1, args.noise_level_features)

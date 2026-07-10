@@ -26,7 +26,7 @@ trainer:
         class_path: pytorch_lightning.loggers.TensorBoardLogger
         init_args:
             save_dir: runs
-            name: style_prior
+            name: style
 
     accumulate_grad_batches: 1
     enable_progress_bar: true
@@ -62,7 +62,7 @@ model:
     # model hyperparameters
     latent_model_ckpt: latent.ckpt
 
-    style_prior_args:
+    style_args:
         noise_level_features: 64
         h_dim: 256
         depth: 4
