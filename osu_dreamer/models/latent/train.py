@@ -42,6 +42,7 @@ class LatentTrainer(pl.LightningModule):
         z_reg_weight: float,
         s_reg_weight: float,
         s_noise: float,
+        z_noise: float,
 
         # model hparams
         emb_dim: int,
@@ -60,6 +61,7 @@ class LatentTrainer(pl.LightningModule):
         self.z_reg_weight = z_reg_weight
         self.s_reg_weight = s_reg_weight
         self.s_noise = s_noise
+        self.z_noise = z_noise
 
         self.loss_ema: th.Tensor
         self.register_buffer('loss_ema', th.ones(len(LOSS_COMPONENT_WEIGHTS)))
@@ -91,6 +93,7 @@ class LatentTrainer(pl.LightningModule):
 
         if self.training:
             s = s + self.s_noise * th.randn_like(s)
+            z = z + self.z_noise * th.randn_like(z)
         pred_chart_logits, pred_labels = self.latent(audio, z, s)
 
         true_hits = true_chart[:,HitSignals]

@@ -95,10 +95,7 @@ class LatentModel(nn.Module):
         # `s.detach()`: the style branch must earn its content via its own losses, 
         # not serve as a reconstruction side-channel
         z = self.param_proj(self.param_layer(h, s.detach()))
-
-        # DC projection: remove per-channel window means so time-invariant
-        # information cannot live in `z` and must route through `s`
-        z = z - z.mean(dim=-1, keepdim=True)
+        
         return z, s
     
     def decode_logits(
