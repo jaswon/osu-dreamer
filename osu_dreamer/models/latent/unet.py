@@ -13,9 +13,10 @@ class LayerArgs:
     expand: int
     radius: int
 
-def zero(m: nn.Linear):
+def zero(m: nn.Linear | nn.Conv1d):
     nn.init.zeros_(m.weight)
-    nn.init.zeros_(m.bias)
+    if m.bias is not None:
+        nn.init.zeros_(m.bias)
     return m
 
 class layer(nn.Module):
@@ -115,11 +116,12 @@ class unmixer(nn.Module):
 class mixer(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
-        self.proj_skip = nn.Conv1d(dim, dim, 1)
+        self.proj = nn.Sequential(nn.Conv1d(dim, dim, 1), RMSNorm(dim))
+        self.gate = zero(nn.Conv1d(dim, dim, 1))
         
     def forward(
         self,
         skip: Float[Tensor, "B D L"],
         x: Float[Tensor, "B D L"],
     ) -> Float[Tensor, "B D L"]:
-        return x + self.proj_skip(skip)
+        return x + self.proj(skip) * self.gate(x)
