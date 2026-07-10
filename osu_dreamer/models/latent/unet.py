@@ -115,10 +115,11 @@ class unmixer(nn.Module):
 class mixer(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
+        self.proj_skip = nn.Conv1d(dim, dim, 1)
         
     def forward(
         self,
         skip: Float[Tensor, "B D L"],
         x: Float[Tensor, "B D L"],
     ) -> Float[Tensor, "B D L"]:
-        return skip + x
+        return x + self.proj_skip(skip)
