@@ -8,6 +8,8 @@ from torch import nn, Tensor
 from osu_dreamer.data.beatmap.encode import X_DIM, NUM_LABELS, HitSignals, CursorSignals
 from osu_dreamer.data.load_audio import A_DIM
 
+from osu_dreamer.common.rms_norm import RMSNorm
+
 from .spec_features import SpecFeatures
 from .unet import LayerArgs, UNetEncoder, UNetDecoder, layer
 
@@ -55,8 +57,11 @@ class LatentModel(nn.Module):
             AttnPool(args.h_dim, style_dim, args.style_head_dim, args.style_heads),
         )
 
-        self.param_layer = layer(args.h_dim, style_dim, args.ae_args)
-        self.param_proj = nn.Conv1d(args.h_dim, emb_dim, 1)
+        self.temporal_layer = layer(args.h_dim, style_dim, args.ae_args)
+        self.temporal_head = nn.Sequential(
+            nn.Conv1d(args.h_dim, emb_dim, 1),
+            RMSNorm(emb_dim, affine=False),
+        )
 
         self.proj_emb = nn.Conv1d(emb_dim, args.h_dim, 1)
         self.decoder = UNetDecoder(args.h_dim, style_dim, n_downs, stride, args.ae_args)
@@ -91,7 +96,7 @@ class LatentModel(nn.Module):
     ]:
         _, h = self.chart_encoder(chart)
         s = self.style_head(h)
-        z = self.param_proj(self.param_layer(h, s))
+        z = self.temporal_head(self.temporal_layer(h, s))
         return z, s
     
     def decode_logits(

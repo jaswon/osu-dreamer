@@ -216,9 +216,10 @@ class LatentTrainer(pl.LightningModule):
 
         pred_chart, pred_labels = self.latent.decode(z, s, audio=a)
 
-        # WAE uses a deterministic encoder, so posterior collapse shows up as
-        # latent dimensions with (near-)zero variance rather than as low KL
-        z_var = z.var(dim=(0, 2))
+        # RMSNorm pins mean per-dim energy to ~1, so mean variance is
+        # uninformative; the *min* per-dim variance still exposes dead dims
+        # (posterior collapse under a deterministic WAE encoder)
+        z_var_min = z.var(dim=(0, 2)).min()
 
         # --- onset soft-F1 (Dice) accumulation ---
         # continuous overlap of the onset activation curves; equals F1 for binary
@@ -247,7 +248,7 @@ class LatentTrainer(pl.LightningModule):
         return {
             "eval/cursor_px_mae": cursor_px,
             "eval/label_mae": label_mae,
-            "eval/z_var": z_var.mean(),
+            "eval/z_var_min": z_var_min,
         }
 
     @th.no_grad
