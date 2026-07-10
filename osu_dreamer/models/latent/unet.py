@@ -33,7 +33,7 @@ class layer(nn.Module):
     
         self.films = None
         if cond_dim > 0:
-            self.films = nn.ModuleList([ zero(nn.Linear(cond_dim, 2*dim)) for _ in range(args.n_layers) ])
+            self.films = nn.ModuleList([ zero(nn.Linear(cond_dim, 3*dim)) for _ in range(args.n_layers) ])
 
     def forward(
         self,
@@ -42,13 +42,13 @@ class layer(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         if self.films is not None:
             assert cond is not None, "conditional layer requires `cond`"
-            films = [ film(cond)[:,:,None].chunk(2, dim=1) for film in self.films ]
+            films = [ film(cond)[:,:,None].chunk(3, dim=1) for film in self.films ]
         else:
             assert cond is None, "conditioning passed to an unconditional layer"
-            films = [ (0,0) ] * len(self.blocks)
+            films = [ (0,0,0) ] * len(self.blocks)
 
-        for (scale, shift), norm, block in zip(films, self.norms, self.blocks):
-            x = x + block(norm(x) * (1 + scale) + shift)
+        for (scale, shift, gate), norm, block in zip(films, self.norms, self.blocks):
+            x = x + block(norm(x) * (1 + scale) + shift) * (1 + gate)
         return self.out_norm(x)
 
 class UNetEncoder(nn.Module):
