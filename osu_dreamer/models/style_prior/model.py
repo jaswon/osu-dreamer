@@ -9,31 +9,48 @@ from osu_dreamer.data.beatmap.encode import NUM_LABELS
 
 from osu_dreamer.common.fourier_features import FourierFeatures
 
+def zero(m: nn.Linear):
+    nn.init.zeros_(m.weight)
+    nn.init.zeros_(m.bias)
+    return m
+
 @dataclass
 class StylePriorArgs:
     noise_level_features: int
     h_dim: int
     depth: int
+    expand: int
 
 class StylePrior(nn.Module):
-    """flow matching over style codes: fits the aggregate style posterior q(s | labels)
-    so inference can sample real-looking styles instead of relying on q(s) = N(0,I)"""
-    def __init__(
-        self,
-        style_dim: int,
-        args: StylePriorArgs,
-    ):
+    def __init__(self, style_dim: int, args: StylePriorArgs):
         super().__init__()
         self.style_dim = style_dim
-        self.proj_time = nn.Sequential(
-            FourierFeatures(1, args.noise_level_features),
-            nn.Linear(args.noise_level_features, args.h_dim),
+        self.t_feats = FourierFeatures(1, args.noise_level_features)
+        self.proj_cond = nn.Sequential(
+            nn.Linear(args.noise_level_features + NUM_LABELS, args.h_dim),
+            nn.SiLU(),
         )
-        self.proj_cond = nn.Linear(style_dim + NUM_LABELS, args.h_dim)
-        layers: list[nn.Module] = []
-        for _ in range(args.depth):
-            layers.extend([ nn.SiLU(), nn.Linear(args.h_dim, args.h_dim) ])
-        self.net = nn.Sequential(*layers, nn.SiLU(), nn.Linear(args.h_dim, style_dim))
+
+        self.proj_in = nn.Linear(style_dim, args.h_dim)
+        self.proj_out = nn.Sequential(nn.RMSNorm(args.h_dim), nn.Linear(args.h_dim, style_dim))
+
+        self.films = nn.ModuleList([
+            zero(nn.Linear(args.h_dim, 2*args.h_dim))
+            for _ in range(args.depth)
+        ])
+        self.norms = nn.ModuleList([
+            nn.RMSNorm(args.h_dim)
+            for _ in range(args.depth)
+        ])
+        self.blocks = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(args.h_dim, args.expand * args.h_dim),
+                nn.SiLU(),
+                nn.Linear(args.expand * args.h_dim, args.h_dim),
+                nn.RMSNorm(args.h_dim),
+            )
+            for _ in range(args.depth)
+        ])
 
     def forward(
         self,
@@ -41,8 +58,12 @@ class StylePrior(nn.Module):
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         t: Float[Tensor, "B"],        # noise level
     ) -> Float[Tensor, "B S"]:
-        h = self.proj_cond(th.cat([ut, labels], dim=1)) + self.proj_time(t[:,None])
-        return self.net(h)
+        c = self.proj_cond(th.cat([self.t_feats(t[:,None]), labels], dim=1))
+        h = self.proj_in(ut)
+        for film, norm, block in zip(self.films, self.norms, self.blocks):
+            scale, shift = film(c).chunk(2, dim=1)
+            h = h + block(norm(h) * (1 + scale) + shift)
+        return self.proj_out(h)
 
     @th.no_grad()
     def sample(

@@ -66,3 +66,4 @@ model:
         noise_level_features: 64
         h_dim: 256
         depth: 4
+        expand: 2
