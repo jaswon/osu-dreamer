@@ -10,12 +10,10 @@ from scipy.optimize import linear_sum_assignment
 
 import pytorch_lightning as pl
 
-from osu_dreamer.data.beatmap.encode import NUM_LABELS, X_DIM
-from osu_dreamer.data.modules.beatmap import Batch, pad_to_multiple
+from osu_dreamer.data.beatmap.encode import NUM_LABELS
+from osu_dreamer.data.modules.latent import LatentBatch
 
 from osu_dreamer.common.lr_schedule import LRScheduleArgs, make_lr_schedule
-
-from osu_dreamer.models.latent.train import LatentTrainer
 
 from .model import StyleModel, StyleModelArgs
 
@@ -30,7 +28,7 @@ class StyleTrainer(pl.LightningModule):
         label_drop_prob: float,
 
         # model hparams
-        latent_model_ckpt: str,
+        style_dim: int,
         style_args: StyleModelArgs,
     ):
         super().__init__()
@@ -43,24 +41,21 @@ class StyleTrainer(pl.LightningModule):
         self.label_drop_prob = label_drop_prob
 
         # model
-        self.latent = LatentTrainer.load_from_checkpoint(latent_model_ckpt).latent
-        self.latent.requires_grad_(False)
-        self.latent.eval()
-
-        self.style = StyleModel(self.latent.style_dim, style_args)
-
-    def on_train_epoch_start(self):
-        self.latent.eval()
+        self.style = StyleModel(style_dim, style_args)
 
     def forward(
         self, 
-        chart: Float[Tensor, str(f"B {X_DIM} L")], 
+        _h: Float[Tensor, "B A l"], 
+        _z: Float[Tensor, "B E l"], 
+        s1: Float[Tensor, "B S"],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ):
         masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, 0, labels) # classifier free guidance
-
-        with th.no_grad():
-            _, s1 = self.latent.encode_chart(chart)
+        
+        # stratified logit-normal noise (lower gradient variance)
+        B = s1.size(0)
+        u = (th.randperm(B, device=s1.device) + th.rand(B, device=s1.device)) / B
+        t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(s1.dtype)
 
         # minibatch-OT-coupled style noise
         s0 = th.randn_like(s1)
@@ -68,12 +63,6 @@ class StyleTrainer(pl.LightningModule):
             cost = th.cdist(s1.float(), s0.float()).cpu().numpy()
             _, cols = linear_sum_assignment(cost)
             s0 = s0[cols]
-        
-        # stratified logit-normal noise (lower gradient variance)
-        B = s0.size(0)
-        u = (th.randperm(B, device=s0.device) + th.rand(B, device=s0.device)) / B
-        t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(s0.dtype)
-
         st = th.lerp(s0, s1, t[:,None])
         pred_style_flow = self.style(st, masked_labels, t)
         loss = F.mse_loss(pred_style_flow, s1 - s0)
@@ -83,8 +72,7 @@ class StyleTrainer(pl.LightningModule):
         }
 
     def configure_optimizers(self):
-        params = [ p for p in self.parameters() if p.requires_grad ]
-        opt = th.optim.AdamW(params, **self.opt_args)
+        opt = th.optim.AdamW(self.parameters(), **self.opt_args)
         return {
             "optimizer": opt,
             "lr_scheduler": {
@@ -93,19 +81,11 @@ class StyleTrainer(pl.LightningModule):
             }
         }
 
-    def on_after_batch_transfer(self, batch: Batch, dataloader_idx: int) -> Batch:
-        # pad to chunk_size
-        c = self.latent.chunk_size
-        audio, chart, labels = batch
-        return Batch(pad_to_multiple(audio, c), pad_to_multiple(chart, c), labels)
-
-    def training_step(self, batch: Batch, batch_idx):
-        _, chart, labels = batch
-        loss, log_dict = self(chart, labels)
+    def training_step(self, batch: LatentBatch, batch_idx):
+        loss, log_dict = self(*batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
 
-    def validation_step(self, batch: Batch, batch_idx, *args, **kwargs):
-        _, chart, labels = batch
-        _, log_dict = self(chart, labels)
+    def validation_step(self, batch: LatentBatch, batch_idx, *args, **kwargs):
+        _, log_dict = self(*batch)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })

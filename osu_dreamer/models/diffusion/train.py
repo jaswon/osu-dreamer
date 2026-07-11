@@ -55,18 +55,17 @@ class DiffusionTrainer(pl.LightningModule):
     def forward(
         self, 
         h: Float[Tensor, "B A l"], 
-        z: Float[Tensor, "B E l"], 
+        x1: Float[Tensor, "B E l"], 
         s: Float[Tensor, "B S"],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ):
         masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, 0, labels) # classifier free guidance
 
         # stratified logit-normal noise (lower gradient variance)
-        B = z.size(0)
-        u = (th.randperm(B, device=z.device) + th.rand(B, device=z.device)) / B
-        t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(z.dtype)
+        B = x1.size(0)
+        u = (th.randperm(B, device=x1.device) + th.rand(B, device=x1.device)) / B
+        t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(x1.dtype)
 
-        x1 = z
         x0 = th.randn_like(x1)
         true_flow = x1 - x0
         xt = th.lerp(x0,x1,t[:,None,None])
@@ -79,8 +78,7 @@ class DiffusionTrainer(pl.LightningModule):
         }
 
     def configure_optimizers(self):
-        params = [ p for p in self.parameters() if p.requires_grad ]
-        opt = th.optim.AdamW(params, **self.opt_args)
+        opt = th.optim.AdamW(self.parameters(), **self.opt_args)
         return {
             "optimizer": opt,
             "lr_scheduler": {
