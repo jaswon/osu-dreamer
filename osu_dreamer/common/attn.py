@@ -81,8 +81,4 @@ class SDPSA(nn.Module):
         k = rope(k)
         y = F.scaled_dot_product_attention(q, k, v)
 
-        # xsa
-        vn = F.normalize(v, dim=-1)
-        z = y - (y * vn).sum(dim=-1, keepdim=True) * vn
-
-        return self.out_proj(rearrange(z, 'b h n d -> b (h d) n'))
+        return self.out_proj(rearrange(y, 'b h n d -> b (h d) n'))
