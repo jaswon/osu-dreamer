@@ -61,10 +61,14 @@ class DiffusionTrainer(pl.LightningModule):
     ):
         masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, 0, labels) # classifier free guidance
 
+        # stratified logit-normal noise (lower gradient variance)
+        B = z.size(0)
+        u = (th.randperm(B, device=z.device) + th.rand(B, device=z.device)) / B
+        t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(z.dtype)
+
         x1 = z
         x0 = th.randn_like(x1)
         true_flow = x1 - x0
-        t = th.randn(z.size(0), device=x1.device, dtype=x1.dtype).sigmoid() # logit-normal
         xt = th.lerp(x0,x1,t[:,None,None])
 
         pred_flow = self.diffusion.forward(h, masked_labels, s, xt, t)
