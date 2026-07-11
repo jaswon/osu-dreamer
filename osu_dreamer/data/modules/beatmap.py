@@ -12,9 +12,9 @@ from torch.utils.data import random_split, Dataset, IterableDataset, DataLoader
 
 import pytorch_lightning as pl
 
-from .reclaim_memory import reclaim_memory
-from .load_audio import A_DIM, read_spec
-from .beatmap.encode import X_DIM, NUM_LABELS, BeatmapEncoding, read_beatmap
+from ..reclaim_memory import reclaim_memory
+from ..load_audio import A_DIM, read_spec
+from ..beatmap.encode import X_DIM, NUM_LABELS, BeatmapEncoding, read_beatmap
 
 
 class Batch(NamedTuple):

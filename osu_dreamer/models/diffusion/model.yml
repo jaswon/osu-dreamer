@@ -40,7 +40,7 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 4096 # * 6ms/frame ~= 24.6s
+    seq_len: 152 # * 27 frames/latent * 6ms/frame ~= 24.6s
     
     # size of training batch
     batch_size: 64
@@ -58,7 +58,6 @@ data:
     
 model:
     # validation parameters
-    val_steps: 16
     val_batches: 8
 
     # training parameters
@@ -68,7 +67,9 @@ model:
     label_drop_prob: .2
 
     # model hyperparameters
-    latent_model_ckpt: latent.ckpt
+    emb_dim: 8
+    a_dim: 128
+    style_dim: 128
 
     diffusion_args:
         noise_level_features: 256

@@ -10,7 +10,7 @@ import pytorch_lightning as pl
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from osu_dreamer.data.beatmap.encode import BeatmapEncoding, HitSignals, CursorSignals
-from osu_dreamer.data.module import Batch, pad_to_multiple
+from osu_dreamer.data.modules.beatmap import Batch, pad_to_multiple
 from osu_dreamer.data.plot import plot_signals
 
 from osu_dreamer.common.lr_schedule import LRScheduleArgs, make_lr_schedule

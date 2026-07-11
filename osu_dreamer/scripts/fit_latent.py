@@ -7,7 +7,7 @@ import click
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from pytorch_lightning import Trainer
 
-from osu_dreamer.data.module import BeatmapDataModule
+from osu_dreamer.data.modules.beatmap import BeatmapDataModule
 from osu_dreamer.models.latent.train import LatentTrainer
 
 file_option_type = click.Path(exists=True, dir_okay=False)

@@ -11,7 +11,7 @@ from scipy.optimize import linear_sum_assignment
 import pytorch_lightning as pl
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS, X_DIM
-from osu_dreamer.data.module import Batch, pad_to_multiple
+from osu_dreamer.data.modules.beatmap import Batch, pad_to_multiple
 
 from osu_dreamer.common.lr_schedule import LRScheduleArgs, make_lr_schedule
 

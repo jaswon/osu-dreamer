@@ -46,7 +46,7 @@ after the dataset generation completes, you can start training. Training occurs 
 #### Latent Model
 
 ```
-$ uv run python -m osu_dreamer.model fit-latent
+$ uv run python -m osu_dreamer fit-latent
 ```
 
 See `osu_dreamer/latent_model/model.yml` for all latent model training parameters.
@@ -55,18 +55,16 @@ At the end of every epoch, the model parameters will be checkpointed to `runs/la
 
 run `tensorboard --logdir=runs/latent` in a new window to track training progress in Tensorboard
 
-After training, copy/link the final checkpoint to the repo root:
+After training, cache the trained latents for use in the following stages
 
 ```
-ln runs/latent/version_{NUM}/checkpoints/epoch={EPOCH}-step={STEP}.ckpt latent.ckpt
+$ uv run python -m osu_dreamer encode-latents
 ```
-
-Afterwards, proceed to the next training stage
 
 #### Flow Model
 
 ```
-$ uv run python -m osu_dreamer.model fit-denoiser
+$ uv run python -m osu_dreamer fit-denoiser
 ```
 
 See `osu_dreamer/diffusion_model/model.yml` for all latent model training parameters.
@@ -86,7 +84,7 @@ Afterwards, proceed to the next training stage
 #### Style Model
 
 ```
-$ uv run python -m osu_dreamer.model fit-style
+$ uv run python -m osu_dreamer fit-style
 ```
 
 See `osu_dreamer/models/style/model.yml` for all style model training parameters.

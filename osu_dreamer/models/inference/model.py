@@ -8,7 +8,7 @@ from torch import nn, Tensor
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS, X_DIM
 from osu_dreamer.data.load_audio import A_DIM
-from osu_dreamer.data.module import pad_to_multiple
+from osu_dreamer.data.modules.beatmap import pad_to_multiple
 
 from osu_dreamer.models.diffusion.model import DiffusionModel, DiffusionModelArgs
 from osu_dreamer.models.style.model import StyleModel, StyleModelArgs
