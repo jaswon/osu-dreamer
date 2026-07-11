@@ -7,7 +7,7 @@ from torch import nn, Tensor
 
 from osu_dreamer.common.attn import SDPSA
 from osu_dreamer.common.swiglu import SwiGLU
-from osu_dreamer.common.rms_norm import RMSNorm
+from osu_dreamer.common.rms_norm import rms_norm
 
 def zero(m: nn.Linear | nn.Conv1d):
     nn.init.zeros_(m.weight)
@@ -38,7 +38,6 @@ class Backbone(nn.Module):
             BackboneLayer(dim, cl_dim, cg_dim, args)
             for _ in range(args.depth)
         ])
-        self.out_norm = RMSNorm(dim)
 
     def forward(
         self,
@@ -48,7 +47,7 @@ class Backbone(nn.Module):
     ) -> Float[Tensor, "B D L"]:
         for layer in self.layers:
             x = layer(x, cl, cg)
-        return self.out_norm(x)
+        return rms_norm(x)
 
 class BackboneLayer(nn.Module):
     def __init__(
@@ -59,7 +58,6 @@ class BackboneLayer(nn.Module):
         args: BackboneArgs,
     ):
         super().__init__()
-        self.norm = RMSNorm(dim, affine=False)
 
         self.ssg1 = zero(nn.Linear(cg_dim, 3*dim))
         self.attn = SDPSA(dim+cl_dim, args.n_heads, args.head_dim, d_out=dim)
@@ -75,13 +73,15 @@ class BackboneLayer(nn.Module):
     ) -> Float[Tensor, "B X L"]:
         
         scale, shift, gate = self.ssg1(cg)[:,:,None].chunk(3, dim=1)
-        h = self.norm(x) * (1 + scale) + shift
-        h = self.attn(th.cat([cl.expand(x.size(0),-1,-1), h], dim=1)) * gate
+        h = rms_norm(x) * (1 + scale) + shift
+        h = self.attn(th.cat([cl.expand(x.size(0),-1,-1), h], dim=1))
+        h = rms_norm(h) * gate
         x = x + h
 
         scale, shift, gate = self.ssg2(cg)[:,:,None].chunk(3, dim=1)
-        h = self.norm(x) * (1 + scale) + shift
-        h = self.ffn(h) * gate
+        h = rms_norm(x) * (1 + scale) + shift
+        h = self.ffn(h)
+        h = rms_norm(h) * gate
         x = x + h
 
         return x
