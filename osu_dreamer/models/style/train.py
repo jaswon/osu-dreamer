@@ -69,7 +69,11 @@ class StyleTrainer(pl.LightningModule):
             _, cols = linear_sum_assignment(cost)
             s0 = s0[cols]
         
-        t = th.randn(s1.size(0), device=s1.device, dtype=s1.dtype).sigmoid() # logit-normal
+        # stratified logit-normal noise (lower gradient variance)
+        B = s0.size(0)
+        u = (th.randperm(B, device=s0.device) + th.rand(B, device=s0.device)) / B
+        t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(s0.dtype)
+
         st = th.lerp(s0, s1, t[:,None])
         pred_style_flow = self.style(st, masked_labels, t)
         loss = F.mse_loss(pred_style_flow, s1 - s0)
