@@ -9,11 +9,18 @@ from osu_dreamer.common.attn import SDPSA
 from osu_dreamer.common.swiglu import SwiGLU
 from osu_dreamer.common.rms_norm import RMSNorm
 
+def zero(m: nn.Linear | nn.Conv1d):
+    nn.init.zeros_(m.weight)
+    if m.bias is not None:
+        nn.init.zeros_(m.bias)
+    return m
+
 @dataclass
 class BackboneArgs:
     depth: int
     expand: int
     head_dim: int
+    n_heads: int
     radius: int = 1
     dropout: float = 0.
 
@@ -28,24 +35,19 @@ class Backbone(nn.Module):
         super().__init__()
         
         self.layers = nn.ModuleList([
-            BackboneLayer(dim, cl_dim, cg_dim, sublayer)
+            BackboneLayer(dim, cl_dim, cg_dim, args)
             for _ in range(args.depth)
-            for sublayer in [
-                SDPSA(dim, args.head_dim),
-                SwiGLU(dim, args.expand, args.dropout, args.radius),
-            ]
         ])
         self.out_norm = RMSNorm(dim)
 
     def forward(
         self,
         x: Float[Tensor, "B D L"],
-        *,
-        cl: Float[Tensor, "#B Cl L"] | None = None,
-        cg: Float[Tensor, "#B Cg"] | None = None,
+        cl: Float[Tensor, "#B Cl L"],
+        cg: Float[Tensor, "#B Cg"],
     ) -> Float[Tensor, "B D L"]:
         for layer in self.layers:
-            x = layer(x, cl=cl, cg=cg)
+            x = layer(x, cl, cg)
         return self.out_norm(x)
 
 class BackboneLayer(nn.Module):
@@ -54,44 +56,32 @@ class BackboneLayer(nn.Module):
         dim: int,
         cl_dim: int,
         cg_dim: int, 
-        op: nn.Module,
+        args: BackboneArgs,
     ):
         super().__init__()
-        self.op = op
-        self.pre_norm = RMSNorm(dim)
-        self.post_norm = RMSNorm(dim, affine=False)
-        self.gate = nn.Parameter(th.zeros(dim, 1))
+        self.norm = RMSNorm(dim, affine=False)
 
-        if cl_dim > 0:
-            self.l_ssg = nn.Conv1d(cl_dim, 3*dim, 1)
-            nn.init.zeros_(self.l_ssg.weight)
-            if self.l_ssg.bias is not None:
-                nn.init.zeros_(self.l_ssg.bias)
+        self.ssg1 = zero(nn.Linear(cg_dim, 3*dim))
+        self.attn = SDPSA(dim+cl_dim, args.n_heads, args.head_dim, d_out=dim)
 
-        if cg_dim > 0:
-            self.g_ssg = nn.Linear(cg_dim, 3*dim)
-            nn.init.zeros_(self.g_ssg.weight)
-            nn.init.zeros_(self.g_ssg.bias)
+        self.ssg2 = zero(nn.Linear(cg_dim, 3*dim))
+        self.ffn = SwiGLU(dim, args.expand, args.dropout, args.radius)
 
     def forward(
         self,
         x: Float[Tensor, "B X L"],
-        *,
-        cl: Float[Tensor, "#B Cl L"] | None = None,
-        cg: Float[Tensor, "#B Cg"] | None = None,
+        cl: Float[Tensor, "#B Cl L"],
+        cg: Float[Tensor, "#B Cg"],
     ) -> Float[Tensor, "B X L"]:
-        if cl is None:
-            l_scale, l_shift, l_gate = 0, 0, 0
-        else:
-            l_scale, l_shift, l_gate = self.l_ssg(cl).chunk(3, dim=1)
-            
-        if cg is None:
-            g_scale, g_shift, g_gate = 0, 0, 0
-        else:
-            g_scale, g_shift, g_gate = self.g_ssg(cg)[:,:,None].chunk(3, dim=1)
+        
+        scale, shift, gate = self.ssg1(cg)[:,:,None].chunk(3, dim=1)
+        h = self.norm(x) * (1 + scale) + shift
+        h = self.attn(th.cat([cl.expand(x.size(0),-1,-1), h], dim=1)) * gate
+        x = x + h
 
-        res = x
-        x = self.pre_norm(x) * (1 + g_scale + l_scale) + (g_shift + l_shift)
-        x = self.op(x)
-        x = self.post_norm(x) * (self.gate + g_gate + l_gate)
-        return res + x
+        scale, shift, gate = self.ssg2(cg)[:,:,None].chunk(3, dim=1)
+        h = self.norm(x) * (1 + scale) + shift
+        h = self.ffn(h) * gate
+        x = x + h
+
+        return x

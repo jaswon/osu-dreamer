@@ -60,18 +60,18 @@ class LInfSA(nn.Module):
 
 
 class SDPSA(nn.Module):
-    def __init__(self, d_model: int, head_dim: int):
+    def __init__(self, d_x: int, n_heads: int, head_dim: int, d_out: int = -1):
         super().__init__()
-        assert d_model % head_dim == 0
         self.head_dim = head_dim
+        d_h = n_heads * head_dim
 
-        self.qkv_proj = nn.Conv1d(d_model, 3*d_model, 1)
-        self.out_proj = nn.Conv1d(d_model, d_model, 1)
+        self.qkv_proj = nn.Conv1d(d_x, 3*d_h, 1)
+        self.out_proj = nn.Conv1d(d_h, d_x if d_out < 0 else d_out, 1)
 
         self.q_norm = nn.RMSNorm(head_dim)
         self.k_norm = nn.RMSNorm(head_dim)
 
-    def forward(self, x: Float[Tensor, "B D L"], *args, **kwargs) -> Float[Tensor, "B D L"]:
+    def forward(self, x: Float[Tensor, "B X L"], *args, **kwargs) -> Float[Tensor, "B O L"]:
         q,k,v = rearrange(self.qkv_proj(x), 'b (h d) n -> b h n d', d=self.head_dim).chunk(3, dim=1)
 
         q = self.q_norm(q.float()).type_as(q)
