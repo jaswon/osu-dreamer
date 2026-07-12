@@ -37,7 +37,7 @@ trainer:
     
 data:
     # length of each training subsequence
-    seq_len: 4096 # * 6ms/frame ~= 24.6s
+    seq_len: 1 # * 6ms/frame ~= 24.6s
     
     # size of training batch
     batch_size: 64
@@ -51,6 +51,8 @@ data:
     # per-worker shuffle buffer (in windows); >1 decorrelates consecutive
     # windows emitted from the same beatmap. 1 disables buffering.
     shuffle_buffer_size: 512
+
+    max_per_map: 1
     
 model:
     # training parameters
