@@ -44,6 +44,7 @@ trainer:
     # check_val_every_n_epoch: null
 
     gradient_clip_val: 1.
+    benchmark: true
     
 data:
     # length of each training subsequence
@@ -77,7 +78,7 @@ model:
     z_mask_frac: .25
 
     # model hyperparameters
-    emb_dim: 8
+    emb_dim: 6
     style_dim: 128
     n_downs: 3
     stride: 3

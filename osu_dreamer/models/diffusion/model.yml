@@ -37,6 +37,7 @@ trainer:
     # check_val_every_n_epoch: 1
 
     gradient_clip_val: 1.
+    benchmark: true
     
 data:
     # length of each training subsequence
@@ -67,7 +68,7 @@ model:
     label_drop_prob: .2
 
     # model hyperparameters
-    emb_dim: 8
+    emb_dim: 6
     a_dim: 128
     style_dim: 128
 
