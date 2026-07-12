@@ -8,7 +8,7 @@ import random
 
 import torch as th
 import torch.nn.functional as F
-from torch.utils.data import random_split, Dataset, IterableDataset, DataLoader
+from torch.utils.data import Dataset, IterableDataset, DataLoader
 
 import pytorch_lightning as pl
 
@@ -28,6 +28,26 @@ def pad_to_multiple(x: Float[Tensor, "... L"], chunk_size: int) -> Float[Tensor,
     the models' encoders require chunk-aligned inputs."""
     pad = (chunk_size - x.size(-1) % chunk_size) % chunk_size
     return F.pad(x, (0, pad), mode='replicate') if pad > 0 else x
+
+
+def split_by_mapset(full_set: list[Path], val_size: int, seed: int = 0) -> tuple[list[Path], list[Path]]:
+    """hold out whole mapsets (all difficulties of a song) to prevent
+    train/val leakage via shared audio. `val_size` is a map count: mapsets
+    are drawn until at least `val_size` maps are held out."""
+    mapsets: dict[Path, list[Path]] = {}
+    for f in full_set:
+        mapsets.setdefault(f.parent, []).append(f)
+    keys = sorted(mapsets)
+    order = th.randperm(len(keys), generator=th.Generator().manual_seed(seed))
+    val_set: list[Path] = []
+    val_keys: set[Path] = set()
+    for i in order.tolist():
+        if len(val_set) >= val_size:
+            break
+        val_keys.add(keys[i])
+        val_set.extend(mapsets[keys[i]])
+    train_set = [f for k in keys if k not in val_keys for f in mapsets[k]]
+    return train_set, val_set
 
 
 class BeatmapDataModule(pl.LightningDataModule):
@@ -86,13 +106,8 @@ class BeatmapDataModule(pl.LightningDataModule):
         return DataLoader(self.val_set, batch_size=1, num_workers=self.num_workers, pin_memory=True, persistent_workers=True)
             
     def setup(self, stage: str):
-        train_size = len(self.full_set) - self.val_size
-        print(f'train: {train_size} | val: {self.val_size}')
-        train_split, val_split = random_split(
-            self.full_set, # type: ignore
-            [train_size, self.val_size],
-            generator=th.Generator().manual_seed(0),
-        )
+        train_split, val_split = split_by_mapset(self.full_set, self.val_size)
+        print(f'train: {len(train_split)} | val: {len(val_split)}')
         
         self.train_set = self.make_train_set(train_split)
         self.val_set = self.make_val_set(val_split)

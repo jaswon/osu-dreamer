@@ -8,12 +8,13 @@ import random
 
 import numpy as np
 import torch as th
-from torch.utils.data import random_split, IterableDataset, DataLoader
+from torch.utils.data import IterableDataset, DataLoader
 
 import pytorch_lightning as pl
 
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.data.beatmap.encode import NUM_LABELS
+from osu_dreamer.data.modules.beatmap import split_by_mapset
 
 
 class LatentBatch(NamedTuple):
@@ -59,13 +60,8 @@ class LatentDataModule(pl.LightningDataModule):
         self.val_size = val_size
 
     def setup(self, stage: str):
-        train_size = len(self.full_set) - self.val_size
-        print(f'train: {train_size} | val: {self.val_size}')
-        train_split, val_split = random_split(
-            self.full_set, # type: ignore
-            [train_size, self.val_size],
-            generator=th.Generator().manual_seed(0),
-        )
+        train_split, val_split = split_by_mapset(self.full_set, self.val_size)
+        print(f'train: {len(train_split)} | val: {len(val_split)}')
         self.train_set = LatentDataset(train_split, self.seq_len, self.shuffle_buffer_size, self.max_per_map)
         self.val_set = LatentDataset(val_split)
 
