@@ -44,7 +44,7 @@ data:
     seq_len: 152 # * 27 frames/latent * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 64
+    batch_size: 128
     
     # number of workers to use for data loading
     num_workers: 13
@@ -63,8 +63,12 @@ model:
 
     # training parameters
     opt_args:
-        lr: .0002
+        lr: .003
         weight_decay: 0.01
+    schedule_args:
+        warmup_init: .3
+        warmup_steps: 1000
+        decay_start: 30000
     label_drop_prob: .2
 
     # model hyperparameters
@@ -73,13 +77,13 @@ model:
     style_dim: 128
 
     diffusion_args:
-        noise_level_features: 256
-        global_cond_dim: 512
+        noise_level_features: 64
+        global_cond_dim: 384
 
-        backbone_dim: 512
+        backbone_dim: 384
         backbone_args:
             head_dim: 64
-            n_heads: 8
-            depth: 16
-            expand: 4
+            n_heads: 12
+            depth: 6
+            expand: 3
             radius: 2
