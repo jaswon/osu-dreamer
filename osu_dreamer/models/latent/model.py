@@ -104,8 +104,8 @@ class LatentModel(nn.Module):
         z: Float[Tensor, "B E l"],
         s: Float[Tensor, "B S"],
         *,
-        audio: None | Float[Tensor, str(f"B {A_DIM} L")] = None,
-        skips: None | list[ Float[Tensor, "B X _l"] ] = None,
+        audio: None | Float[Tensor, str(f"#B {A_DIM} L")] = None,
+        skips: None | list[ Float[Tensor, "#B X _l"] ] = None,
     ) -> Float[Tensor, str(f"B {X_DIM} L")]:
         if skips is None:
             skips, _ = self.audio_encoder(audio)
@@ -118,8 +118,8 @@ class LatentModel(nn.Module):
         z: Float[Tensor, "B D l"],
         s: Float[Tensor, "B S"],
         *,
-        audio: None | Float[Tensor, str(f"B {A_DIM} L")] = None,
-        skips: None | list[ Float[Tensor, "B X _l"] ] = None,
+        audio: None | Float[Tensor, str(f"#B {A_DIM} L")] = None,
+        skips: None | list[ Float[Tensor, "#B X _l"] ] = None,
     ) -> tuple[
         Float[Tensor, str(f"B {X_DIM} L")], 
         Float[Tensor, str(f"B {NUM_LABELS}")],
