@@ -9,8 +9,6 @@ from torch import Tensor, nn
 
 import tqdm
 
-from osu_dreamer.data.beatmap.encode import NUM_LABELS
-
 from osu_dreamer.common.fourier_features import FourierFeatures
 
 from .backbone import Backbone, BackboneArgs
@@ -39,7 +37,6 @@ class DiffusionModel(nn.Module):
             FourierFeatures(1, args.noise_level_features),
             nn.Linear(args.noise_level_features, args.global_cond_dim),
         )
-        self.proj_label = nn.Linear(NUM_LABELS, args.global_cond_dim)
         self.proj_style = nn.Linear(style_dim, args.global_cond_dim)
 
         self.proj_in = nn.Conv1d(emb_dim, args.backbone_dim, 1)
@@ -51,10 +48,9 @@ class DiffusionModel(nn.Module):
 
     def _precompute_conditioning(
         self,
-        labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         style: Float[Tensor, "#B S"],
     ) -> Float[Tensor, "B C"]:
-        return self.proj_label(labels) + self.proj_style(style)
+        return self.proj_style(style)
     
     def _pred_flow(
         self,
@@ -71,31 +67,29 @@ class DiffusionModel(nn.Module):
     def forward(
         self, 
         audio: Float[Tensor, "B A l"],
-        labels: Float[Tensor, "B C"],
         style: Float[Tensor, "B S"],
         
         # --- diffusion args --- #
         xt: Float[Tensor, "B E l"], # noised input
         t: Float[Tensor, "B"],      # noise level
     ) -> Float[Tensor, "B E l"]:
-        return self._pred_flow(self._precompute_conditioning(labels, style), audio, xt, t)
+        return self._pred_flow(self._precompute_conditioning(style), audio, xt, t)
         
     
     @th.no_grad()
     def sample(
         self, 
         audio: Float[Tensor, "#B A l"],
-        labels: Float[Tensor, str(f"B {NUM_LABELS}")],
         style: Float[Tensor, "B S"],
         num_steps: int,
         time_shift: float = 3.,
         show_progress: bool = False,
     ) -> Float[Tensor, "B E l"]:
-        B = labels.size(0)
+        B = style.size(0)
         x = th.randn(B, self.emb_dim, audio.size(-1), device=audio.device)
         denoiser = partial(
             self._pred_flow,
-            self._precompute_conditioning(labels, style),
+            self._precompute_conditioning(style),
             audio,
         )
 

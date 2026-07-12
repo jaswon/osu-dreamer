@@ -69,7 +69,6 @@ model:
         warmup_init: .3
         warmup_steps: 1000
         decay_start: 30000
-    label_drop_prob: .2
 
     # model hyperparameters
     emb_dim: 6

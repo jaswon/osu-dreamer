@@ -29,7 +29,6 @@ class DiffusionTrainer(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
-        label_drop_prob: float,
 
         # model hparams
         emb_dim: int,
@@ -47,7 +46,6 @@ class DiffusionTrainer(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
-        self.label_drop_prob = label_drop_prob
 
         # model
         self.diffusion = DiffusionModel(emb_dim, a_dim, style_dim, diffusion_args)
@@ -57,10 +55,8 @@ class DiffusionTrainer(pl.LightningModule):
         h: Float[Tensor, "B A l"], 
         x1: Float[Tensor, "B E l"], 
         s: Float[Tensor, "B S"],
-        labels: Float[Tensor, str(f"B {NUM_LABELS}")],
+        _labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ):
-        masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, 0, labels) # classifier free guidance
-
         # stratified logit-normal noise (lower gradient variance)
         B = x1.size(0)
         u = (th.randperm(B, device=x1.device) + th.rand(B, device=x1.device)) / B
@@ -70,7 +66,7 @@ class DiffusionTrainer(pl.LightningModule):
         true_flow = x1 - x0
         xt = th.lerp(x0,x1,t[:,None,None])
 
-        pred_flow = self.diffusion.forward(h, masked_labels, s, xt, t)
+        pred_flow = self.diffusion.forward(h, s, xt, t)
         loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
 
         return loss, {

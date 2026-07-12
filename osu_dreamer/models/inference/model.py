@@ -47,6 +47,6 @@ class LDM(nn.Module):
 
         skips, h = self.latent.audio_encoder(audio[None])
         s = self.style.sample(labels)
-        z = self.diffusion.sample(h, labels, s, num_steps, show_progress=show_progress)
+        z = self.diffusion.sample(h, s, num_steps, show_progress=show_progress)
         chart, out_labels = self.latent.decode(z, s, skips=skips)
         return chart[..., :L], out_labels
