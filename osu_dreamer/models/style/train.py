@@ -50,7 +50,7 @@ class StyleTrainer(pl.LightningModule):
         s1: Float[Tensor, "B S"],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ):
-        masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, 0, labels) # classifier free guidance
+        masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, -1, labels) # classifier free guidance
         
         # stratified logit-normal noise (lower gradient variance)
         B = s1.size(0)
