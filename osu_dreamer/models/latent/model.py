@@ -55,6 +55,7 @@ class LatentModel(nn.Module):
         self.style_head = nn.Sequential(
             layer(args.h_dim, 0, args.ae_args),
             AttnPool(args.h_dim, style_dim, args.style_head_dim, args.style_heads),
+            RMSNorm(style_dim, affine=False),
         )
 
         self.temporal_layer = layer(args.h_dim, style_dim, args.ae_args)
