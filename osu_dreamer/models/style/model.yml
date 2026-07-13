@@ -68,3 +68,4 @@ model:
         h_dim: 256
         depth: 4
         expand: 2
+        dropout: .1

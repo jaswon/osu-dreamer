@@ -20,6 +20,7 @@ class StyleModelArgs:
     h_dim: int
     depth: int
     expand: int
+    dropout: float = 0.
 
 class StyleModel(nn.Module):
     def __init__(self, style_dim: int, args: StyleModelArgs):
@@ -49,6 +50,7 @@ class StyleModel(nn.Module):
             nn.Sequential(
                 nn.Linear(args.h_dim, args.expand * args.h_dim),
                 nn.SiLU(),
+                nn.Dropout(args.dropout),
                 nn.Linear(args.expand * args.h_dim, args.h_dim),
                 nn.RMSNorm(args.h_dim),
             )
