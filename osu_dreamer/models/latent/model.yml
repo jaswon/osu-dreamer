@@ -86,7 +86,7 @@ model:
         h_dim: 128
         ae_args:
             n_layers: 8
-            expand: 2
+            expand: 4
             radius: 2
 
         style_head_dim: 64
