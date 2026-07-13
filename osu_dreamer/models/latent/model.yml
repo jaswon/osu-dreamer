@@ -79,7 +79,7 @@ model:
 
     # model hyperparameters
     emb_dim: 6
-    style_dim: 128
+    style_dim: 32
     n_downs: 3
     stride: 3
     latent_args:

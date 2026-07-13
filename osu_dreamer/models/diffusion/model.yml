@@ -73,7 +73,7 @@ model:
     # model hyperparameters
     emb_dim: 6
     a_dim: 128
-    style_dim: 128
+    style_dim: 32
 
     diffusion_args:
         noise_level_features: 64
