@@ -7,6 +7,7 @@ from torch import nn, Tensor
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS
 
+from osu_dreamer.common.rms_norm import rms_norm
 from osu_dreamer.common.fourier_features import FourierFeatures
 
 def zero(m: nn.Linear):
@@ -39,11 +40,7 @@ class StyleModel(nn.Module):
         self.proj_out = nn.Sequential(nn.RMSNorm(args.h_dim), nn.Linear(args.h_dim, style_dim))
 
         self.films = nn.ModuleList([
-            zero(nn.Linear(args.h_dim, 2*args.h_dim))
-            for _ in range(args.depth)
-        ])
-        self.norms = nn.ModuleList([
-            nn.RMSNorm(args.h_dim)
+            zero(nn.Linear(args.h_dim, 3*args.h_dim))
             for _ in range(args.depth)
         ])
         self.blocks = nn.ModuleList([
@@ -52,7 +49,6 @@ class StyleModel(nn.Module):
                 nn.SiLU(),
                 nn.Dropout(args.dropout),
                 nn.Linear(args.expand * args.h_dim, args.h_dim),
-                nn.RMSNorm(args.h_dim),
             )
             for _ in range(args.depth)
         ])
@@ -74,11 +70,14 @@ class StyleModel(nn.Module):
         t: Float[Tensor, "B"],        # noise level
     ) -> Float[Tensor, "B S"]:
         c = self.compute_conditioning(labels, t)
-        h = self.proj_in(ut)
-        for film, norm, block in zip(self.films, self.norms, self.blocks):
-            scale, shift = film(c).chunk(2, dim=1)
-            h = h + block(norm(h) * (1 + scale) + shift)
-        return self.proj_out(h)
+        x = self.proj_in(ut)
+        for film, block in zip(self.films, self.blocks):
+            scale, shift, gate = film(c).chunk(3, dim=1)
+            h = rms_norm(x) * (1 + scale) + shift
+            h = block(h)
+            h = rms_norm(h) * gate
+            x = x + h
+        return self.proj_out(x)
 
     @th.no_grad()
     def sample(
