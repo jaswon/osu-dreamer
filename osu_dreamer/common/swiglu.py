@@ -27,6 +27,6 @@ class SwiGLU(nn.Module):
     def forward(self, x: Float[Tensor, "B D L"]) -> Float[Tensor, "B D L"]:
         v, g = self.proj_vg(x).chunk(2, dim=1)
         h = v * F.silu(g)
-        h = self.dropout(h)
         h = self.norm(h)
+        h = self.dropout(h)
         return self.proj_o(h)
