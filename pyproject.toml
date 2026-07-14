@@ -13,7 +13,7 @@ dependencies = [
     "rosu-pp-py>=2.0.1",
     "scipy>=1.15.1",
     "tinytag>=2.0.0",
-    "torch==2.10",
+    "torch==2.11",
 ]
 
 [dependency-groups]
