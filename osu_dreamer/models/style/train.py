@@ -17,7 +17,6 @@ from osu_dreamer.common.lr_schedule import LRScheduleArgs, make_lr_schedule
 
 from .model import StyleModel, StyleModelArgs
 
-
 class StyleTrainer(pl.LightningModule):
     def __init__(
         self,
@@ -50,23 +49,23 @@ class StyleTrainer(pl.LightningModule):
         s1: Float[Tensor, "B S"],
         labels: Float[Tensor, str(f"B {NUM_LABELS}")],
     ):
-        masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, -1, labels) # classifier free guidance
-        
-        # stratified logit-normal noise (lower gradient variance)
         B = s1.size(0)
+
+        # stratified logit-normal noise (lower gradient variance)
         u = (th.randperm(B, device=s1.device) + th.rand(B, device=s1.device)) / B
         t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(s1.dtype)
 
-        # minibatch-OT-coupled style noise
         s0 = th.randn_like(s1)
-        if s1.size(0) > 1:
+        if B > 1:
+            # minibatch OT-coupled style noise
             cost = th.cdist(s1.float(), s0.float()).cpu().numpy()
             _, cols = linear_sum_assignment(cost)
             s0 = s0[cols]
         st = th.lerp(s0, s1, t[:,None])
+
+        masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, -1, labels)
         pred_style_flow = self.style(st, masked_labels, t)
         loss = F.mse_loss(pred_style_flow, s1 - s0)
-
         return loss, {
             "loss": loss.detach(),
         }
