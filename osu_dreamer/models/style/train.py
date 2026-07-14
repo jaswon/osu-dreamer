@@ -86,5 +86,51 @@ class StyleTrainer(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: LatentBatch, batch_idx, *args, **kwargs):
-        _, log_dict = self(*batch)
+        _, _, s, labels = batch
+        self._val_s.append(s.detach())
+        self._val_labels.append(labels.detach())
+
+    def on_validation_epoch_start(self):
+        self._val_s: list[Tensor] = []
+        self._val_labels: list[Tensor] = []
+
+    def on_validation_epoch_end(self):
+        s_real = th.cat(self._val_s)      # B S
+        labels = th.cat(self._val_labels) # B N
+        B = s_real.size(0)
+        _, log_dict = self(th.empty(B,0,0), th.empty(B,0,0), s_real, labels)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
+        if B < 2:
+            return
+        K = 4
+        samp = th.stack([self.style.sample(labels, 16) for _ in range(K)]) # K B S
+
+        d_rr = th.cdist(s_real, s_real).fill_diagonal_(th.inf)
+        rr = d_rr.min(1).values.mean()
+        flat = samp.flatten(0,1)
+        self.log('val/nn_ratio', th.cdist(flat, s_real).min(1).values.mean() / rr)
+
+        hi = labels[:, 0] >= 5
+        if hi.sum() > 1:
+            R = s_real[hi]
+            rr_hi = th.cdist(R, R).fill_diagonal_(th.inf).min(1).values.mean()
+            self.log('val/nn_ratio_sr5', th.cdist(samp[:, hi].flatten(0,1), R).min(1).values.mean() / rr_hi)
+
+        # per-condition coverage: closest of the K samples to the true style
+        self.log('val/cond_recall', (samp - s_real[None]).norm(dim=-1).min(0).values.mean())
+
+        # sharpness: spread among same-condition samples, relative to real NN spacing
+        per_cond = samp.transpose(0,1) # B K S
+        self.log('val/sample_spread', th.cdist(per_cond, per_cond).sum() / (K*(K-1)*per_cond.size(0)) / rr)
+
+        self.log('val/energy_dist', energy_distance(flat, s_real))
+
+
+def energy_distance(x: Float[Tensor, "X D"], y: Float[Tensor, "Y D"]) -> Tensor:
+    def mean_dist(a, b, exclude_diag: bool):
+        d = th.cdist(a, b)
+        if exclude_diag:
+            n = a.size(0)
+            return d.sum() / (n * (n - 1))
+        return d.mean()
+    return 2 * mean_dist(x, y, False) - mean_dist(x, x, True) - mean_dist(y, y, True)

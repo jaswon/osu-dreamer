@@ -16,7 +16,7 @@ trainer:
         - # keep the best performing checkpoint
             class_path: pytorch_lightning.callbacks.ModelCheckpoint
             init_args:
-                monitor: val/loss
+                monitor: val/energy_dist
                 mode: min
                 save_top_k: 1
         - # learning rate monitor
@@ -40,13 +40,13 @@ data:
     seq_len: 1 # * 6ms/frame ~= 24.6s
     
     # size of training batch
-    batch_size: 64
+    batch_size: 512
     
     # number of workers to use for data loading
     num_workers: 13
     
     # number of samples to hold out for validation
-    val_size: 128
+    val_size: 512
 
     # per-worker shuffle buffer (in windows); >1 decorrelates consecutive
     # windows emitted from the same beatmap. 1 disables buffering.
