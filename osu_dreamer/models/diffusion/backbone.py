@@ -60,6 +60,11 @@ class BackboneLayer(nn.Module):
         super().__init__()
 
         self.ssg1 = zero(nn.Linear(cg_dim, 3*dim))
+        self.proj_cl = nn.Sequential(
+            nn.Conv1d(cl_dim, cl_dim, 1+2*args.radius, 1, args.radius, groups=cl_dim),
+            nn.Conv1d(cl_dim, cl_dim, 1),
+            nn.SiLU(),
+        )
         self.attn = SDPSA(dim+cl_dim, args.n_heads, args.head_dim, d_out=dim)
 
         self.ssg2 = zero(nn.Linear(cg_dim, 3*dim))
@@ -74,7 +79,7 @@ class BackboneLayer(nn.Module):
         
         scale, shift, gate = self.ssg1(cg)[:,:,None].chunk(3, dim=1)
         h = rms_norm(x) * (1 + scale) + shift
-        h = self.attn(th.cat([cl.expand(x.size(0),-1,-1), h], dim=1))
+        h = self.attn(th.cat([self.proj_cl(cl).expand(x.size(0),-1,-1), h], dim=1))
         h = rms_norm(h) * gate
         x = x + h
 
