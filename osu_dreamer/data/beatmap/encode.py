@@ -58,9 +58,14 @@ def get_labels(bm: Beatmap) -> Labels:
 HIT_DTYPE = np.uint8
 XY_DTYPE = np.uint16
 
+def raise_if_nan(x):
+    if np.isnan(np.sum(x)):
+        raise ValueError('array contains nan')
+    return x
+
 def write_beatmap(f: BinaryIO, bm: Beatmap, frame_times: FrameTimes):
-    hit = hit_signal(bm, frame_times)
-    xy = cursor_signal(bm, frame_times)
+    hit = raise_if_nan(hit_signal(bm, frame_times))
+    xy = raise_if_nan(cursor_signal(bm, frame_times))
     xy_min = xy.min(axis=1, keepdims=True)
     xy_rng = xy.max(axis=1, keepdims=True) - xy_min
     xy_rng[xy_rng == 0.] = 1.
@@ -70,7 +75,7 @@ def write_beatmap(f: BinaryIO, bm: Beatmap, frame_times: FrameTimes):
         xy = np.round(xy_norm * np.iinfo(XY_DTYPE).max).astype(XY_DTYPE),
         xy_min = xy_min,
         xy_rng = xy_rng,
-        labels = get_labels(bm),
+        labels = raise_if_nan(get_labels(bm)),
     )
 
 def read_beatmap(f: BinaryIO) -> tuple[EncodedBeatmap, Labels]:

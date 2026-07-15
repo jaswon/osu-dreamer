@@ -1,0 +1,3 @@
+
+class BeatmapParseError(Exception):
+    pass

@@ -1,9 +1,6 @@
 
-from pathlib import Path
 from typing import BinaryIO
 from jaxtyping import Float
-
-from subprocess import CalledProcessError, run
 
 import numpy as np
 
@@ -35,24 +32,7 @@ def get_frame_times(num_frames: int) -> FrameTimes:
     samples = frames * HOP_LEN
     return samples / SR * 1000
 
-def make_spec(file_name: str | Path) -> Float[np.ndarray, "F L"]:
-    try:
-        buf = run([
-            "ffmpeg",
-            "-nostdin",
-            "-threads", "0",
-            "-i", file_name,
-            "-f", "s16le",
-            "-ac", "1",
-            "-acodec", "pcm_s16le",
-            "-ar", str(SR),
-            "-",
-        ], capture_output=True, check=True).stdout
-    except CalledProcessError as e:
-        raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
-    
-    wave = np.frombuffer(buf, dtype=np.int16).astype(np.float32) / 2 ** 15
-
+def make_spec(wave: Float[np.ndarray, "L"]) -> Float[np.ndarray, "F L"]:
     freqs = np.geomspace(F_MIN, F_MAX, N_BINS, endpoint=False).astype(np.float32)
     bank = ResonatorBank(freqs, SR)  # alphas default to a per-frequency heuristic
     spec = bank.resonate(wave, hop=HOP_LEN)  # shape (n_frames, n_bins), complex64

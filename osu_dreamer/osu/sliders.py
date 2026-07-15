@@ -6,6 +6,7 @@ from numpy import ndarray
 
 from .hit_objects import Slider, Vec2
 from .bezier import BezierCurve
+from .error import BeatmapParseError
 
 def from_control_points(
     t: int,
@@ -20,7 +21,7 @@ def from_control_points(
     slider_args = t, beat_length, slider_mult, new_combo, hit_sound, slides, length, ctrl_pts
 
     if len(ctrl_pts) < 2:
-        raise Exception(f"bad slider: {ctrl_pts}")
+        raise BeatmapParseError(f"bad slider: {ctrl_pts}")
     if len(ctrl_pts) == 2:  # L type
         A, B = ctrl_pts
         return Line(*slider_args, A, B)
@@ -232,12 +233,16 @@ class Bezier(Slider):
         return idx, t
 
     def lerp(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
+        if t.shape[0] == 0:
+            return np.empty((0,2))
         return np.stack([
             self.path_segments[idx].at(np.array([t]))[:,0]
             for idx, t in zip(*self.curve_reparameterize(t))
         ], axis=0)
 
     def vel(self, t: Float[ndarray, "L"]) -> Float[ndarray, "L 2"]:
+        if t.shape[0] == 0:
+            return np.empty((0,2))
         return np.stack([
             self.path_segments[idx].hodo().at(np.array([t]))[:,0] / self.slide_duration
             for idx, t in zip(*self.curve_reparameterize(t))

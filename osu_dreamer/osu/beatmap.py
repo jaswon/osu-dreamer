@@ -4,6 +4,7 @@ from typing import Optional, Union
 import re
 from pathlib import Path
 
+import math
 import bisect
 import numpy as np
 
@@ -11,7 +12,7 @@ import rosu_pp_py as rosu
 
 from .hit_objects import Timed, TimingPoint, Circle, Spinner, Slider, Break
 from .sliders import from_control_points
-
+from .error import BeatmapParseError
 
 class Beatmap:
 
@@ -55,62 +56,39 @@ class Beatmap:
 
     def __repr__(self):
         return f"{self.title} [{self.version}]"
-
-    def __init__(self, filename, meta_only=False):
-
-        self.sr = rosu.Performance().calculate(rosu.Beatmap(path=str(filename))).difficulty.stars
-        
-        self.filename = Path(filename)
-
+    
+    @classmethod
+    def from_file(cls, filename: str | Path):
         with open(filename, encoding='utf-8') as f:
-            cfg = self.parse_map_file(f)
+            return cls(f.read())
 
-        # account for case-insensitivity
-        lc_files = { f.name.lower(): f.name for f in self.filename.parent.iterdir() }
-        self.audio_filename = self.filename.parent / lc_files[cfg["General"]["AudioFilename"].lower()]
+    def __init__(self, contents: str):
 
-        self.mode = int(cfg["General"]["Mode"])
+        bm = rosu.Beatmap(content=contents)
+        self.mode = bm.mode
+        self.hp = bm.hp
+        self.cs = bm.cs
+        self.od = bm.od
+        self.ar = bm.ar
+        self.slider_mult = bm.slider_multiplier
+        self.slider_tick = bm.slider_tick_rate
+        self.sr = rosu.Performance().calculate(bm).difficulty.stars
+
+        cfg = self.parse_map_file(contents.split('\n'))
 
         self.title = cfg["Metadata"]["Title"]
         self.artist = cfg["Metadata"]["Artist"]
         self.creator = cfg["Metadata"]["Creator"]
         self.version = cfg["Metadata"]["Version"]
 
-        self.hp = float(cfg["Difficulty"]["HPDrainRate"])
-        self.cs = float(cfg["Difficulty"]["CircleSize"])
-        self.od = float(cfg["Difficulty"]["OverallDifficulty"])
-
-        try:
-            self.ar = float(cfg["Difficulty"]["ApproachRate"])
-        except KeyError:
-            self.ar = 7.
-
-        # base slider velocity in hundreds of osu!pixels per beat
-        self.slider_mult = float(cfg["Difficulty"]["SliderMultiplier"])
-
-        # slider ticks per beat
-        self.slider_tick = float(cfg["Difficulty"]["SliderTickRate"])
-
         try:
             self.beat_divisor = int(cfg["Editor"]["BeatDivisor"])
         except KeyError:
             self.beat_divisor = 4
-
-        self.unparsed_hitobjects = cfg["HitObjects"]
-        self.unparsed_timingpoints = cfg["TimingPoints"]
-        self.unparsed_events = cfg.get("Events", [])
-        if not meta_only:
-            self.parse_map_data()
-
-    def parse_map_data(self):
-        self.parse_timing_points(self.unparsed_timingpoints)
-        del self.unparsed_timingpoints
-
-        self.parse_hit_objects(self.unparsed_hitobjects)
-        del self.unparsed_hitobjects
-
-        self.parse_breaks(self.unparsed_events)
-        del self.unparsed_events
+        
+        self.parse_breaks(cfg.get("Events", []))
+        self.parse_timing_points(cfg["TimingPoints"])
+        self.parse_hit_objects(cfg["HitObjects"])
 
     def parse_breaks(self, lines):
         self.breaks: list[Break] = []
@@ -129,7 +107,11 @@ class Beatmap:
         
         for l in lines:
             vals = [ float(x) for x in l.strip().split(",") ]
-            t, x, meter = vals[:3]
+            t, x = vals[0], vals[1]
+            meter = vals[2] if len(vals) >= 3 else 4
+
+            if math.isnan(x):
+                raise BeatmapParseError("nan timing point")
             
             if x < 0:
                 # inherited timing point - controls slider multiplier
@@ -148,7 +130,7 @@ class Beatmap:
                 cur_meter = meter
 
             if cur_beat_length is None or cur_meter is None:
-                raise ValueError("inherited timing point appears before any uninherited timing points")
+                raise BeatmapParseError("inherited timing point appears before any uninherited timing points")
                 
             tp = TimingPoint(int(t), cur_beat_length, cur_slider_mult, int(cur_meter))
 
@@ -157,7 +139,7 @@ class Beatmap:
                 self.timing_points.append(tp)
             
         if len(self.timing_points) == 0:
-            raise ValueError("no timing points")
+            raise BeatmapParseError("no timing points")
         
     def uninherited_timing_points(self) -> list[TimingPoint]:
         """returns a list of timing points that have distinct meter and beat length"""
@@ -205,12 +187,12 @@ class Beatmap:
             elif typ & (1 << 3):  # spinner
                 ho = Spinner(t, new_combo, hit_sound, int(float(spl[5])))
             else:
-                raise ValueError(f"invalid hit object type: {typ}")
+                raise BeatmapParseError(f"invalid hit object type: {typ}")
                 
             if len(self.hit_objects) and ho.t < self.hit_objects[-1].end_time():
-                raise ValueError(f"hit object starts before previous hit object ends: {t}")
+                raise BeatmapParseError(f"hit object starts before previous hit object ends: {t}")
                 
             self.hit_objects.append(ho)
             
         if len(self.hit_objects) == 0:
-            raise ValueError("no hit objects")
+            raise BeatmapParseError("no hit objects")
