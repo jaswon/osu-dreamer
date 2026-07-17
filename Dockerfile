@@ -1,4 +1,4 @@
-FROM runpod/base:0.6.2-cuda12.4.1
+FROM runpod/base:1.0.2-cuda1300-ubuntu2404
 ENV PYTHONUNBUFFERED=1
 
 # screen
