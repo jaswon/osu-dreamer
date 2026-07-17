@@ -17,9 +17,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=.python-version,target=.python-version \
     uv sync --locked --no-install-project
 
-# project data
-COPY data data
-
 # project source
 RUN git init . \
     && git remote add origin https://github.com/jaswon/osu-dreamer \
