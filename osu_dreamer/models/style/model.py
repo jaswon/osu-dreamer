@@ -88,5 +88,11 @@ class StyleModel(nn.Module):
         u = th.randn(labels.size(0), self.style_dim, device=labels.device)
         ts = th.linspace(0, 1, num_steps+1, device=labels.device)
         for t0, t1 in zip(ts[:-1], ts[1:]):
-            u = u + self(u, labels, t0.expand(labels.size(0))) * (t1 - t0)
+            dt = t1 - t0
+            v0 = self(u, labels, t0.expand(labels.size(0)))
+            if t1 >= 1:
+                u = u + v0 * dt
+            else:
+                v1 = self(u + v0 * dt, labels, t1.expand(labels.size(0)))
+                u = u + (v0 + v1) / 2 * dt
         return u
