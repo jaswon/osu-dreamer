@@ -43,7 +43,7 @@ class StyleTrainer(pl.LightningModule):
 
         # model
         self.style = StyleModel(style_dim, style_args)
-        self.style_ema = AveragedModel(self.style, multi_avg_fn=get_ema_multi_avg_fn(.999))
+        self.style_ema = AveragedModel(self.style, multi_avg_fn=get_ema_multi_avg_fn(.99))
 
     def forward(
         self, 
@@ -61,8 +61,9 @@ class StyleTrainer(pl.LightningModule):
         s0 = th.randn_like(s1)
         if B > 1:
             # minibatch OT-coupled style noise
-            cost = th.cdist(s1.float(), s0.float()).cpu().numpy()
-            _, cols = linear_sum_assignment(cost)
+            y = labels.float()
+            cost = th.cdist(s1.float(), s0.float()).pow(2) + th.cdist(y, y).pow(2)
+            _, cols = linear_sum_assignment(cost.cpu().numpy())
             s0 = s0[cols]
         st = th.lerp(s0, s1, t[:,None])
 
