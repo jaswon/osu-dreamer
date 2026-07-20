@@ -10,7 +10,7 @@ import torch as th
 
 import click
 
-from osu_dreamer.data.load_audio import make_spec
+from osu_dreamer.data.load_audio import load_wave, make_spec
 from osu_dreamer.data.beatmap.decode import decode_beatmap, Metadata
 
 from osu_dreamer.models.inference.artifact import load_inference
@@ -64,7 +64,7 @@ def predict(
     # load audio
     # ======
     dev = next(model.parameters()).device
-    audio = th.tensor(make_spec(audio_file), device=dev).float()
+    audio = th.tensor(make_spec(load_wave(audio_file)), device=dev).float()
     labels = th.tensor(diff, device=dev)
     
     # generate maps

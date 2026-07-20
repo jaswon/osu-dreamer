@@ -4,6 +4,7 @@ from jaxtyping import Float
 
 import numpy as np
 
+from torchcodec.decoders._audio_decoder import AudioDecoder
 from resonators import ResonatorBank # type: ignore
 
 # audio processing constants
@@ -32,7 +33,10 @@ def get_frame_times(num_frames: int) -> FrameTimes:
     samples = frames * HOP_LEN
     return samples / SR * 1000
 
-def make_spec(wave: Float[np.ndarray, "L"]) -> Float[np.ndarray, "F L"]:
+def load_wave(audio_file) -> Float[np.ndarray, "N"]:
+    return AudioDecoder(audio_file, sample_rate=SR).get_all_samples().data.mean(dim=0).numpy()
+
+def make_spec(wave: Float[np.ndarray, "N"]) -> Float[np.ndarray, "F L"]:
     freqs = np.geomspace(F_MIN, F_MAX, N_BINS, endpoint=False).astype(np.float32)
     bank = ResonatorBank(freqs, SR)  # alphas default to a per-frequency heuristic
     spec = bank.resonate(wave, hop=HOP_LEN)  # shape (n_frames, n_bins), complex64
