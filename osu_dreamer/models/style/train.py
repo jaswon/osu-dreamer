@@ -10,6 +10,8 @@ from scipy.optimize import linear_sum_assignment
 
 import pytorch_lightning as pl
 
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+
 from osu_dreamer.data.beatmap.encode import NUM_LABELS
 from osu_dreamer.data.modules.latent import LatentBatch
 
@@ -41,6 +43,7 @@ class StyleTrainer(pl.LightningModule):
 
         # model
         self.style = StyleModel(style_dim, style_args)
+        self.style_ema = AveragedModel(self.style, multi_avg_fn=get_ema_multi_avg_fn(.999))
 
     def forward(
         self, 
@@ -71,7 +74,7 @@ class StyleTrainer(pl.LightningModule):
         }
 
     def configure_optimizers(self):
-        opt = th.optim.AdamW(self.parameters(), **self.opt_args)
+        opt = th.optim.AdamW(self.style.parameters(), **self.opt_args)
         return {
             "optimizer": opt,
             "lr_scheduler": {
@@ -84,6 +87,9 @@ class StyleTrainer(pl.LightningModule):
         loss, log_dict = self(*batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
+
+    def on_train_batch_end(self, *args, **kwargs):
+        self.style_ema.update_parameters(self.style)
 
     def validation_step(self, batch: LatentBatch, batch_idx, *args, **kwargs):
         _, _, s, labels = batch
@@ -103,7 +109,8 @@ class StyleTrainer(pl.LightningModule):
         if B < 2:
             return
         K = 4
-        samp = th.stack([self.style.sample(labels, 16) for _ in range(K)]) # K B S
+        ema: StyleModel = self.style_ema.module # type: ignore
+        samp = th.stack([ema.sample(labels, 16) for _ in range(K)]) # K B S
 
         d_rr = th.cdist(s_real, s_real).fill_diagonal_(th.inf)
         rr = d_rr.min(1).values.mean()

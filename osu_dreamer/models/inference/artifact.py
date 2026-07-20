@@ -24,7 +24,7 @@ def save_inference(
     inference_state_dict = {
         **{ k: v for k, v in latent_ckpt['state_dict'].items() if k.startswith('latent.') },
         **{ k: v for k, v in denoiser_ckpt['state_dict'].items() if k.startswith('diffusion.') },
-        **{ k: v for k, v in style_ckpt['state_dict'].items() if k.startswith('style.') },
+        **{ f"style.{k.removeprefix('style_ema.module.')}": v for k, v in style_ckpt['state_dict'].items() if k.startswith('style_ema.module.') },
     }
 
     with open(output_path, 'wb') as f:
