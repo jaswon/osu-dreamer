@@ -8,7 +8,7 @@ import random
 
 import torch as th
 import torch.nn.functional as F
-from torch.utils.data import Dataset, IterableDataset, DataLoader
+from torch.utils.data import IterableDataset, DataLoader
 
 import pytorch_lightning as pl
 
@@ -30,24 +30,41 @@ def pad_to_multiple(x: Float[Tensor, "... L"], chunk_size: int) -> Float[Tensor,
     return F.pad(x, (0, pad), mode='replicate') if pad > 0 else x
 
 
-def split_by_mapset(full_set: list[Path], val_size: int, seed: int = 0) -> tuple[list[Path], list[Path]]:
+def hold_out_mapsets(data_dir: Path, pattern: str, max_val_count: int, max_val_frac: float) -> set[str]:
     """hold out whole mapsets (all difficulties of a song) to prevent
-    train/val leakage via shared audio. `val_size` is a map count: mapsets
-    are drawn until at least `val_size` maps are held out."""
-    mapsets: dict[Path, list[Path]] = {}
-    for f in full_set:
-        mapsets.setdefault(f.parent, []).append(f)
-    keys = sorted(mapsets)
-    order = th.randperm(len(keys), generator=th.Generator().manual_seed(seed))
-    val_set: list[Path] = []
-    val_keys: set[Path] = set()
-    for i in order.tolist():
-        if len(val_set) >= val_size:
+    train/val leakage via shared audio. `max_val_size` is a map count: mapsets
+    are drawn until at most `max_val_size` maps are held out."""
+
+    if not data_dir.exists():
+        raise ValueError(f'data dir `{data_dir}` does not exist, generate dataset first')
+    
+    # data dir exists, check for samples
+    full_size = sum(1 for _ in data_dir.rglob(pattern))
+    if full_size == 0:
+        raise ValueError(f'data dir `{data_dir}` is empty, generate dataset first')
+    
+    # check validation size
+    if max_val_count <= 0:
+        raise ValueError(f'invalid {max_val_count=}')
+    
+    if not (0 < max_val_frac < 1):
+        raise ValueError(f'invalid {max_val_frac=}')
+    
+    max_val_size = min(max_val_count, int(full_size * max_val_frac))
+    if not (0 < max_val_size < full_size):
+        raise ValueError(f'invalid {max_val_size=} given {full_size=} {max_val_count=} {max_val_frac=}')
+    
+    mapsets = set()
+    val_size = 0
+    for mapset in data_dir.iterdir():
+        mapset_count = sum(1 for _ in mapset.glob(pattern))
+        if val_size + mapset_count > max_val_size:
             break
-        val_keys.add(keys[i])
-        val_set.extend(mapsets[keys[i]])
-    train_set = [f for k in keys if k not in val_keys for f in mapsets[k]]
-    return train_set, val_set
+        val_size += mapset_count
+        mapsets.add(mapset.stem)
+
+    print(f'train: {full_size - val_size} | val: {val_size}')
+    return mapsets
 
 
 class BeatmapDataModule(pl.LightningDataModule):
@@ -56,7 +73,8 @@ class BeatmapDataModule(pl.LightningDataModule):
         batch_size: int,
         seq_len: int,
         num_workers: int,
-        val_size: float | int,
+        max_val_count: int = 512,
+        max_val_frac: float = .3,
         data_path: str = "./data",
         shuffle_buffer_size: int = 1,
         max_per_map: int = -1,
@@ -69,62 +87,50 @@ class BeatmapDataModule(pl.LightningDataModule):
         self.max_per_map = max_per_map
         
         # check if data dir exists
-        self.data_dir = Path(data_path)
-        if not self.data_dir.exists():
-            raise ValueError(f'data dir `{self.data_dir}` does not exist, generate dataset first')
-        
-        # data dir exists, check for samples
-        self.full_set = sorted(self.data_dir.rglob("*.map.npy"))
-        if len(self.full_set) == 0:
-            raise ValueError(f'data dir `{self.data_dir}` is empty, generate dataset first')
-        
-        # check validation size
-        if val_size <= 0:
-            raise ValueError(f'invalid {val_size=}')
-        elif val_size < 1:
-            # interpret as fraction of full set
-            val_size = int(len(self.full_set) * val_size)
-            if val_size == 0:
-                raise ValueError(f'empty validation set, given {val_size=} and {len(self.full_set)=}')
-        else:
-            # interpret as number of samples
-            val_size = round(val_size)
-            if val_size > len(self.full_set):
-                raise ValueError(f"{val_size=} is greater than {len(self.full_set)=}")
-        self.val_size = val_size
-        
-    def make_train_set(self, split) -> Dataset:
-        return BatchedSignalDataset(self.seq_len, split, self.shuffle_buffer_size, self.max_per_map)
-    
-    def make_val_set(self, split) -> Dataset:
-        return SignalDataset(split)
+        data_dir = Path(data_path)
+        val_sets = hold_out_mapsets(data_dir, '*.map.npy', max_val_count, max_val_frac)
+        self.train_set = BatchedSignalDataset(data_dir, dict(exclude=val_sets), self.seq_len, self.shuffle_buffer_size, self.max_per_map)
+        self.val_set = SignalDataset(data_dir, dict(include=val_sets))
             
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, persistent_workers=True, drop_last=True)
+        return DataLoader(
+            self.train_set, 
+            batch_size=self.batch_size, 
+            num_workers=self.num_workers, 
+            pin_memory=True, 
+            persistent_workers=True, 
+            drop_last=True,
+        )
     
     def val_dataloader(self):
-        return DataLoader(self.val_set, batch_size=1, num_workers=self.num_workers, pin_memory=True, persistent_workers=True)
+        return DataLoader(
+            self.val_set, 
+            batch_size=1, 
+            num_workers=self.num_workers, 
+            pin_memory=True, 
+            persistent_workers=True,
+        )
             
-    def setup(self, stage: str):
-        train_split, val_split = split_by_mapset(self.full_set, self.val_size)
-        print(f'train: {len(train_split)} | val: {len(val_split)}')
-        
-        self.train_set = self.make_train_set(train_split)
-        self.val_set = self.make_val_set(val_split)
-    
 
 class SignalDataset(IterableDataset):
-    def __init__(self, dataset, shuffle_buffer_size: int = 1):
+    def __init__(self, data_dir: Path, mapsets: dict[str, set[str]], shuffle_buffer_size: int = 1):
         super().__init__()
-        self.dataset = dataset
+        self.data_dir = data_dir
+        self.mapsets = mapsets
         self.shuffle_buffer_size = shuffle_buffer_size
 
     def _sample_stream(self, num_workers: int, worker_id: int) -> Iterator[Batch]:
-        dataset = sorted(self.dataset)
-        for i, map_file in random.sample(list(enumerate(dataset)), int(len(dataset))):
+        if 'include' in self.mapsets:
+            filter_fn = lambda sample: sample.parent.name in self.mapsets['include']
+        elif 'exclude' in self.mapsets:
+            filter_fn = lambda sample: sample.parent.name not in self.mapsets['exclude']
+        else:
+            raise ValueError('neither include nor exclude provided')
+        
+        dataset = filter(filter_fn, self.data_dir.rglob("*.map.npy"))
+        for i, map_file in enumerate(dataset):
             if i % num_workers != worker_id:
                 continue
-
             try:
                 yield from self.make_samples(map_file, i)
             finally:
@@ -175,12 +181,13 @@ class SignalDataset(IterableDataset):
 class BatchedSignalDataset(SignalDataset):
     def __init__(
         self, 
+        data_dir: Path, 
+        mapsets: dict[str, set[str]], 
         seq_len: int, 
-        dataset, 
         shuffle_buffer_size: int = 1,
         max_per_map: int = -1, 
     ):
-        super().__init__(dataset, shuffle_buffer_size)
+        super().__init__(data_dir, mapsets, shuffle_buffer_size)
         self.seq_len = seq_len
         self.max_per_map = max_per_map if max_per_map > 0 else float('inf')
 

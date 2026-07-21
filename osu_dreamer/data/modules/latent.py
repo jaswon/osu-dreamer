@@ -14,7 +14,8 @@ import pytorch_lightning as pl
 
 from osu_dreamer.data.reclaim_memory import reclaim_memory
 from osu_dreamer.data.beatmap.encode import NUM_LABELS
-from osu_dreamer.data.modules.beatmap import split_by_mapset
+
+from .beatmap import hold_out_mapsets
 
 
 class LatentBatch(NamedTuple):
@@ -32,7 +33,8 @@ class LatentDataModule(pl.LightningDataModule):
         batch_size: int,
         seq_len: int, # in latent frames
         num_workers: int,
-        val_size: float | int,
+        max_val_count: int = 512,
+        max_val_frac: float = .3,
         data_path: str = "./data",
         shuffle_buffer_size: int = 1,
         max_per_map: int = -1,
@@ -44,32 +46,29 @@ class LatentDataModule(pl.LightningDataModule):
         self.shuffle_buffer_size = shuffle_buffer_size
         self.max_per_map = max_per_map
 
-        self.data_dir = Path(data_path)
-        self.full_set = sorted(self.data_dir.rglob("*.latent.npz"))
-        if len(self.full_set) == 0:
-            raise ValueError(f'no cached latents found in `{self.data_dir}`, run `encode-latents` first')
-
-        if val_size <= 0:
-            raise ValueError(f'invalid {val_size=}')
-        elif val_size < 1:
-            val_size = int(len(self.full_set) * val_size)
-        else:
-            val_size = round(val_size)
-        if not 0 < val_size <= len(self.full_set):
-            raise ValueError(f'invalid {val_size=} given {len(self.full_set)=}')
-        self.val_size = val_size
-
-    def setup(self, stage: str):
-        train_split, val_split = split_by_mapset(self.full_set, self.val_size)
-        print(f'train: {len(train_split)} | val: {len(val_split)}')
-        self.train_set = LatentDataset(train_split, self.seq_len, self.shuffle_buffer_size, self.max_per_map)
-        self.val_set = LatentDataset(val_split)
+        data_dir = Path(data_path)
+        val_sets = hold_out_mapsets(data_dir, '*.latent.npz', max_val_count, max_val_frac)
+        self.train_set = LatentDataset(data_dir, dict(exclude=val_sets), self.seq_len, self.shuffle_buffer_size, self.max_per_map)
+        self.val_set = LatentDataset(data_dir, dict(include=val_sets))
 
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=True, persistent_workers=self.num_workers>0, drop_last=True)
+        return DataLoader(
+            self.train_set, 
+            batch_size=self.batch_size, 
+            num_workers=self.num_workers, 
+            pin_memory=True, 
+            persistent_workers=self.num_workers>0, 
+            drop_last=True,
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.val_set, batch_size=1, num_workers=min(1, self.num_workers), pin_memory=True, persistent_workers=self.num_workers>0)
+        return DataLoader(
+            self.val_set, 
+            batch_size=1, 
+            num_workers=min(1, self.num_workers), 
+            pin_memory=True, 
+            persistent_workers=self.num_workers>0,
+        )
 
 
 def load_latents(latent_file: Path) -> LatentBatch:
@@ -84,13 +83,14 @@ def load_latents(latent_file: Path) -> LatentBatch:
 class LatentDataset(IterableDataset):
     def __init__(
         self,
-        dataset,
+        data_dir: Path, mapsets: dict[str, set[str]],
         seq_len: int | None = None, # None: yield full maps
         shuffle_buffer_size: int = 1,
         max_per_map: int = -1,
     ):
         super().__init__()
-        self.dataset = dataset
+        self.data_dir = data_dir
+        self.mapsets = mapsets
         self.seq_len = seq_len
         self.shuffle_buffer_size = shuffle_buffer_size
         self.max_per_map = max_per_map if max_per_map > 0 else float('inf')
@@ -115,12 +115,19 @@ class LatentDataset(IterableDataset):
             )
 
     def _sample_stream(self, num_workers: int, worker_id: int) -> Iterator[LatentBatch]:
-        dataset = sorted(self.dataset)
-        for i, latent_file in random.sample(list(enumerate(dataset)), len(dataset)):
+        if 'include' in self.mapsets:
+            filter_fn = lambda sample: sample.parent.name in self.mapsets['include']
+        elif 'exclude' in self.mapsets:
+            filter_fn = lambda sample: sample.parent.name not in self.mapsets['exclude']
+        else:
+            raise ValueError('neither include nor exclude provided')
+        
+        dataset = filter(filter_fn, self.data_dir.rglob("*.latent.npz"))
+        for i, map_file in enumerate(dataset):
             if i % num_workers != worker_id:
                 continue
             try:
-                yield from self.make_samples(latent_file)
+                yield from self.make_samples(map_file)
             finally:
                 reclaim_memory()
 

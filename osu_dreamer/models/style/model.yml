@@ -45,8 +45,8 @@ data:
     # number of workers to use for data loading
     num_workers: 13
     
-    # number of samples to hold out for validation
-    val_size: 512
+    # maximum number of maps to hold out for validation
+    max_val_count: 512
 
     # per-worker shuffle buffer (in windows); >1 decorrelates consecutive
     # windows emitted from the same beatmap. 1 disables buffering.
