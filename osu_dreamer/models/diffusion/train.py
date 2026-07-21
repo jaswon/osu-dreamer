@@ -5,6 +5,7 @@ from jaxtyping import Float
 import torch as th
 from torch import Tensor
 import torch.nn.functional as F
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
 from einops import repeat, rearrange
 
@@ -49,9 +50,11 @@ class DiffusionTrainer(pl.LightningModule):
 
         # model
         self.diffusion = DiffusionModel(emb_dim, a_dim, style_dim, diffusion_args)
+        self.diffusion_ema = AveragedModel(self.diffusion, multi_avg_fn=get_ema_multi_avg_fn(.99))
 
     def forward(
         self, 
+        model: DiffusionModel,
         h: Float[Tensor, "B A l"], 
         x1: Float[Tensor, "B E l"], 
         s: Float[Tensor, "B S"],
@@ -66,7 +69,7 @@ class DiffusionTrainer(pl.LightningModule):
         true_flow = x1 - x0
         xt = th.lerp(x0,x1,t[:,None,None])
 
-        pred_flow = self.diffusion.forward(h, s, xt, t)
+        pred_flow = model.forward(h, s, xt, t)
         loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
 
         return loss, {
@@ -84,9 +87,12 @@ class DiffusionTrainer(pl.LightningModule):
         }
         
     def training_step(self, batch: LatentBatch, batch_idx):
-        loss, log_dict = self(*batch)
+        loss, log_dict = self(self.diffusion, *batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
+
+    def on_train_batch_end(self, *args, **kwargs):
+        self.diffusion_ema.update_parameters(self.diffusion)
  
     def validation_step(self, batch: LatentBatch, batch_idx, *args, **kwargs):
         h,z,s,l = batch
@@ -98,5 +104,5 @@ class DiffusionTrainer(pl.LightningModule):
             z = rearrange(z[...,:bl], '1 ... (b l) -> b ... l', b = self.val_batches)
             s = repeat(s, '1 d -> b d', b = self.val_batches)
             l = repeat(l, '1 d -> b d', b = self.val_batches)
-            _, log_dict = self(h,z,s,l)
+            _, log_dict = self(self.diffusion_ema.module, h,z,s,l)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })

@@ -5,12 +5,11 @@ from jaxtyping import Float
 import torch as th
 from torch import Tensor
 import torch.nn.functional as F
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
 from scipy.optimize import linear_sum_assignment
 
 import pytorch_lightning as pl
-
-from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
 from osu_dreamer.data.beatmap.encode import NUM_LABELS
 from osu_dreamer.data.modules.latent import LatentBatch
@@ -47,6 +46,7 @@ class StyleTrainer(pl.LightningModule):
 
     def forward(
         self, 
+        model: StyleModel,
         _h: Float[Tensor, "B A l"], 
         _z: Float[Tensor, "B E l"], 
         s1: Float[Tensor, "B S"],
@@ -68,7 +68,7 @@ class StyleTrainer(pl.LightningModule):
         st = th.lerp(s0, s1, t[:,None])
 
         masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, -1, labels)
-        pred_style_flow = self.style(st, masked_labels, t)
+        pred_style_flow = model(st, masked_labels, t)
         loss = F.mse_loss(pred_style_flow, s1 - s0)
         return loss, {
             "loss": loss.detach(),
@@ -85,7 +85,7 @@ class StyleTrainer(pl.LightningModule):
         }
 
     def training_step(self, batch: LatentBatch, batch_idx):
-        loss, log_dict = self(*batch)
+        loss, log_dict = self(self.style, *batch)
         self.log_dict({ f"train/{k}": v for k,v in log_dict.items() })
         return loss
 
@@ -105,7 +105,7 @@ class StyleTrainer(pl.LightningModule):
         s_real = th.cat(self._val_s)      # B S
         labels = th.cat(self._val_labels) # B N
         B = s_real.size(0)
-        _, log_dict = self(th.empty(B,0,0), th.empty(B,0,0), s_real, labels)
+        _, log_dict = self(self.style_ema, th.empty(B,0,0), th.empty(B,0,0), s_real, labels)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
         if B < 2:
             return
