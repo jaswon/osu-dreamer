@@ -4,7 +4,6 @@ from jaxtyping import Float
 
 import torch as th
 from torch import Tensor
-import torch.nn.functional as F
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
 from einops import repeat, rearrange
@@ -19,6 +18,17 @@ from osu_dreamer.data.modules.latent import LatentBatch
 
 from .model import DiffusionModel, DiffusionModelArgs
 
+
+def frame_dist_sq(
+    a: Float[Tensor, "B E l"],
+    b: Float[Tensor, "B E l"],
+) -> Float[Tensor, "B"]:
+    """squared distance in the per-frame metric: sum over channels, mean over length.
+
+    latents are per-frame RMS-normalized, so this metric makes all distance
+    statistics independent of sequence length: E[d^2(x0, x1)] = 2E exactly.
+    """
+    return (a-b).square().sum(1).mean(1)
     
 class DiffusionTrainer(pl.LightningModule):
     def __init__(
@@ -30,6 +40,8 @@ class DiffusionTrainer(pl.LightningModule):
         # training parameters
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
+        osl_weight: float,
+        del_weight: float,
 
         # model hparams
         emb_dim: int,
@@ -47,6 +59,8 @@ class DiffusionTrainer(pl.LightningModule):
         # training params
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
+        self.osl_weight = osl_weight
+        self.del_weight = del_weight
 
         # model
         self.diffusion = DiffusionModel(emb_dim, a_dim, style_dim, diffusion_args)
@@ -66,14 +80,31 @@ class DiffusionTrainer(pl.LightningModule):
         t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(x1.dtype)
 
         x0 = th.randn_like(x1)
-        true_flow = x1 - x0
         xt = th.lerp(x0,x1,t[:,None,None])
+        u_pred, v_pred = model.forward(h, s, xt)
 
-        pred_flow = model.forward(h, s, xt, t)
-        loss = F.mse_loss(pred_flow, true_flow, reduction='none').sum(dim=1).mean()
+        # distance marching (arXiv:2602.02928): distances in the per-frame metric
+        d_sq = frame_dist_sq(xt, x1)                # (1-t)^2 ||x0-x1||^2
+        u_target = (d_sq + model.c0).sqrt()
+
+        # one-step loss: inverse-distance-weighted denoising
+        denoised = xt - u_pred[:,None,None] * v_pred
+        osl = (frame_dist_sq(denoised, x1) / (d_sq + model.c0)).mean()
+
+        # directional eikonal loss: length-neutral direction supervision
+        v_target = (xt - x1) / u_target[:,None,None]
+        del_ = frame_dist_sq(v_pred, v_target).mean()
+
+        loss = self.osl_weight * osl + self.del_weight * del_
+
+        # distance estimation error (monitoring only): u vs sqrt(d^2 + c0)
+        u_err = ((u_pred - u_target) / u_target).abs().mean()
 
         return loss, {
             "loss": loss.detach(),
+            "osl": osl.detach(),
+            "del": del_.detach(),
+            "u_mape": u_err.detach(),
         }
 
     def configure_optimizers(self):
