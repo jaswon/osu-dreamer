@@ -60,12 +60,14 @@ model:
         lr: .0003
         weight_decay: 0.01
     label_drop_prob: .2
+    osl_weight: 1.
+    del_weight: 30.
 
     # model hyperparameters
     style_dim: 32
     
     style_args:
-        noise_level_features: 128
+        label_features: 128
         h_dim: 256
         depth: 8
         expand: 4

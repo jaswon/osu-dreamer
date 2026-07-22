@@ -4,10 +4,7 @@ from jaxtyping import Float
 
 import torch as th
 from torch import Tensor
-import torch.nn.functional as F
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
-
-from scipy.optimize import linear_sum_assignment
 
 import pytorch_lightning as pl
 
@@ -26,6 +23,8 @@ class StyleTrainer(pl.LightningModule):
         opt_args: dict[str, Any],
         schedule_args: LRScheduleArgs,
         label_drop_prob: float,
+        osl_weight: float,
+        del_weight: float,
 
         # model hparams
         style_dim: int,
@@ -39,6 +38,8 @@ class StyleTrainer(pl.LightningModule):
         self.opt_args = opt_args
         self.lr_schedule = make_lr_schedule(schedule_args)
         self.label_drop_prob = label_drop_prob
+        self.osl_weight = osl_weight
+        self.del_weight = del_weight
 
         # model
         self.style = StyleModel(style_dim, style_args)
@@ -59,19 +60,34 @@ class StyleTrainer(pl.LightningModule):
         t = th.special.ndtri(u.clamp(1e-6, 1-1e-6)).sigmoid().to(s1.dtype)
 
         s0 = th.randn_like(s1)
-        if B > 1:
-            # minibatch OT-coupled style noise
-            y = labels.float()
-            cost = th.cdist(s1.float(), s0.float()).pow(2) + th.cdist(y, y).pow(2)
-            _, cols = linear_sum_assignment(cost.cpu().numpy())
-            s0 = s0[cols]
         st = th.lerp(s0, s1, t[:,None])
 
         masked_labels = th.where(th.rand_like(labels) < self.label_drop_prob, -1, labels)
-        pred_style_flow = model(st, masked_labels, t)
-        loss = F.mse_loss(pred_style_flow, s1 - s0)
+        u_pred, v_pred = model(st, masked_labels)
+
+        # distance marching (arXiv:2602.02928)
+        eps = c0 = model.c0
+        d_sq = (st - s1).square().sum(1)
+        u_target = (d_sq + c0).sqrt()
+
+        # one-step loss: inverse-distance-weighted denoising
+        denoised = st - u_pred[:,None] * v_pred
+        osl = ((denoised - s1).square().sum(1) / (d_sq + eps)).mean()
+
+        # directional eikonal loss: length-neutral direction supervision
+        v_target = (st - s1) / u_target[:,None]
+        del_ = (v_pred - v_target).square().sum(1).mean()
+
+        loss = self.osl_weight * osl + self.del_weight * del_
+
+        # distance estimation error (monitoring only): u vs sqrt(d^2 + c0)
+        u_err = ((u_pred - u_target) / u_target).abs().mean()
+
         return loss, {
             "loss": loss.detach(),
+            "osl": osl.detach(),
+            "del": del_.detach(),
+            "u_mape": u_err.detach(),
         }
 
     def configure_optimizers(self):
