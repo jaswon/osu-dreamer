@@ -115,20 +115,17 @@ class BeatmapDataModule(pl.LightningDataModule):
 class SignalDataset(IterableDataset):
     def __init__(self, data_dir: Path, mapsets: dict[str, set[str]], shuffle_buffer_size: int = 1):
         super().__init__()
-        self.data_dir = data_dir
-        self.mapsets = mapsets
+        if 'include' in mapsets:
+            filter_fn = lambda sample: sample.parent.name in mapsets['include']
+        elif 'exclude' in mapsets:
+            filter_fn = lambda sample: sample.parent.name not in mapsets['exclude']
+        else:
+            raise ValueError('neither include nor exclude provided')
+        self.dataset = list(filter(filter_fn, data_dir.rglob("*.latent.npz")))
         self.shuffle_buffer_size = shuffle_buffer_size
 
     def _sample_stream(self, num_workers: int, worker_id: int) -> Iterator[Batch]:
-        if 'include' in self.mapsets:
-            filter_fn = lambda sample: sample.parent.name in self.mapsets['include']
-        elif 'exclude' in self.mapsets:
-            filter_fn = lambda sample: sample.parent.name not in self.mapsets['exclude']
-        else:
-            raise ValueError('neither include nor exclude provided')
-        
-        dataset = filter(filter_fn, self.data_dir.rglob("*.map.npy"))
-        for i, map_file in enumerate(dataset):
+        for i, map_file in enumerate(self.dataset):
             if i % num_workers != worker_id:
                 continue
             try:

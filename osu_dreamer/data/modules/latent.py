@@ -89,41 +89,20 @@ class LatentDataset(IterableDataset):
         max_per_map: int = -1,
     ):
         super().__init__()
-        self.data_dir = data_dir
-        self.mapsets = mapsets
+        if 'include' in mapsets:
+            filter_fn = lambda sample: sample.parent.name in mapsets['include']
+        elif 'exclude' in mapsets:
+            filter_fn = lambda sample: sample.parent.name not in mapsets['exclude']
+        else:
+            raise ValueError('neither include nor exclude provided')
+        self.dataset = list(filter(filter_fn, data_dir.rglob("*.latent.npz")))
+
         self.seq_len = seq_len
         self.shuffle_buffer_size = shuffle_buffer_size
         self.max_per_map = max_per_map if max_per_map > 0 else float('inf')
 
-    def make_samples(self, latent_file: Path) -> Iterator[LatentBatch]:
-        h, z, s, labels = load_latents(latent_file)
-        if self.seq_len is None:
-            yield LatentBatch(h, z, s, labels)
-            return
-
-        offset_end = z.size(-1) - self.seq_len + 1
-        if offset_end < 1:
-            return
-        offset_start = int(th.randint(0, min(self.seq_len, offset_end), ()).item())
-        idxs = th.arange(offset_start, offset_end, self.seq_len)
-        idxs = idxs[th.randperm(len(idxs))[:min(self.max_per_map, len(idxs))]] # type: ignore
-        for i in idxs:
-            yield LatentBatch(
-                h[..., i:i+self.seq_len].clone(),
-                z[..., i:i+self.seq_len].clone(),
-                s, labels,
-            )
-
     def _sample_stream(self, num_workers: int, worker_id: int) -> Iterator[LatentBatch]:
-        if 'include' in self.mapsets:
-            filter_fn = lambda sample: sample.parent.name in self.mapsets['include']
-        elif 'exclude' in self.mapsets:
-            filter_fn = lambda sample: sample.parent.name not in self.mapsets['exclude']
-        else:
-            raise ValueError('neither include nor exclude provided')
-        
-        dataset = filter(filter_fn, self.data_dir.rglob("*.latent.npz"))
-        for i, map_file in enumerate(dataset):
+        for i, map_file in enumerate(self.dataset):
             if i % num_workers != worker_id:
                 continue
             try:
@@ -155,3 +134,22 @@ class LatentDataset(IterableDataset):
             buffer[j] = sample
         random.shuffle(buffer)
         yield from buffer
+
+    def make_samples(self, latent_file: Path) -> Iterator[LatentBatch]:
+        h, z, s, labels = load_latents(latent_file)
+        if self.seq_len is None:
+            yield LatentBatch(h, z, s, labels)
+            return
+
+        offset_end = z.size(-1) - self.seq_len + 1
+        if offset_end < 1:
+            return
+        offset_start = int(th.randint(0, min(self.seq_len, offset_end), ()).item())
+        idxs = th.arange(offset_start, offset_end, self.seq_len)
+        idxs = idxs[th.randperm(len(idxs))[:min(self.max_per_map, len(idxs))]] # type: ignore
+        for i in idxs:
+            yield LatentBatch(
+                h[..., i:i+self.seq_len].clone(),
+                z[..., i:i+self.seq_len].clone(),
+                s, labels,
+            )
