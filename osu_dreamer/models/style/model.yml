@@ -52,12 +52,12 @@ data:
     # windows emitted from the same beatmap. 1 disables buffering.
     shuffle_buffer_size: 512
 
-    max_per_map: 4
+    max_per_map: 1
     
 model:
     # training parameters
     opt_args:
-        lr: .0007
+        lr: .0003
         weight_decay: 0.01
     label_drop_prob: .2
 
@@ -66,7 +66,6 @@ model:
     
     style_args:
         noise_level_features: 128
-        h_dim: 192
+        h_dim: 256
         depth: 8
         expand: 4
-        dropout: .2
