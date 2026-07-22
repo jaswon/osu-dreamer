@@ -37,7 +37,8 @@ class DiffusionModel(nn.Module):
             FourierFeatures(1, args.noise_level_features),
             nn.Linear(args.noise_level_features, args.global_cond_dim),
         )
-        self.proj_style = nn.Linear(style_dim, args.global_cond_dim)
+        self.proj_audio = nn.Sequential(nn.Conv1d(a_dim, a_dim, 1), nn.SiLU())
+        self.proj_style = nn.Sequential(nn.Linear(style_dim, args.global_cond_dim), nn.SiLU())
 
         self.proj_in = nn.Conv1d(emb_dim, args.backbone_dim, 1)
         self.net = Backbone(args.backbone_dim, a_dim, args.global_cond_dim, args.backbone_args)
@@ -48,14 +49,21 @@ class DiffusionModel(nn.Module):
 
     def _precompute_conditioning(
         self,
+        audio: Float[Tensor, "B A l"],
         style: Float[Tensor, "#B S"],
-    ) -> Float[Tensor, "B C"]:
-        return self.proj_style(style)
+    ) -> tuple[
+        Float[Tensor, "#B A l"],
+        Float[Tensor, "B C"],
+    ]:
+        return (
+            self.proj_audio(audio),
+            self.proj_style(style),
+        )
     
     def _pred_flow(
         self,
-        cg: Float[Tensor, "B C"],
         a: Float[Tensor, "#B A l"],
+        cg: Float[Tensor, "B C"],
         xt: Float[Tensor, "B E l"], # noised input
         t: Float[Tensor, "#B"],     # noise level
     ) -> Float[Tensor, "B E l"]:
@@ -73,7 +81,7 @@ class DiffusionModel(nn.Module):
         xt: Float[Tensor, "B E l"], # noised input
         t: Float[Tensor, "B"],      # noise level
     ) -> Float[Tensor, "B E l"]:
-        return self._pred_flow(self._precompute_conditioning(style), audio, xt, t)
+        return self._pred_flow(*self._precompute_conditioning(audio, style), xt, t)
         
     
     @th.no_grad()
@@ -85,13 +93,8 @@ class DiffusionModel(nn.Module):
         time_shift: float = 3.,
         show_progress: bool = False,
     ) -> Float[Tensor, "B E l"]:
-        B = style.size(0)
-        x = th.randn(B, self.emb_dim, audio.size(-1), device=audio.device)
-        denoiser = partial(
-            self._pred_flow,
-            self._precompute_conditioning(style),
-            audio,
-        )
+        x = th.randn(style.size(0), self.emb_dim, audio.size(-1), device=audio.device)
+        denoiser = partial(self._pred_flow, *self._precompute_conditioning(audio, style))
 
         # shifted timestep schedule: denser steps near t=1
         u = th.linspace(0, 1, num_steps+1, device=audio.device)[:,None]
