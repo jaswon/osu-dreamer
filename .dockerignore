@@ -1,0 +1,7 @@
+.git
+.venv
+data
+runs
+*.ckpt
+*.pt
+*.ipynb

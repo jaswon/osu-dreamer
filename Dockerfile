@@ -18,7 +18,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project
 
 # project source
-RUN git init . \
-    && git remote add origin https://github.com/jaswon/osu-dreamer \
-    && git pull origin main \
-    && git checkout main
+COPY . .
