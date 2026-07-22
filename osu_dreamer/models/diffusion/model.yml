@@ -55,6 +55,8 @@ data:
     # per-worker shuffle buffer (in windows); >1 decorrelates consecutive
     # windows emitted from the same beatmap. 1 disables buffering.
     shuffle_buffer_size: 512
+
+    max_per_map: 1
     
 model:
     # validation parameters
@@ -62,7 +64,7 @@ model:
 
     # training parameters
     opt_args:
-        lr: .003
+        lr: .0003
         weight_decay: 0.01
     schedule_args:
         warmup_init: .3
@@ -76,12 +78,12 @@ model:
 
     diffusion_args:
         noise_level_features: 64
-        global_cond_dim: 384
+        global_cond_dim: 512
 
-        backbone_dim: 384
+        backbone_dim: 512
         backbone_args:
             head_dim: 64
-            n_heads: 12
-            depth: 6
-            expand: 3
+            n_heads: 16
+            depth: 8
+            expand: 4
             radius: 2
