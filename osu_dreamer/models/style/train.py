@@ -121,12 +121,12 @@ class StyleTrainer(pl.LightningModule):
         s_real = th.cat(self._val_s)      # B S
         labels = th.cat(self._val_labels) # B N
         B = s_real.size(0)
-        _, log_dict = self(self.style_ema, th.empty(B,0,0), th.empty(B,0,0), s_real, labels)
+        ema: StyleModel = self.style_ema.module # type: ignore
+        _, log_dict = self(ema, th.empty(B,0,0), th.empty(B,0,0), s_real, labels)
         self.log_dict({ f"val/{k}": v for k,v in log_dict.items() })
         if B < 2:
             return
         K = 4
-        ema: StyleModel = self.style_ema.module # type: ignore
         samp = th.stack([ema.sample(labels, 16) for _ in range(K)]) # K B S
 
         d_rr = th.cdist(s_real, s_real).fill_diagonal_(th.inf)
