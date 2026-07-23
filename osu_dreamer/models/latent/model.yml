@@ -56,13 +56,12 @@ data:
     # number of workers to use for data loading
     num_workers: 13
     
-    # number of samples to hold out for validation
-    # must be at least one in order to render validation plots
-    val_size: 64
+    # maximum number of maps to hold out for validation
+    max_val_count: 64
 
     # number of samples to take per map
     # values < 1 take as many non-overlapping samples as possible
-    max_per_map: 5
+    max_per_map: 1
     
 model:
     # training parameters
