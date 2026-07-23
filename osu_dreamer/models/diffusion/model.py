@@ -72,8 +72,8 @@ class DiffusionModel(nn.Module):
 
     def _precompute_conditioning(
         self,
-        audio: Float[Tensor, "B A l"],
-        style: Float[Tensor, "#B S"],
+        audio: Float[Tensor, "#B A l"],
+        style: Float[Tensor, "B S"],
     ) -> tuple[
         Float[Tensor, "#B A l"],
         Float[Tensor, "B C"],
