@@ -47,9 +47,9 @@ class LatentDataModule(pl.LightningDataModule):
         self.max_per_map = max_per_map
 
         data_dir = Path(data_path)
-        val_sets = hold_out_mapsets(data_dir, '*.latent.npz', max_val_count, max_val_frac)
-        self.train_set = LatentDataset(data_dir, dict(exclude=val_sets), self.seq_len, self.shuffle_buffer_size, self.max_per_map)
-        self.val_set = LatentDataset(data_dir, dict(include=val_sets))
+        train_sets, val_sets = hold_out_mapsets(data_dir, '*.latent.npz', max_val_count, max_val_frac)
+        self.train_set = LatentDataset(train_sets, self.seq_len, self.shuffle_buffer_size, self.max_per_map)
+        self.val_set = LatentDataset(val_sets)
 
     def train_dataloader(self):
         return DataLoader(
@@ -83,26 +83,20 @@ def load_latents(latent_file: Path) -> LatentBatch:
 class LatentDataset(IterableDataset):
     def __init__(
         self,
-        data_dir: Path, mapsets: dict[str, set[str]],
+        mapsets: list[Path],
         seq_len: int | None = None, # None: yield full maps
         shuffle_buffer_size: int = 1,
         max_per_map: int = -1,
     ):
         super().__init__()
-        if 'include' in mapsets:
-            filter_fn = lambda sample: sample.parent.name in mapsets['include']
-        elif 'exclude' in mapsets:
-            filter_fn = lambda sample: sample.parent.name not in mapsets['exclude']
-        else:
-            raise ValueError('neither include nor exclude provided')
-        self.dataset = list(filter(filter_fn, data_dir.rglob("*.latent.npz")))
-
+        self.mapsets = mapsets
         self.seq_len = seq_len
         self.shuffle_buffer_size = shuffle_buffer_size
         self.max_per_map = max_per_map if max_per_map > 0 else float('inf')
 
     def _sample_stream(self, num_workers: int, worker_id: int) -> Iterator[LatentBatch]:
-        for i, map_file in enumerate(self.dataset):
+        dataset = ( map_file for mapset in self.mapsets for map_file in mapset.glob("*.latent.npz") )
+        for i, map_file in enumerate(dataset):
             if i % num_workers != worker_id:
                 continue
             try:

@@ -30,7 +30,7 @@ def pad_to_multiple(x: Float[Tensor, "... L"], chunk_size: int) -> Float[Tensor,
     return F.pad(x, (0, pad), mode='replicate') if pad > 0 else x
 
 
-def hold_out_mapsets(data_dir: Path, pattern: str, max_val_count: int, max_val_frac: float) -> set[str]:
+def hold_out_mapsets(data_dir: Path, pattern: str, max_val_count: int, max_val_frac: float) -> tuple[list[Path], list[Path]]:
     """hold out whole mapsets (all difficulties of a song) to prevent
     train/val leakage via shared audio. `max_val_size` is a map count: mapsets
     are drawn until at most `max_val_size` maps are held out."""
@@ -54,17 +54,21 @@ def hold_out_mapsets(data_dir: Path, pattern: str, max_val_count: int, max_val_f
     if not (0 < max_val_size < full_size):
         raise ValueError(f'invalid {max_val_size=} given {full_size=} {max_val_count=} {max_val_frac=}')
     
-    mapsets = set()
+    val_sets: list[Path] = []
+    train_sets: list[Path] = []
     val_size = 0
+    train_size = 0
     for mapset in data_dir.iterdir():
         mapset_count = sum(1 for _ in mapset.glob(pattern))
         if val_size + mapset_count > max_val_size:
-            break
-        val_size += mapset_count
-        mapsets.add(mapset.stem)
+            train_size += mapset_count
+            train_sets.append(mapset)
+        else:
+            val_size += mapset_count
+            val_sets.append(mapset)
 
-    print(f'train: {full_size - val_size} | val: {val_size}')
-    return mapsets
+    print(f'train: {train_size} | val: {val_size}')
+    return train_sets, val_sets
 
 
 class BeatmapDataModule(pl.LightningDataModule):
@@ -88,9 +92,9 @@ class BeatmapDataModule(pl.LightningDataModule):
         
         # check if data dir exists
         data_dir = Path(data_path)
-        val_sets = hold_out_mapsets(data_dir, '*.map.npy', max_val_count, max_val_frac)
-        self.train_set = BatchedSignalDataset(data_dir, dict(exclude=val_sets), self.seq_len, self.shuffle_buffer_size, self.max_per_map)
-        self.val_set = SignalDataset(data_dir, dict(include=val_sets))
+        train_sets, val_sets = hold_out_mapsets(data_dir, '*.map.npy', max_val_count, max_val_frac)
+        self.train_set = BatchedSignalDataset(train_sets, self.seq_len, self.shuffle_buffer_size, self.max_per_map)
+        self.val_set = SignalDataset(val_sets)
             
     def train_dataloader(self):
         return DataLoader(
@@ -113,19 +117,14 @@ class BeatmapDataModule(pl.LightningDataModule):
             
 
 class SignalDataset(IterableDataset):
-    def __init__(self, data_dir: Path, mapsets: dict[str, set[str]], shuffle_buffer_size: int = 1):
+    def __init__(self, mapsets: list[Path], shuffle_buffer_size: int = 1):
         super().__init__()
-        if 'include' in mapsets:
-            filter_fn = lambda sample: sample.parent.name in mapsets['include']
-        elif 'exclude' in mapsets:
-            filter_fn = lambda sample: sample.parent.name not in mapsets['exclude']
-        else:
-            raise ValueError('neither include nor exclude provided')
-        self.dataset = list(filter(filter_fn, data_dir.rglob("*.latent.npz")))
+        self.mapsets = mapsets
         self.shuffle_buffer_size = shuffle_buffer_size
 
     def _sample_stream(self, num_workers: int, worker_id: int) -> Iterator[Batch]:
-        for i, map_file in enumerate(self.dataset):
+        dataset = ( map_file for mapset in self.mapsets for map_file in mapset.glob("*.map.npy") )
+        for i, map_file in enumerate(dataset):
             if i % num_workers != worker_id:
                 continue
             try:
@@ -178,13 +177,12 @@ class SignalDataset(IterableDataset):
 class BatchedSignalDataset(SignalDataset):
     def __init__(
         self, 
-        data_dir: Path, 
-        mapsets: dict[str, set[str]], 
+        mapsets: list[Path], 
         seq_len: int, 
         shuffle_buffer_size: int = 1,
         max_per_map: int = -1, 
     ):
-        super().__init__(data_dir, mapsets, shuffle_buffer_size)
+        super().__init__(mapsets, shuffle_buffer_size)
         self.seq_len = seq_len
         self.max_per_map = max_per_map if max_per_map > 0 else float('inf')
 
