@@ -91,14 +91,14 @@ class LatentTrainer(pl.LightningModule):
         s_pairs = rearrange(s, '(b h) d -> b h d', h=2)
         s = rearrange(s_pairs.flip(1), 'b h d -> (b h) d')
 
+        s_masked = th.zeros(s.shape[0], dtype=th.bool, device=s.device)
         if self.training:
             s = s + self.s_noise * th.randn_like(s)
             z = z + self.z_noise * th.randn_like(z)
 
             if self.s_mask_frac > 0:
-                B, _ = s.shape
-                mask = th.rand(B, device=s.device)[:, None] < self.s_mask_frac
-                s = s.masked_fill(mask, 0.)
+                s_masked = th.rand(s.shape[0], device=s.device) < self.s_mask_frac
+                s = th.where(s_masked[:, None], th.randn_like(s), s)
                 
             if self.z_mask_frac > 0:
                 # zero out a random contiguous span per item: the decoder must
@@ -130,7 +130,8 @@ class LatentTrainer(pl.LightningModule):
             for i in range(3)
         ]
 
-        label_loss = F.mse_loss(pred_labels, true_labels)
+        label_sq_err = (pred_labels - true_labels).pow(2).mean(dim=1)
+        label_loss = th.where(s_masked, 0., label_sq_err).sum() / (~s_masked).sum().clamp(min=1)
 
         losses = th.stack([ *hit_loss.unbind(), *cursor_losses, label_loss ])
         loss_weights = losses.new_tensor(list(LOSS_COMPONENT_WEIGHTS.values()))
