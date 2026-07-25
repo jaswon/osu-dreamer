@@ -35,6 +35,24 @@ class AttnPool(nn.Module):
         v = self.values(x).unflatten(1, (self.n_heads, -1)) # B H D L
         return self.proj_out(th.einsum('bhl,bhdl->bhd', a, v).flatten(1))
 
+class Center(nn.Module):
+    """running-mean centering (BatchNorm sans variance scaling): removes the
+    aggregate posterior's per-dim mean so the RMS power budget downstream is
+    spent on variation rather than a constant offset"""
+    def __init__(self, dim: int, momentum: float = 0.01):
+        super().__init__()
+        self.momentum = momentum
+        self.mean: Tensor
+        self.register_buffer('mean', th.zeros(dim))
+
+    def forward(self, x: Float[Tensor, "B D"]) -> Float[Tensor, "B D"]:
+        if self.training:
+            mean = x.mean(dim=0)
+            self.mean.lerp_(mean.detach().float(), self.momentum)
+        else:
+            mean = self.mean
+        return x - mean
+
 class LatentModel(nn.Module):
     def __init__(
         self,
@@ -55,6 +73,7 @@ class LatentModel(nn.Module):
         self.style_head = nn.Sequential(
             layer(args.h_dim, 0, args.ae_args),
             AttnPool(args.h_dim, style_dim, args.style_head_dim, args.style_heads),
+            Center(style_dim),
             RMSNorm(style_dim, affine=False),
         )
 
