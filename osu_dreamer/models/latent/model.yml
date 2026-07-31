@@ -24,6 +24,7 @@ trainer:
         - # stop once the eval score stops improving
             class_path: pytorch_lightning.callbacks.EarlyStopping
             init_args:
+                check_on_train_epoch_end: false
                 monitor: eval/score
                 mode: max
                 patience: 10
