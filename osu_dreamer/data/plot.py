@@ -14,14 +14,15 @@ def plot_signals(
     audio: Float[ndarray, "A L"], 
     signals: list[Float[ndarray, "X L"]],
     temporal_scale: float = .01,
+    max_width: float = 10.,
 ):
     margin, margin_left = .1, .5
-    height_ratios = [.8] + [.6] * len(signals)
+    height_ratios = [.6] + [.5] * len(signals)
     plots_per_row = len(height_ratios)
-    w, h = audio.shape[-1] * temporal_scale, sum(height_ratios) * .4
+    w, h = audio.shape[-1] * temporal_scale, sum(height_ratios)
 
     # split plot across multiple rows
-    split = int(1 + ((w/h)/(3/5)) ** .5) # 3 wide by 5 tall aspect ratio
+    split = int(1 + w / max_width)
     w = w // split
     h = h * split
     height_ratios = height_ratios * split
